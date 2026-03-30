@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 nearly complete - 129 passing tests (87 Python + 42 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete - 153 passing tests (111 Python + 42 Flutter).**
 
 ---
 
@@ -124,7 +124,7 @@ Flutter shell with all 4 UI patterns. Runs on Mac for dev, targets Linux aarch64
 - [x] Running agent indicator
 - [x] Wire all 4 pattern widgets into main.dart
 - [x] Wire tinder/diff decision callbacks to backend approval API
-- [ ] Animated transitions between patterns
+- [x] Animated transitions between patterns
 
 ---
 
@@ -222,7 +222,7 @@ Debian VM boots directly into Monet.
 - [ ] Smarter intent routing (semantic embeddings, learn from usage)
 - [ ] Voice input
 - [ ] Mobile companion (Flutter - same codebase)
-- [ ] Planning agent (agent/agents/planning.py - not yet spec'd in detail)
+- [x] Planning agent (agent/agents/planning.py - implemented with 5 tools)
 
 ---
 
@@ -232,11 +232,16 @@ Debian VM boots directly into Monet.
 
 - **Tinder batch approval UX:** Cards are currently populated from `done` event outputs, not from streaming `approval_request` events. For true batch approval UX, cards should be created incrementally as `approval_request` events arrive during streaming.
 - **Session ID from backend:** Fixed - the backend now includes `session_id` in routing event metadata.
-- **Duplicate input bar in chat pattern:** The shell's intent bar and the chat pattern's own input bar are both visible simultaneously when the chat pattern is active; one should be suppressed.
-- **`_tool_read_diff` in code.py fetches PR metadata endpoint, not the actual diff** - the GitHub API call may not return diff content; needs the `Accept: application/vnd.github.v3.diff` header or a separate diff endpoint.
-- **Planning agent not implemented:** The router routes "planning" intent to a planning agent, but `agent/agents/planning.py` does not exist - this returns an error at runtime.
-- **Connection painter `shouldRepaint` always returns true** in `whiteboard.dart` - causes unnecessary repaints on every frame; should compare connection lists and return false when unchanged.
 - **Done event now carries outputs:** Fixed - `stream_sync` now collects text outputs and includes them in the `done` event metadata along with agent name, ui_pattern, and session_id. This enables pattern population from streaming responses.
+
+### Implementation Notes (2026-03-30) - Batch 2
+
+- **PlanningAgent implemented:** `agent/agents/planning.py` with 5 tools (create_node, connect_nodes, update_node, remove_node, get_plan); registered in runner alongside email and code agents.
+- **`_tool_read_diff` fixed:** Added `Accept: application/vnd.github.v3.diff` header so the GitHub API returns actual diff content instead of PR metadata.
+- **Duplicate input bar fixed:** Shell intent bar is hidden when chat pattern is active; chat pattern has its own input bar.
+- **Whiteboard `shouldRepaint` fixed:** `ConnectionPainter.shouldRepaint` now compares node positions and connection lists instead of always returning true.
+- **Animated transitions added:** `AnimatedSwitcher` with 300ms cross-fade wraps pattern switching in `main.dart`.
+- **Test count:** 153 total (111 Python + 42 Flutter), all passing.
 
 ---
 
@@ -258,4 +263,4 @@ Debian VM boots directly into Monet.
 - `plan.md` and `research/architecture-research.md` recommend Composio + Tauri/React. The newer MVP plan (`docs/plans/2026-03-29-monet-mvp.md`) chose **Nango + Flutter**. The MVP plan is authoritative.
 - `plan.md` mentions Composio as integration layer; MVP plan uses Nango throughout.
 - Research doc recommends AG-UI protocol; MVP plan uses simple NDJSON streaming. AG-UI could be added later.
-- Planning agent (`agent/agents/planning.py`) is referenced in project structure but has no detailed task spec in the MVP plan.
+- Planning agent (`agent/agents/planning.py`) is implemented with 5 tools; no detailed task spec exists in the MVP plan but the implementation covers core whiteboard node operations.

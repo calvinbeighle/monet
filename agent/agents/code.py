@@ -306,9 +306,12 @@ class CodeAgent(BaseAgent):
 
         repo = params["repo"]
         pr_number = params["pr_number"]
+        headers = _nango_headers()
+        # Request raw unified diff format from GitHub API via content negotiation
+        headers["Accept"] = "application/vnd.github.v3.diff"
         resp = httpx.get(
             f"{NANGO_BASE_URL}/v1/github/repos/{repo}/pulls/{pr_number}",
-            headers=_nango_headers(),
+            headers=headers,
             params={"connectionId": NANGO_CONNECTION_ID},
             timeout=30,
         )

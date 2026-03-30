@@ -11,6 +11,7 @@ import anthropic
 from agent.agents.base import BaseAgent
 from agent.agents.code import CodeAgent
 from agent.agents.email import EmailAgent
+from agent.agents.planning import PlanningAgent
 from agent.approval import ApprovalGate
 from agent.models import (
     AgentEvent,
@@ -32,6 +33,7 @@ def _get_agent_registry() -> dict[str, BaseAgent]:
     return {
         "email": EmailAgent(),
         "code": CodeAgent(),
+        "planning": PlanningAgent(),
     }
 
 

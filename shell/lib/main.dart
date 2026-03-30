@@ -325,6 +325,10 @@ class MonetShellState extends State<MonetShell> {
   }
 
   Widget _buildIntentBar() {
+    // Hide the intent bar when chat pattern is active (chat has its own input)
+    if (_activePattern == null || _activePattern == 'chat') {
+      return const SizedBox.shrink();
+    }
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       decoration: BoxDecoration(
@@ -377,25 +381,30 @@ class MonetShellState extends State<MonetShell> {
   }
 
   Widget _buildActivePattern() {
+    final Widget child;
     switch (_activePattern) {
       case 'tinder':
-        return TinderPattern(
+        child = TinderPattern(
+          key: const ValueKey('tinder'),
           cards: _tinderCards,
           onDecision: _handleTinderDecision,
         );
       case 'diff':
-        return DiffPattern(
+        child = DiffPattern(
+          key: const ValueKey('diff'),
           lines: _diffLines,
           onDecision: _handleDiffDecision,
         );
       case 'whiteboard':
-        return WhiteboardPattern(
+        child = WhiteboardPattern(
+          key: const ValueKey('whiteboard'),
           nodes: _whiteboardNodes,
           onNodeTap: (id) {},
         );
       case 'chat':
       default:
-        return ChatPattern(
+        child = ChatPattern(
+          key: const ValueKey('chat'),
           messages: _chatMessages,
           suggestions: _chatSuggestions,
           isStreaming: _chatStreaming,
@@ -404,6 +413,12 @@ class MonetShellState extends State<MonetShell> {
           onApprovalDecision: _handleChatApprovalDecision,
         );
     }
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      switchInCurve: Curves.easeOut,
+      switchOutCurve: Curves.easeIn,
+      child: child,
+    );
   }
 }
 

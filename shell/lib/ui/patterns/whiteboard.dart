@@ -164,5 +164,18 @@ class _ConnectionPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ConnectionPainter oldDelegate) => true;
+  bool shouldRepaint(_ConnectionPainter oldDelegate) {
+    if (nodes.length != oldDelegate.nodes.length) return true;
+    for (int i = 0; i < nodes.length; i++) {
+      final a = nodes[i];
+      final b = oldDelegate.nodes[i];
+      if (a.id != b.id ||
+          a.x != b.x ||
+          a.y != b.y ||
+          a.connections.length != b.connections.length) {
+        return true;
+      }
+    }
+    return false;
+  }
 }

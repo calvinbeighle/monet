@@ -14,9 +14,11 @@ import 'package:shell/ui/status_bar.dart';
 
 void main() {
   group('MonetApp', () {
-    testWidgets('renders with intent bar', (tester) async {
+    testWidgets('renders with chat input when chat pattern is default', (tester) async {
       await tester.pumpWidget(const MonetApp());
-      expect(find.text('What would you like to do?'), findsOneWidget);
+      // Chat is the default pattern, so the chat input bar is shown
+      // instead of the shell intent bar (which only shows for non-chat patterns)
+      expect(find.text('Type a message...'), findsOneWidget);
     });
 
     testWidgets('renders status bar with tool indicators', (tester) async {

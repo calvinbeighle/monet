@@ -33,6 +33,19 @@ class TestAgentRunnerSync:
         assert len(result.outputs) == 1
         assert result.outputs[0].status == "error"
 
+    def test_run_sync_planning_agent(self, runner, mock_anthropic_client):
+        """Planning intent routes to planning agent with whiteboard pattern."""
+        mock_anthropic_client.messages.create.return_value = make_text_response(
+            "Here is your sprint plan with 3 key milestones."
+        )
+
+        result = runner.run_sync("plan the next sprint")
+
+        assert result.agent == "planning"
+        assert result.ui_pattern == UIPattern.WHITEBOARD.value
+        assert len(result.outputs) == 1
+        assert "sprint plan" in result.outputs[0].content
+
     def test_run_sync_tool_call_without_approval(self, runner, mock_anthropic_client):
         """Agent makes a tool call that doesn't need approval."""
         # First call: agent wants to use list_inbox
