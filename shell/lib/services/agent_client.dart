@@ -101,6 +101,45 @@ class AgentClient {
     http.Client? client,
   }) : _client = client ?? http.Client();
 
+  /// Check if any user account exists (first-boot detection).
+  Future<Map<String, dynamic>> authStatus() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/auth/status'));
+    if (response.statusCode != 200) {
+      throw Exception('Auth status check failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Create a new user account.
+  Future<Map<String, dynamic>> createUser(String username, String password) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/auth/create'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
+    );
+    if (response.statusCode != 200) {
+      final detail = (jsonDecode(response.body) as Map<String, dynamic>)['detail'] ?? 'Unknown error';
+      throw Exception(detail);
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Authenticate a user. Returns the response map on success, throws on failure.
+  Future<Map<String, dynamic>> login(String username, String password) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/auth/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
+    );
+    if (response.statusCode == 401) {
+      throw Exception('Invalid username or password');
+    }
+    if (response.statusCode != 200) {
+      throw Exception('Login failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<bool> healthCheck() async {
     try {
       final response = await _client.get(Uri.parse('$baseUrl/api/health'));

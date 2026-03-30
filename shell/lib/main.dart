@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'services/agent_client.dart';
 import 'ui/approval_overlay.dart';
+import 'ui/onboarding.dart';
 import 'ui/patterns/chat.dart';
 import 'ui/patterns/diff.dart';
 import 'ui/patterns/tinder.dart';
@@ -15,8 +16,19 @@ void main() {
   runApp(const MonetApp());
 }
 
-class MonetApp extends StatelessWidget {
+class MonetApp extends StatefulWidget {
   const MonetApp({super.key});
+
+  @override
+  State<MonetApp> createState() => _MonetAppState();
+}
+
+class _MonetAppState extends State<MonetApp> {
+  bool _authenticated = false;
+
+  void _onAuthenticated() {
+    setState(() => _authenticated = true);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +47,9 @@ class MonetApp extends StatelessWidget {
             primary: Color(0xFF7C6EF0),
           ),
         ),
-        home: const MonetShell(),
+        home: _authenticated
+            ? const MonetShell()
+            : OnboardingScreen(onAuthenticated: _onAuthenticated),
       ),
     );
   }

@@ -10,8 +10,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent.approval import ApprovalGate
+from agent.auth import AuthStore, UserExistsError
 from agent.models import ApprovalStatus
 from agent.runner import AgentRunner
+from agent.session_store import DEFAULT_DB_PATH
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
@@ -22,11 +24,17 @@ app = FastAPI(title="Monet Agent Backend", version="0.1.0")
 
 approval_gate = ApprovalGate()
 runner = AgentRunner(approval_gate=approval_gate)
+auth_store = AuthStore(db_path=DEFAULT_DB_PATH)
 
 
 class RunRequest(BaseModel):
     intent: str
     session_id: Optional[str] = None
+
+
+class AuthRequest(BaseModel):
+    username: str
+    password: str
 
 
 @app.get("/api/health")
@@ -101,3 +109,35 @@ def delete_session(session_id: str):
     # Also clear from cache
     runner._session_cache.pop(session_id, None)
     return {"status": "deleted", "session_id": session_id}
+
+
+# --- Auth routes ---
+
+
+@app.get("/api/auth/status")
+def auth_status():
+    """Check if any user exists (first-boot detection) and list usernames."""
+    return {
+        "has_users": auth_store.has_users(),
+        "users": auth_store.list_users(),
+    }
+
+
+@app.post("/api/auth/create")
+def create_user(request: AuthRequest):
+    """Create a new user account."""
+    try:
+        auth_store.create_user(request.username, request.password)
+    except UserExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "created", "username": request.username}
+
+
+@app.post("/api/auth/login")
+def login(request: AuthRequest):
+    """Authenticate a user."""
+    if auth_store.authenticate(request.username, request.password):
+        return {"authenticated": True, "username": request.username}
+    raise HTTPException(status_code=401, detail="Invalid username or password")

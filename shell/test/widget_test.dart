@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 import 'package:shell/main.dart';
 import 'package:shell/services/agent_client.dart';
 import 'package:shell/ui/approval_overlay.dart';
+import 'package:shell/ui/onboarding.dart';
 import 'package:shell/ui/patterns/tinder.dart';
 import 'package:shell/ui/patterns/chat.dart';
 import 'package:shell/ui/patterns/diff.dart';
@@ -14,23 +16,75 @@ import 'package:shell/ui/status_bar.dart';
 
 void main() {
   group('MonetApp', () {
-    testWidgets('renders with chat input when chat pattern is default', (tester) async {
+    testWidgets('shows onboarding screen before authentication', (tester) async {
       await tester.pumpWidget(const MonetApp());
-      // Chat is the default pattern, so the chat input bar is shown
-      // instead of the shell intent bar (which only shows for non-chat patterns)
-      expect(find.text('Type a message...'), findsOneWidget);
+      // Initial state shows loading spinner while checking auth status
+      expect(find.byType(OnboardingScreen), findsOneWidget);
     });
 
-    testWidgets('renders status bar with tool indicators', (tester) async {
+    testWidgets('shows login form when backend unavailable', (tester) async {
       await tester.pumpWidget(const MonetApp());
-      expect(find.text('Gmail'), findsOneWidget);
-      expect(find.text('GitHub'), findsOneWidget);
+      // Wait for the auth check to fail (no backend) and show login form
+      await tester.pumpAndSettle();
+      expect(find.text('Monet'), findsOneWidget);
+      expect(find.text('Sign in to continue.'), findsOneWidget);
     });
 
-    testWidgets('starts with chat pattern as default', (tester) async {
+    testWidgets('login form has username and password fields', (tester) async {
       await tester.pumpWidget(const MonetApp());
-      // Chat pattern shows the input field
-      expect(find.text('Type a message...'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text('Username'), findsOneWidget);
+      expect(find.text('Password'), findsOneWidget);
+      expect(find.text('Sign In'), findsOneWidget);
+    });
+  });
+
+  // -- OnboardingScreen tests --
+
+  group('OnboardingScreen', () {
+    Widget wrapWithProvider(Widget child) {
+      return Provider<AgentClient>(
+        create: (_) => AgentClient(),
+        dispose: (_, client) => client.dispose(),
+        child: MaterialApp(home: child),
+      );
+    }
+
+    testWidgets('falls back to login when backend unreachable', (tester) async {
+      await tester.pumpWidget(wrapWithProvider(
+        OnboardingScreen(onAuthenticated: () {}),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Sign In'), findsOneWidget);
+    });
+
+    testWidgets('shows error when fields are empty on login', (tester) async {
+      await tester.pumpWidget(wrapWithProvider(
+        OnboardingScreen(onAuthenticated: () {}),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sign In'));
+      await tester.pump();
+      expect(find.text('Username and password are required'), findsOneWidget);
+    });
+
+    testWidgets('password visibility toggle works', (tester) async {
+      await tester.pumpWidget(wrapWithProvider(
+        OnboardingScreen(onAuthenticated: () {}),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.visibility_off), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.visibility_off));
+      await tester.pump();
+      expect(find.byIcon(Icons.visibility), findsOneWidget);
+    });
+
+    testWidgets('shows connection error message', (tester) async {
+      await tester.pumpWidget(wrapWithProvider(
+        OnboardingScreen(onAuthenticated: () {}),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Cannot connect to backend'), findsOneWidget);
     });
   });
 
