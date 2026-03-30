@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 2 complete - Flutter shell with all 4 UI patterns, agent client, intent bar, status bar, and 103 passing tests (72 Python + 31 Flutter).**
+> Status: **Phase 1 complete, Phase 2 nearly complete - 129 passing tests (87 Python + 42 Flutter).**
 
 ---
 
@@ -22,7 +22,8 @@ Agents must work from CLI before any UI. This proves the core concept.
 - [x] Create `agent/tests/test_runner.py` - tests for structured result and streaming events
 - [x] Data models: AgentResult, AgentOutput, AgentEvent, UIPattern enum
 - [x] Wire Claude Agent SDK into runner (implemented with anthropic SDK, real agent loop with tool execution)
-- [ ] Session create/resume in SQLite
+- [x] Session create/resume in SQLite
+- [x] Session management API endpoints (GET /api/sessions, DELETE /api/sessions/{id})
 
 ### Task 2: Intent Router
 
@@ -59,6 +60,7 @@ Agents must work from CLI before any UI. This proves the core concept.
 - [x] ApprovalRequest and ApprovalStatus models
 - [x] Add approval API routes to main.py: GET /api/approvals, POST /api/approvals/{id}/approve, POST /api/approvals/{id}/reject
 - [x] Wire approval gate into agent runner PreToolUse hooks
+- [x] Wire approval gate UI into Flutter shell (ApprovalOverlay dialog, approve/reject API calls)
 
 ### Task 6: CLI Test Harness
 
@@ -96,7 +98,8 @@ Flutter shell with all 4 UI patterns. Runs on Mac for dev, targets Linux aarch64
 - [x] Threaded conversation view with message bubbles
 - [x] Agent messages stream in with typing indicator
 - [x] Reply suggestions as tappable chips
-- [ ] Inline approve/edit/reject
+- [x] System messages for tool_call events (centered with icon)
+- [x] Inline approve/reject cards (approval_request events render as inline cards with approve/reject buttons, status updates after decision)
 
 ### Task 10: Diff UI Pattern
 
@@ -120,6 +123,7 @@ Flutter shell with all 4 UI patterns. Runs on Mac for dev, targets Linux aarch64
 - [x] Connected tools indicators (green/gray dots)
 - [x] Running agent indicator
 - [x] Wire all 4 pattern widgets into main.dart
+- [x] Wire tinder/diff decision callbacks to backend approval API
 - [ ] Animated transitions between patterns
 
 ---
@@ -222,6 +226,20 @@ Debian VM boots directly into Monet.
 
 ---
 
+## Implementation Notes (2026-03-30)
+
+### Remaining Gaps Discovered
+
+- **Tinder batch approval UX:** Cards are currently populated from `done` event outputs, not from streaming `approval_request` events. For true batch approval UX, cards should be created incrementally as `approval_request` events arrive during streaming.
+- **Session ID from backend:** Fixed - the backend now includes `session_id` in routing event metadata.
+- **Duplicate input bar in chat pattern:** The shell's intent bar and the chat pattern's own input bar are both visible simultaneously when the chat pattern is active; one should be suppressed.
+- **`_tool_read_diff` in code.py fetches PR metadata endpoint, not the actual diff** - the GitHub API call may not return diff content; needs the `Accept: application/vnd.github.v3.diff` header or a separate diff endpoint.
+- **Planning agent not implemented:** The router routes "planning" intent to a planning agent, but `agent/agents/planning.py` does not exist - this returns an error at runtime.
+- **Connection painter `shouldRepaint` always returns true** in `whiteboard.dart` - causes unnecessary repaints on every frame; should compare connection lists and return false when unchanged.
+- **Done event now carries outputs:** Fixed - `stream_sync` now collects text outputs and includes them in the `done` event metadata along with agent name, ui_pattern, and session_id. This enables pattern population from streaming responses.
+
+---
+
 ## Architecture Notes
 
 | Layer           | Choice                              | Status      |
@@ -232,8 +250,8 @@ Debian VM boots directly into Monet.
 | Agent backend   | Python + FastAPI                    | Implemented |
 | Agent framework | Claude Agent SDK                    | Implemented |
 | Integrations    | Nango (managed OAuth, Gmail/GitHub) | Implemented |
-| State           | SQLite                              | Not started |
-| IPC             | Unix socket / HTTP localhost        | Not started |
+| State           | SQLite                              | Implemented |
+| IPC             | Unix socket / HTTP localhost        | Implemented |
 
 ## Known Discrepancies
 
