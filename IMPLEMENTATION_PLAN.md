@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete - 211 passing tests (156 Python + 55 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete - 223 passing tests (168 Python + 55 Flutter).**
 
 ---
 
@@ -234,6 +234,9 @@ Debian VM boots directly into Monet.
 - **Session ID from backend:** Fixed - the backend now includes `session_id` in routing event metadata.
 - **Done event now carries outputs:** Fixed - `stream_sync` now collects text outputs and includes them in the `done` event metadata along with agent name, ui_pattern, and session_id. This enables pattern population from streaming responses.
 - **Real-time token streaming fixed:** Previously tokens were buffered in a local `streamedContent` string and only rendered on the `done` event. Now tokens stream into the UI on each event via mutable `ChatMessage` updates.
+- **Intent bar hidden on initial load:** The intent bar is hidden when `_activePattern` is null (initial state), relying on chat pattern's built-in input field. This is intentional - chat is the default landing view.
+- **Tool connection status hardcoded:** StatusBar always shows Gmail/GitHub as disconnected. Needs Nango connection state API.
+- **Auth session not persisted:** Login state is in-memory only (`_authenticated` flag). App restart requires re-login. Needs shared_preferences or secure storage.
 
 ### Implementation Notes (2026-03-30) - Batch 2
 
@@ -271,6 +274,12 @@ Debian VM boots directly into Monet.
 - **Node tap expands into subtasks:** Tapping a whiteboard node sends a follow-up intent "Break down '{title}' into subtasks" to the agent, which creates child nodes.
 - **Node drag positions update correctly:** `onNodeMoved` callback is now wired in MonetShell so connection lines redraw after drag.
 - **Test count:** 211 total (156 Python + 55 Flutter), all passing.
+
+### Implementation Notes (2026-03-30) - Batch 7
+
+- **Router priority fix:** Moved planning rules above code-write rules so "write a plan" correctly routes to PlanningAgent + whiteboard instead of CodeAgent + chat. Added "prioritize" and "organize" keywords to planning rules.
+- **Chat suggestions wired end-to-end:** Added `suggestions` property to BaseAgent with overrides in all 4 agents (email, code, planning, general). Runner includes agent suggestions in `done` event metadata. Flutter shell populates suggestion chips from `done` event and clears them on new intent.
+- **Test count:** 223 total (168 Python + 55 Flutter), all passing.
 
 ---
 
