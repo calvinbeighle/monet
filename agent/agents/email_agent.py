@@ -193,7 +193,7 @@ class EmailAgent(BaseAgent):
 
     @property
     def model(self) -> str:
-        return "google/gemini-flash-preview-3.0"
+        return "google/gemini-3-flash-preview"
 
     @property
     def system_prompt(self) -> str:
@@ -266,8 +266,8 @@ class EmailAgent(BaseAgent):
         if tool_name == "list_emails":
             raw = self._gmail.list_messages(
                 max_results=5,
-                label=tool_input.get("label", "INBOX"),
-                query=tool_input.get("query"),
+                label="",
+                query=tool_input.get("query", ""),
             )
             return self._slim_emails(raw)
 
