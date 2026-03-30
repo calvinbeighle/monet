@@ -780,6 +780,12 @@ function buildCardSubtitle(item, cardType) {
 function extractTinderCards(raw, hint) {
   var cards = [];
 
+  /* Unwrap Composio response format: { data: ..., error: ..., successfull: ... } */
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && "data" in raw && ("successfull" in raw || "successful" in raw || "logId" in raw)) {
+    raw = raw.data;
+    if (!raw) return cards;
+  }
+
   /* If raw is already an array (e.g. from a tool_result with a list) */
   if (Array.isArray(raw)) {
     raw.forEach(function(item) {
@@ -1677,8 +1683,11 @@ function handleDone() {
   hideThinking();
   hideApprovalModal();
 
-  /* Finalize tinder: clear commentary, then if buffer has content and no cards were enqueued, parse it */
+  /* Finalize tinder: update reply placeholder if no draft arrived */
   if (state.currentPattern === "tinder") {
+    if (dom.tinderReplyTextarea.value === "" && dom.tinderReplyTextarea.placeholder === "Agent is drafting a reply...") {
+      dom.tinderReplyTextarea.placeholder = "No reply needed - or type your own";
+    }
     /* Clear commentary since streaming is done */
     dom.tinderCommentary.textContent = "";
     if (state._tinderBuffer && state.tinder.queue.length === 0 && !state.tinder.current) {

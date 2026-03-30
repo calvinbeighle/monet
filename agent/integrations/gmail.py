@@ -65,7 +65,7 @@ class GmailIntegration:
                 tool_name="GMAIL_FETCH_EMAILS",
                 tool_input={
                     "max_results": max_results,
-                    "label_ids": label,
+                    "label_ids": [label],
                     "query": query or "",
                 },
                 user_id=self._user_id,
