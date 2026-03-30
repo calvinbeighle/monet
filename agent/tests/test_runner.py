@@ -148,7 +148,7 @@ class TestAgentRunnerSync:
         # since it was rejected
 
     def test_session_continuity(self, runner, mock_anthropic_client):
-        """Messages accumulate across calls with the same session."""
+        """Messages accumulate across calls with the same session, persisted to SQLite."""
         mock_anthropic_client.messages.create.return_value = make_text_response(
             "Response 1"
         )
@@ -159,9 +159,13 @@ class TestAgentRunnerSync:
         )
         runner.run_sync("what about the email from John?", session_id="test-session")
 
-        # Session should have accumulated messages
-        assert "test-session" in runner.sessions
-        assert len(runner.sessions["test-session"]) >= 2
+        # Session should have accumulated messages in cache and SQLite
+        assert "test-session" in runner._session_cache
+        assert len(runner._session_cache["test-session"]) >= 2
+
+        # Messages should also be persisted in SQLite
+        stored = runner.session_store.get_messages("test-session")
+        assert len(stored) >= 2
 
 
 class TestAgentRunnerStream:

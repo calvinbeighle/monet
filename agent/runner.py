@@ -20,6 +20,7 @@ from agent.models import (
     UIPattern,
 )
 from agent.router import IntentRouter
+from agent.session_store import SessionStore
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,8 @@ class AgentRunner:
     """Runs agents end-to-end: routes intent, calls Claude with tools, handles approvals.
 
     The runner implements the agent loop: send messages to Claude, execute tool calls
-    (with approval gates for sensitive actions), and collect results.
+    (with approval gates for sensitive actions), and collect results. Session history
+    is persisted to SQLite so conversations survive server restarts.
     """
 
     def __init__(
@@ -46,21 +48,38 @@ class AgentRunner:
         approval_gate: Optional[ApprovalGate] = None,
         router: Optional[IntentRouter] = None,
         client: Optional[anthropic.Anthropic] = None,
+        session_store: Optional[SessionStore] = None,
     ) -> None:
         self.approval_gate = approval_gate or ApprovalGate()
         self.router = router or IntentRouter()
         self.client = client or anthropic.Anthropic()
         self.agents = _get_agent_registry()
-        self.sessions: dict[str, list[dict]] = {}
+        self.session_store = session_store or SessionStore()
+        # In-memory cache of active sessions for fast access during a request
+        self._session_cache: dict[str, list[dict]] = {}
 
     def _get_or_create_session(
         self, session_id: Optional[str]
     ) -> tuple[str, list[dict]]:
-        if session_id and session_id in self.sessions:
-            return session_id, self.sessions[session_id]
+        # Check in-memory cache first
+        if session_id and session_id in self._session_cache:
+            return session_id, self._session_cache[session_id]
+
+        # Try loading from SQLite
+        if session_id and self.session_store.session_exists(session_id):
+            history = self.session_store.get_messages(session_id)
+            self._session_cache[session_id] = history
+            return session_id, history
+
+        # Create new session
         sid = session_id or uuid.uuid4().hex[:12]
-        self.sessions[sid] = []
-        return sid, self.sessions[sid]
+        self.session_store.create_session(sid)
+        self._session_cache[sid] = []
+        return sid, self._session_cache[sid]
+
+    def _persist_message(self, session_id: str, role: str, content) -> None:
+        """Persist a message to SQLite."""
+        self.session_store.append_message(session_id, role, content)
 
     def _resolve_agent(self, agent_name: str) -> Optional[BaseAgent]:
         return self.agents.get(agent_name)
@@ -86,7 +105,9 @@ class AgentRunner:
         sid, history = self._get_or_create_session(session_id)
 
         # Build messages
-        history.append({"role": "user", "content": intent})
+        user_msg = {"role": "user", "content": intent}
+        history.append(user_msg)
+        self._persist_message(sid, "user", intent)
 
         # Convert agent tools to Claude API format
         tools = [
@@ -127,10 +148,12 @@ class AgentRunner:
             if not tool_use_blocks:
                 # No tool calls - agent is done
                 history.append({"role": "assistant", "content": assistant_content})
+                self._persist_message(sid, "assistant", assistant_content)
                 break
 
             # Process tool calls
             history.append({"role": "assistant", "content": assistant_content})
+            self._persist_message(sid, "assistant", assistant_content)
             tool_results = []
 
             for tool_block in tool_use_blocks:
@@ -179,6 +202,7 @@ class AgentRunner:
                 )
 
             history.append({"role": "user", "content": tool_results})
+            self._persist_message(sid, "user", tool_results)
 
         return AgentResult(
             agent=routed.agent,
@@ -213,6 +237,7 @@ class AgentRunner:
             yield AgentEvent(type="done")
             return
         history.append({"role": "user", "content": intent})
+        self._persist_message(sid, "user", intent)
 
         tools = [
             {
@@ -283,10 +308,12 @@ class AgentRunner:
 
             if not tool_use_blocks:
                 history.append({"role": "assistant", "content": collected_content})
+                self._persist_message(sid, "assistant", collected_content)
                 break
 
             # Process tool calls
             history.append({"role": "assistant", "content": collected_content})
+            self._persist_message(sid, "assistant", collected_content)
             tool_results = []
 
             for tool_block in tool_use_blocks:
@@ -326,5 +353,6 @@ class AgentRunner:
                 )
 
             history.append({"role": "user", "content": tool_results})
+            self._persist_message(sid, "user", tool_results)
 
         yield AgentEvent(type="done")

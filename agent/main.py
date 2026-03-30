@@ -84,3 +84,20 @@ def reject_request(request_id: str):
             status_code=404, detail="Approval request not found or already resolved"
         )
     return asdict(req)
+
+
+@app.get("/api/sessions")
+def list_sessions():
+    """List all sessions with metadata."""
+    return runner.session_store.list_sessions()
+
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: str):
+    """Delete a session and all its messages."""
+    deleted = runner.session_store.delete_session(session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    # Also clear from cache
+    runner._session_cache.pop(session_id, None)
+    return {"status": "deleted", "session_id": session_id}

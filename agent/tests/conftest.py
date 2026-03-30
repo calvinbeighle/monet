@@ -1,6 +1,8 @@
 """Shared test fixtures for the Monet agent backend."""
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from typing import Generator
 from unittest.mock import MagicMock, patch
@@ -10,6 +12,7 @@ import pytest
 from agent.approval import ApprovalGate
 from agent.router import IntentRouter
 from agent.runner import AgentRunner
+from agent.session_store import SessionStore
 
 
 @dataclass
@@ -67,9 +70,21 @@ def mock_anthropic_client():
 
 
 @pytest.fixture
-def runner(approval_gate, mock_anthropic_client):
-    """Create an AgentRunner with mocked Anthropic client."""
+def session_store():
+    """Create a session store backed by a temporary database."""
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        yield SessionStore(db_path=path)
+    finally:
+        os.unlink(path)
+
+
+@pytest.fixture
+def runner(approval_gate, mock_anthropic_client, session_store):
+    """Create an AgentRunner with mocked Anthropic client and temp session store."""
     return AgentRunner(
         approval_gate=approval_gate,
         client=mock_anthropic_client,
+        session_store=session_store,
     )

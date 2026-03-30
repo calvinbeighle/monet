@@ -6,7 +6,7 @@ from dataclasses import asdict
 import pytest
 from fastapi.testclient import TestClient
 
-from agent.main import app, approval_gate
+from agent.main import app, approval_gate, runner
 from agent.models import ApprovalStatus
 
 
@@ -114,3 +114,26 @@ class TestStreamEndpoint:
 
         last = json.loads(lines[-1])
         assert last["type"] == "done"
+
+
+class TestSessionEndpoints:
+    def test_list_sessions(self, client):
+        response = client.get("/api/sessions")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    def test_delete_nonexistent_session(self, client):
+        response = client.delete("/api/sessions/nonexistent")
+        assert response.status_code == 404
+
+    def test_delete_existing_session(self, client):
+        # Create a session via the store
+        runner.session_store.create_session("test-delete-sess")
+        runner.session_store.append_message("test-delete-sess", "user", "hello")
+
+        response = client.delete("/api/sessions/test-delete-sess")
+        assert response.status_code == 200
+        assert response.json()["status"] == "deleted"
+
+        # Verify it's gone
+        assert not runner.session_store.session_exists("test-delete-sess")
