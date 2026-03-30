@@ -1,61 +1,80 @@
 /**
  * App.tsx
  * Root layout component for the Monet application.
- * No sidebar, no top bar, no fake loading screen.
- * Just renders the active view full-screen.
- * AiLoader is an overlay shown only when isLoading is true in the store.
+ *
+ * ONE interface. The home screen is always visible.
+ * Decision views (tinder/diff/whiteboard) render as modal overlays on top.
+ * Chat responses appear inline on the home screen - no navigation needed.
  */
 import { useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { HomeView } from '@/views/HomeView';
-import { ChatView } from '@/views/ChatView';
 import { TinderView } from '@/views/TinderView';
 import { DiffView } from '@/views/DiffView';
 import { WhiteboardView } from '@/views/WhiteboardView';
 import { useAppStore } from '@/stores/appStore';
-import type { ActiveView } from '@/types';
-
-/** Map of view names to their React components */
-const VIEW_COMPONENTS: Record<ActiveView, React.ReactNode> = {
-  home: <HomeView />,
-  monitor: <HomeView />, // monitor is folded into home (agent cards on home screen)
-  chat: <ChatView />,
-  tinder: <TinderView />,
-  diff: <DiffView />,
-  whiteboard: <WhiteboardView />,
-};
 
 /**
- * Renders the currently active view based on the store state.
- * Wrapped in AnimatePresence for smooth view transitions.
+ * Renders the active decision overlay as a dark modal on top of the home screen.
+ * The home screen remains visible (blurred) behind the overlay.
+ * Clicking the backdrop does not close the overlay - use the Back button inside.
  */
-function ActiveViewRenderer() {
-  const { activeView } = useAppStore();
-  const content = VIEW_COMPONENTS[activeView] ?? <HomeView />;
+function OverlayRenderer() {
+  const { overlayView } = useAppStore();
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={activeView}
-        className="w-full h-full"
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -6 }}
-        transition={{ duration: 0.2, ease: 'easeOut' }}
-      >
-        {content}
-      </motion.div>
+    <AnimatePresence>
+      {overlayView && (
+        <motion.div
+          key={overlayView}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            background: 'rgba(0,0,0,0.85)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: 12 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            style={{
+              width: '100%',
+              height: '100%',
+              maxWidth: '900px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              borderRadius: '16px',
+              background: '#000000',
+              border: '1px solid rgba(255,255,255,0.07)',
+              boxShadow: '0 32px 80px rgba(0,0,0,0.8)',
+            }}
+          >
+            {overlayView === 'tinder' && <TinderView />}
+            {overlayView === 'diff' && <DiffView />}
+            {overlayView === 'whiteboard' && <WhiteboardView />}
+          </motion.div>
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }
 
 /**
  * Root App component.
- * Full-screen view container with an overlay AiLoader that appears
- * only when isLoading is true in the Zustand store.
- *
- * Starts background polling of /agents and /decisions on mount so agent
- * cards show live decision counts without requiring manual refresh.
+ * Renders the home screen full-screen at all times.
+ * Decision views layer on top as modals via OverlayRenderer.
+ * Starts background polling on mount to keep agent cards live.
  */
 function App() {
   const { startPolling } = useAppStore();
@@ -67,7 +86,11 @@ function App() {
 
   return (
     <div className="w-full h-full overflow-hidden" style={{ background: '#000000' }}>
-      <ActiveViewRenderer />
+      {/* Home screen - always rendered, always visible */}
+      <HomeView />
+
+      {/* Decision overlays - rendered on top of the home screen */}
+      <OverlayRenderer />
     </div>
   );
 }

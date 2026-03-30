@@ -161,7 +161,7 @@ async function sendLiveTriageAction(
  * send/skip actions to the appropriate backend endpoint.
  */
 export function TinderView() {
-  const { setActiveView, refreshAgents, refreshDecisions } = useAppStore();
+  const { setOverlayView, refreshAgents, refreshDecisions } = useAppStore();
 
   const [cards, setCards] = useState<EmailCard[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -269,7 +269,7 @@ export function TinderView() {
       {/* Top bar - back button and progress counter */}
       <div className="flex items-center justify-between px-6 pt-5 pb-0 shrink-0">
         <button
-          onClick={() => setActiveView('home')}
+          onClick={() => setOverlayView(null)}
           className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
         >
           <ArrowLeft size={15} strokeWidth={1.5} />
@@ -329,7 +329,7 @@ export function TinderView() {
             <Button
               variant="outline"
               className="mt-4"
-              onClick={() => setActiveView('home')}
+              onClick={() => setOverlayView(null)}
             >
               Back to home
             </Button>

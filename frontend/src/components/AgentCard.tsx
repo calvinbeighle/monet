@@ -26,7 +26,7 @@ interface AgentCardProps {
  * Very thin borders, no glows, no shadows.
  */
 export function AgentCard({ agent }: AgentCardProps) {
-  const { setActiveView } = useAppStore();
+  const { setOverlayView } = useAppStore();
 
   const hasDecisions = Boolean(agent.decisionCount && agent.decisionCount > 0);
   const isClickable = hasDecisions;
@@ -37,8 +37,8 @@ export function AgentCard({ agent }: AgentCardProps) {
 
   function handleClick() {
     if (!isClickable) return;
-    const view = agent.decisionView ?? 'chat';
-    setActiveView(view);
+    const view = (agent.decisionView as 'tinder' | 'diff' | 'whiteboard') ?? 'tinder';
+    setOverlayView(view);
   }
 
   return (

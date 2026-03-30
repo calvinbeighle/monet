@@ -1,6 +1,6 @@
 /**
  * views/HomeView.tsx
- * Main home screen with two layout modes, styled to match DIA browser exactly.
+ * The ONLY screen in Monet. Everything happens here.
  *
  * Idle (no active agents, no decisions):
  *   - Pure black background (#000000)
@@ -14,17 +14,22 @@
  *
  * Active (any agent running or has decisions):
  *   - Agent cards in a centered row in DIA's minimal card style
- *   - Command bar fixed at bottom with fade gradient
+ *   - Command bar below cards
+ *
+ * Chat is inline - responses stream directly below the command bar (DIA style).
+ * Decision views (tinder/diff/whiteboard) open as modal overlays - see App.tsx.
  *
  * Uses Framer Motion AnimatePresence for transitions.
  */
+import { useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, X } from 'lucide-react';
 import { AgentOrbitWithSuspense } from '@/components/AgentOrbit';
 import { CommandBar } from '@/components/CommandBar';
 import { AgentCard } from '@/components/AgentCard';
 import { useAppStore } from '@/stores/appStore';
 import type { Agent } from '@/types';
+import type { InlineChatMessage } from '@/stores/appStore';
 
 /**
  * Maps agent IDs to a dot color for suggestion rows.
@@ -147,18 +152,86 @@ function SuggestionRow({ agent, onClick }: SuggestionRowProps) {
 }
 
 /**
- * HomeView renders the adaptive home screen.
+ * A blinking cursor appended to streaming assistant messages in inline chat.
+ */
+function StreamingCursor() {
+  return (
+    <motion.span
+      className="inline-block w-[2px] h-[1em] bg-violet-400 ml-[1px] align-middle"
+      animate={{ opacity: [1, 0, 1] }}
+      transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+    />
+  );
+}
+
+interface InlineChatMessageRowProps {
+  message: InlineChatMessage;
+}
+
+/**
+ * Renders a single inline chat message in DIA/terminal style.
+ * User messages: "You: " prefix in zinc-500, text in white.
+ * Assistant messages: "monet: " prefix in violet-400, text in zinc-300.
+ * No bubbles - just prefixed text for a clean minimal look.
+ */
+function InlineChatMessageRow({ message }: InlineChatMessageRowProps) {
+  const isUser = message.role === 'user';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      style={{
+        width: '580px',
+        padding: '4px 0',
+        lineHeight: '1.6',
+        fontSize: '14px',
+        letterSpacing: '-0.01em',
+      }}
+    >
+      <span style={{ color: isUser ? 'rgba(161,161,170,0.7)' : '#a78bfa', marginRight: '6px', fontWeight: 500 }}>
+        {isUser ? 'You:' : 'monet:'}
+      </span>
+      <span style={{ color: isUser ? '#ffffff' : 'rgba(228,228,231,0.85)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        {message.text}
+        {message.isStreaming && message.text.length > 0 && <StreamingCursor />}
+        {message.isStreaming && message.text.length === 0 && (
+          <motion.span
+            style={{ color: 'rgba(161,161,170,0.5)', fontSize: '12px' }}
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            thinking...
+          </motion.span>
+        )}
+      </span>
+    </motion.div>
+  );
+}
+
+/**
+ * HomeView renders the adaptive home screen - the ONLY screen in Monet.
  * commandBarPosition derives whether agents are active.
  */
 export function HomeView() {
-  const { agents, commandBarPosition, setActiveView } = useAppStore();
+  const { agents, setOverlayView, inlineChatMessages, clearInlineChat } = useAppStore();
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const isActive = commandBarPosition === 'bottom';
+  // Always show agent cards if agents exist - idle orbit only on first load with no agents
+  const hasAgents = agents.length > 0;
+  const isActive = hasAgents;
+  const hasChatMessages = inlineChatMessages.length > 0;
 
   /** Agents that have pending decisions - used for suggestion rows in idle state */
   const agentsWithDecisions = agents.filter(
     (a) => a.decisionCount && a.decisionCount > 0
   ).slice(0, 4);
+
+  // Auto-scroll to the latest chat message when new messages arrive
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [inlineChatMessages]);
 
   return (
     <div
@@ -176,7 +249,7 @@ export function HomeView() {
         {isActive ? (
           /* ------------------------------------------------------------------ */
           /* Active layout                                                        */
-          /* Cards + command bar as ONE centered group                            */
+          /* Cards + scrollable chat area + command bar as ONE centered group    */
           /* ------------------------------------------------------------------ */
           <motion.div
             key="active"
@@ -188,9 +261,11 @@ export function HomeView() {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              justifyContent: 'center',
+              justifyContent: hasChatMessages ? 'flex-start' : 'center',
               width: '100%',
               height: '100%',
+              paddingTop: hasChatMessages ? '32px' : '0',
+              overflow: 'hidden',
             }}
           >
             {/* Agent cards row */}
@@ -202,7 +277,8 @@ export function HomeView() {
                 justifyContent: 'center',
                 flexWrap: 'wrap',
                 padding: '0 32px',
-                marginBottom: '40px',
+                marginBottom: hasChatMessages ? '24px' : '40px',
+                flexShrink: 0,
               }}
             >
               {agents.map((agent) => (
@@ -210,12 +286,71 @@ export function HomeView() {
               ))}
             </div>
 
-            {/* Command bar inline below cards */}
-            <CommandBar position="center" />
-
-            {/* Suggestion rows below command bar */}
+            {/* Inline chat messages - scrollable area between cards and command bar */}
             <AnimatePresence>
-              {agentsWithDecisions.length > 0 && (
+              {hasChatMessages && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{
+                    flex: 1,
+                    width: '580px',
+                    overflowY: 'auto',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    paddingBottom: '8px',
+                  }}
+                >
+                  {inlineChatMessages.map((msg) => (
+                    <InlineChatMessageRow key={msg.id} message={msg} />
+                  ))}
+                  <div ref={chatEndRef} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Command bar inline below cards (or below chat) */}
+            <div style={{ flexShrink: 0, marginTop: hasChatMessages ? '8px' : '0' }}>
+              <CommandBar position="center" />
+            </div>
+
+            {/* Clear chat button - shown when there are messages */}
+            <AnimatePresence>
+              {hasChatMessages && (
+                <motion.button
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.15 }}
+                  onClick={clearInlineChat}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    marginTop: '10px',
+                    fontSize: '12px',
+                    color: 'rgba(161,161,170,0.4)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    transition: 'color 0.1s ease',
+                    flexShrink: 0,
+                  }}
+                  whileHover={{ color: 'rgba(161,161,170,0.8)' } as any}
+                >
+                  <X size={11} strokeWidth={1.5} />
+                  clear
+                </motion.button>
+              )}
+            </AnimatePresence>
+
+            {/* Suggestion rows below command bar - only when no chat messages */}
+            <AnimatePresence>
+              {agentsWithDecisions.length > 0 && !hasChatMessages && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -226,6 +361,7 @@ export function HomeView() {
                     flexDirection: 'column',
                     marginTop: '8px',
                     width: '580px',
+                    flexShrink: 0,
                   }}
                 >
                   {agentsWithDecisions.map((agent, idx) => (
@@ -235,7 +371,7 @@ export function HomeView() {
                       )}
                       <SuggestionRow
                         agent={agent}
-                        onClick={() => setActiveView(agent.decisionView ?? 'chat')}
+                        onClick={() => setOverlayView((agent.decisionView as 'tinder' | 'diff' | 'whiteboard') ?? 'tinder')}
                       />
                     </div>
                   ))}
@@ -317,7 +453,7 @@ export function HomeView() {
                       )}
                       <SuggestionRow
                         agent={agent}
-                        onClick={() => setActiveView(agent.decisionView ?? 'chat')}
+                        onClick={() => setOverlayView((agent.decisionView as 'tinder' | 'diff' | 'whiteboard') ?? 'tinder')}
                       />
                     </div>
                   ))}

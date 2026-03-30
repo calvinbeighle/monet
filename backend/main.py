@@ -49,6 +49,7 @@ from models import (
 from router import classify_intent
 from decision_queue import decision_queue, Decision
 from scheduler import AgentScheduler
+from activity import activity_log
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -150,15 +151,114 @@ async def health_check() -> dict[str, Any]:
     }
 
 
+# --- Activity ---
+
+@app.get("/activity")
+async def get_activity(agent_id: str | None = None) -> list[dict[str, Any]]:
+    """
+    Returns recent activity steps from background agents.
+
+    Args:
+        agent_id: Optional filter - if provided, only steps for this agent are returned.
+
+    Returns:
+        List of activity step dicts, ordered oldest to most recent (limit 10).
+    """
+    return activity_log.get_recent(agent_id=agent_id)
+
+
+@app.get("/activity/current")
+async def get_current_activity() -> dict[str, Any]:
+    """
+    Returns the most recent step for each known agent.
+
+    Used by the frontend to show live 'what is this agent doing right now' data
+    on agent cards and in the orchestrator chat system prompt.
+
+    Returns:
+        Dict keyed by agent_id with the current step payload, or null if idle.
+    """
+    return {
+        "email": activity_log.get_current("email"),
+        "code": activity_log.get_current("code"),
+        "planning": activity_log.get_current("planning"),
+    }
+
+
 # --- Chat ---
+
+def _build_chat_system_prompt() -> str:
+    """
+    Builds a live-context system prompt for the orchestrator chat.
+
+    Pulls current agent status, decision counts, and active step details
+    from the live data stores so the LLM can answer questions about what
+    is happening right now with real data rather than generic answers.
+
+    Returns:
+        Formatted system prompt string with current agent and decision context.
+    """
+    scheduler: AgentScheduler | None = None
+    try:
+        scheduler = app.state.scheduler
+    except AttributeError:
+        pass
+
+    # Agent personality config - mirrors the /agents endpoint
+    _agent_meta: dict[str, str] = {
+        "email": "Email Agent",
+        "code": "Code Agent",
+        "planning": "Planning Agent",
+    }
+
+    agents_status: list[str] = []
+    for agent_id, agent_name in _agent_meta.items():
+        pending_count = decision_queue.get_pending_count(agent_id)
+        is_running = scheduler.is_running(agent_id) if scheduler else False
+        status = "running" if is_running else "idle"
+
+        line = f"- {agent_name}: {status}"
+        if pending_count > 0:
+            line += f" ({pending_count} decision{'s' if pending_count != 1 else ''} pending)"
+
+        current = activity_log.get_current(agent_id)
+        if current and is_running:
+            line += f" - currently: {current['detail']}"
+
+        agents_status.append(line)
+
+    pending = decision_queue.get_pending()
+    decision_summaries: list[str] = []
+    for d in pending[:5]:
+        decision_summaries.append(f"- [{d.agent_id}] {d.title}: {d.summary}")
+
+    agents_block = "\n".join(agents_status) if agents_status else "- No agents available"
+    decisions_block = "\n".join(decision_summaries) if decision_summaries else "- None"
+
+    return (
+        "You are Monet, an AI orchestrator that manages sub-agents for a startup founder.\n\n"
+        f"Current agent status:\n{agents_block}\n\n"
+        f"Pending decisions ({len(pending)} total):\n{decisions_block}\n\n"
+        "You can:\n"
+        "1. Answer questions about what agents are doing or what decisions are pending\n"
+        "2. Delegate tasks - say you will have an agent handle it\n"
+        "3. Provide insights from agent data\n"
+        "4. Help the user work through pending decisions\n\n"
+        "Be concise. Speak in first person as Monet. Reference specific agent data when relevant. "
+        "Do not make up data - only reference what is in the context above. "
+        "Never use em dashes - use hyphens instead."
+    )
+
 
 @app.post("/chat")
 async def chat(data: dict) -> EventSourceResponse:
     """
-    Streams a Claude response for a general chat message.
+    Streams a Claude response for an orchestrator chat message.
 
-    Uses Claude Haiku for speed and low cost. Returns an SSE stream with
-    named 'text' events as tokens arrive and a final 'done' event.
+    Builds a live system prompt from current agent status and pending decisions
+    so the LLM can answer questions about agent activity with real data.
+    Uses Claude Haiku for speed. Returns an SSE stream with named 'text' events
+    as tokens arrive and a final 'done' event.
     Supports multi-turn context via the optional 'history' field.
 
     Args:
@@ -178,6 +278,7 @@ async def chat(data: dict) -> EventSourceResponse:
     history: list[dict] = data.get("history", [])
     messages = [*history, {"role": "user", "content": user_text}]
 
+    system_prompt = _build_chat_system_prompt()
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
     async def generate() -> AsyncGenerator[dict[str, str], None]:
@@ -187,10 +288,7 @@ async def chat(data: dict) -> EventSourceResponse:
                 model=config.HAIKU_MODEL,
                 max_tokens=1024,
                 messages=messages,
-                system=(
-                    "You are Monet, a helpful AI assistant for startup founders. "
-                    "Be concise and direct. No fluff."
-                ),
+                system=system_prompt,
             ) as stream:
                 for text_chunk in stream.text_stream:
                     yield {"event": "text", "data": json.dumps({"text": text_chunk})}
@@ -639,6 +737,12 @@ async def list_agents() -> dict[str, Any]:
                 hours = minutes // 60
                 last_run_str = f"{hours}hr ago"
 
+        # Enrich with live activity data so the agent card can show "what is happening right now"
+        current_activity = activity_log.get_current(agent_id)
+        current_step_label = current_activity["label"] if current_activity and status == "running" else None
+        current_detail = current_activity["detail"] if current_activity and status == "running" else None
+        progress = current_activity["progress"] if current_activity and status == "running" else None
+
         agents_out.append({
             "id": agent_id,
             "name": meta["name"],
@@ -649,6 +753,9 @@ async def list_agents() -> dict[str, Any]:
             "mood": mood,
             "lastRun": last_run_str,
             "summary": runner_agent.summary if runner_agent else None,
+            "currentStep": current_step_label,
+            "currentDetail": current_detail,
+            "progress": progress,
         })
 
     return {"agents": agents_out}

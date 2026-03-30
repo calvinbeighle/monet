@@ -22,6 +22,8 @@ export interface Agent {
   progress?: number;
   /** Current step label shown while running, e.g. "reading inbox" */
   currentStep?: string;
+  /** Specific detail about what the agent is doing right now, e.g. "Drafting reply to Sarah Chen" */
+  currentDetail?: string;
   /** Number of pending decisions this agent has generated */
   decisionCount?: number;
   /** Which decision view to open when clicking this agent */
@@ -68,6 +70,9 @@ export interface ActivityEvent {
 
 /** All possible view identifiers */
 export type ActiveView = 'home' | 'monitor' | 'chat' | 'tinder' | 'diff' | 'whiteboard';
+
+/** Decision overlay views - rendered as modals on top of the home screen */
+export type OverlayView = 'tinder' | 'diff' | 'whiteboard';
 
 /** Where the command bar is anchored */
 export type CommandBarPosition = 'center' | 'bottom';

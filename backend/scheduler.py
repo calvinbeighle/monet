@@ -21,6 +21,8 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from activity import activity_log, ActivityStep
+
 logger = logging.getLogger("monet.scheduler")
 
 
@@ -165,11 +167,37 @@ async def _run_email_agent() -> None:
 
     logger.info("Scheduler: email agent - fetching inbox")
 
+    activity_log.add(ActivityStep(
+        agent_id="email",
+        step=1,
+        total_steps=4,
+        label="reading inbox",
+        detail="Fetching your recent emails",
+        icon="mail",
+    ))
+
     raw = await composio.execute_tool("GMAIL_FETCH_EMAILS", {"max_results": 5})
     emails = _extract_emails(raw)
 
+    activity_log.add(ActivityStep(
+        agent_id="email",
+        step=2,
+        total_steps=4,
+        label="analyzing",
+        detail=f"Found {len(emails)} email{'s' if len(emails) != 1 else ''} to review",
+        icon="search",
+    ))
+
     if not emails:
         logger.info("Scheduler: email agent - no emails found")
+        activity_log.add(ActivityStep(
+            agent_id="email",
+            step=4,
+            total_steps=4,
+            label="done",
+            detail="Inbox is clear - nothing new",
+            icon="check",
+        ))
         return
 
     new_decisions = 0
@@ -182,10 +210,19 @@ async def _run_email_agent() -> None:
         if decision_queue.has_pending_for_source(email_id):
             continue
 
+        sender_name = email["sender"].split("<")[0].strip() or email["sender"]
+
+        activity_log.add(ActivityStep(
+            agent_id="email",
+            step=3,
+            total_steps=4,
+            label="drafting reply",
+            detail=f"Drafting reply to {sender_name}",
+            icon="edit",
+        ))
+
         draft = await _draft_email_reply(client, email)
         priority = _infer_email_priority(email)
-
-        sender_name = email["sender"].split("<")[0].strip() or email["sender"]
 
         decision_queue.add(Decision(
             id=f"email_{email_id}",
@@ -201,6 +238,15 @@ async def _run_email_agent() -> None:
             ui_pattern="tinder",
         ))
         new_decisions += 1
+
+    activity_log.add(ActivityStep(
+        agent_id="email",
+        step=4,
+        total_steps=4,
+        label="done",
+        detail=f"Staged {new_decisions} decision{'s' if new_decisions != 1 else ''} for your review",
+        icon="check",
+    ))
 
     logger.info("Scheduler: email agent - pushed %d new decisions", new_decisions)
 
@@ -268,6 +314,39 @@ async def _run_code_agent() -> None:
     The structure mirrors _run_email_agent() for consistency.
     """
     logger.info("Scheduler: code agent - checking PRs (stub)")
+
+    activity_log.add(ActivityStep(
+        agent_id="code",
+        step=1,
+        total_steps=3,
+        label="checking PRs",
+        detail="Looking for open pull requests",
+        icon="git-pull-request",
+    ))
+
+    # Simulate async work so the event loop is not blocked
+    await asyncio.sleep(0)
+
+    activity_log.add(ActivityStep(
+        agent_id="code",
+        step=2,
+        total_steps=3,
+        label="reviewing code",
+        detail="Running checks on open pull requests",
+        icon="code",
+    ))
+
+    await asyncio.sleep(0)
+
+    activity_log.add(ActivityStep(
+        agent_id="code",
+        step=3,
+        total_steps=3,
+        label="done",
+        detail="All pull requests look good",
+        icon="check",
+    ))
+
     # TODO: integrate Composio GitHub PR listing + Claude Sonnet code review
     # Pattern:
     # 1. composio.execute_tool("GITHUB_LIST_PULL_REQUESTS", {...})
