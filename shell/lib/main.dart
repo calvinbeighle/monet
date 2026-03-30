@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'services/agent_client.dart';
+import 'ui/approval_overlay.dart';
 import 'ui/patterns/chat.dart';
 import 'ui/patterns/diff.dart';
 import 'ui/patterns/tinder.dart';
@@ -44,15 +45,16 @@ class MonetShell extends StatefulWidget {
   const MonetShell({super.key});
 
   @override
-  State<MonetShell> createState() => _MonetShellState();
+  State<MonetShell> createState() => MonetShellState();
 }
 
-class _MonetShellState extends State<MonetShell> {
+class MonetShellState extends State<MonetShell> {
   final TextEditingController _intentController = TextEditingController();
 
   String? _activePattern;
   String? _activeAgent;
   bool _isRunning = false;
+  String? _sessionId;
 
   // Chat state
   final List<ChatMessage> _chatMessages = [];
@@ -67,6 +69,9 @@ class _MonetShellState extends State<MonetShell> {
 
   // Whiteboard state
   List<WhiteboardNode> _whiteboardNodes = [];
+
+  // Pending approvals mapped by approval ID
+  final List<_PendingApproval> _pendingApprovals = [];
 
   StreamSubscription<AgentEvent>? _streamSub;
 
@@ -92,20 +97,35 @@ class _MonetShellState extends State<MonetShell> {
     String streamedContent = '';
 
     _streamSub?.cancel();
-    _streamSub = client.stream(intent).listen(
+    _streamSub = client.stream(intent, sessionId: _sessionId).listen(
       (event) {
-        setState(() {
-          switch (event.type) {
-            case 'routing':
+        switch (event.type) {
+          case 'routing':
+            setState(() {
               _activePattern = event.metadata['ui_pattern'] as String?;
               _activeAgent = event.metadata['agent'] as String?;
-            case 'token':
-              streamedContent += event.data;
-            case 'tool_call':
-              break;
-            case 'approval_request':
-              break;
-            case 'done':
+              _sessionId ??= event.metadata['session_id'] as String?;
+            });
+          case 'token':
+            streamedContent += event.data;
+          case 'tool_call':
+            final toolName = event.data;
+            setState(() {
+              _chatMessages.add(
+                ChatMessage(
+                  content: 'Using tool: ${toolName.replaceAll('_', ' ')}',
+                  isUser: false,
+                  isSystem: true,
+                ),
+              );
+            });
+          case 'approval_request':
+            final approvalId = event.metadata['approval_id'] as String? ?? '';
+            final toolName = event.data;
+            final parameters = event.metadata['parameters'] as Map<String, dynamic>? ?? {};
+            _showApprovalDialog(approvalId, toolName, parameters);
+          case 'done':
+            setState(() {
               _chatStreaming = false;
               _isRunning = false;
               if (streamedContent.isNotEmpty) {
@@ -114,8 +134,8 @@ class _MonetShellState extends State<MonetShell> {
                 );
               }
               _applyPatternData(event.metadata);
-          }
-        });
+            });
+        }
       },
       onError: (error) {
         setState(() {
@@ -135,6 +155,30 @@ class _MonetShellState extends State<MonetShell> {
     );
   }
 
+  void _showApprovalDialog(
+    String approvalId,
+    String toolName,
+    Map<String, dynamic> parameters,
+  ) {
+    final client = context.read<AgentClient>();
+    _pendingApprovals.add(_PendingApproval(
+      id: approvalId,
+      toolName: toolName,
+      parameters: parameters,
+    ));
+
+    ApprovalOverlay.show(
+      context: context,
+      toolName: toolName,
+      parameters: parameters,
+      approvalId: approvalId,
+      client: client,
+      onResolved: () {
+        _pendingApprovals.removeWhere((a) => a.id == approvalId);
+      },
+    );
+  }
+
   void _applyPatternData(Map<String, dynamic> metadata) {
     final outputs = metadata['outputs'] as List<dynamic>? ?? [];
 
@@ -146,6 +190,7 @@ class _MonetShellState extends State<MonetShell> {
                       o['content'] as String? ??
                       '',
                   body: o['body'] as String? ?? o['content'] as String? ?? '',
+                  metadata: o,
                 ))
             .toList();
       case 'diff':
@@ -183,6 +228,35 @@ class _MonetShellState extends State<MonetShell> {
       default:
         return DiffType.unchanged;
     }
+  }
+
+  void _handleTinderDecision(int index, bool approved) {
+    final client = context.read<AgentClient>();
+    // If the card has an approval_id in its metadata, resolve it on the backend
+    if (index < _tinderCards.length) {
+      final card = _tinderCards[index];
+      final approvalId = card.metadata['approval_id'] as String?;
+      if (approvalId != null) {
+        if (approved) {
+          client.approve(approvalId);
+        } else {
+          client.reject(approvalId);
+        }
+      }
+    }
+  }
+
+  void _handleDiffDecision(bool approved) {
+    final client = context.read<AgentClient>();
+    // Resolve all pending approvals for the current session
+    for (final pending in List.of(_pendingApprovals)) {
+      if (approved) {
+        client.approve(pending.id);
+      } else {
+        client.reject(pending.id);
+      }
+    }
+    _pendingApprovals.clear();
   }
 
   @override
@@ -262,12 +336,12 @@ class _MonetShellState extends State<MonetShell> {
       case 'tinder':
         return TinderPattern(
           cards: _tinderCards,
-          onDecision: (index, approved) {},
+          onDecision: _handleTinderDecision,
         );
       case 'diff':
         return DiffPattern(
           lines: _diffLines,
-          onDecision: (approved) {},
+          onDecision: _handleDiffDecision,
         );
       case 'whiteboard':
         return WhiteboardPattern(
@@ -285,4 +359,16 @@ class _MonetShellState extends State<MonetShell> {
         );
     }
   }
+}
+
+class _PendingApproval {
+  final String id;
+  final String toolName;
+  final Map<String, dynamic> parameters;
+
+  _PendingApproval({
+    required this.id,
+    required this.toolName,
+    required this.parameters,
+  });
 }

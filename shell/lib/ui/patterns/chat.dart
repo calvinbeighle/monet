@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 class ChatMessage {
   final String content;
   final bool isUser;
+  final bool isSystem;
   final DateTime timestamp;
   final String? id;
 
   ChatMessage({
     required this.content,
     required this.isUser,
+    this.isSystem = false,
     DateTime? timestamp,
     this.id,
   }) : timestamp = timestamp ?? DateTime.now();
@@ -96,6 +98,10 @@ class ChatPatternState extends State<ChatPattern> {
   }
 
   Widget _buildBubble(ChatMessage message) {
+    if (message.isSystem) {
+      return _buildSystemMessage(message);
+    }
+
     final isUser = message.isUser;
     final maxWidth = MediaQuery.of(context).size.width * 0.65;
 
@@ -129,6 +135,36 @@ class ChatPatternState extends State<ChatPattern> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSystemMessage(ChatMessage message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.build_outlined, size: 14, color: Colors.white.withValues(alpha: 0.4)),
+              const SizedBox(width: 6),
+              Text(
+                message.content,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

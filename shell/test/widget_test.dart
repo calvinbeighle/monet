@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shell/main.dart';
 import 'package:shell/services/agent_client.dart';
+import 'package:shell/ui/approval_overlay.dart';
 import 'package:shell/ui/patterns/tinder.dart';
 import 'package:shell/ui/patterns/chat.dart';
 import 'package:shell/ui/patterns/diff.dart';
@@ -134,6 +135,59 @@ void main() {
       final undoButton = find.byIcon(Icons.undo);
       expect(undoButton, findsOneWidget);
     });
+
+    testWidgets('calls onDecision when swiped right', (tester) async {
+      int? decidedIndex;
+      bool? decidedApproved;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: TinderPattern(
+            cards: [
+              TinderCard(title: 'Card 1', body: 'Body'),
+              TinderCard(title: 'Card 2', body: 'Body'),
+            ],
+            onDecision: (index, approved) {
+              decidedIndex = index;
+              decidedApproved = approved;
+            },
+          ),
+        ),
+      ));
+
+      // Swipe right past threshold (100px)
+      final card = find.text('Card 1');
+      await tester.drag(card, const Offset(150, 0));
+      await tester.pumpAndSettle();
+
+      expect(decidedIndex, 0);
+      expect(decidedApproved, true);
+    });
+
+    testWidgets('calls onDecision when swiped left', (tester) async {
+      int? decidedIndex;
+      bool? decidedApproved;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: TinderPattern(
+            cards: [
+              TinderCard(title: 'Card 1', body: 'Body'),
+              TinderCard(title: 'Card 2', body: 'Body'),
+            ],
+            onDecision: (index, approved) {
+              decidedIndex = index;
+              decidedApproved = approved;
+            },
+          ),
+        ),
+      ));
+
+      final card = find.text('Card 1');
+      await tester.drag(card, const Offset(-150, 0));
+      await tester.pumpAndSettle();
+
+      expect(decidedIndex, 0);
+      expect(decidedApproved, false);
+    });
   });
 
   // -- ChatPattern tests --
@@ -206,6 +260,45 @@ void main() {
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
       expect(sentMessage, 'test message');
+    });
+
+    testWidgets('renders system messages with tool icon', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [
+              ChatMessage(
+                content: 'Using tool: list inbox',
+                isUser: false,
+                isSystem: true,
+              ),
+            ],
+          ),
+        ),
+      ));
+      expect(find.text('Using tool: list inbox'), findsOneWidget);
+      expect(find.byIcon(Icons.build_outlined), findsOneWidget);
+    });
+
+    testWidgets('system messages are centered', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [
+              ChatMessage(
+                content: 'System action',
+                isUser: false,
+                isSystem: true,
+              ),
+            ],
+          ),
+        ),
+      ));
+      // System messages use Center widget
+      expect(find.ancestor(
+        of: find.text('System action'),
+        matching: find.byType(Center),
+      ), findsWidgets);
     });
   });
 
@@ -398,6 +491,101 @@ void main() {
         ),
       ));
       expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+  });
+
+  // -- ApprovalOverlay tests --
+
+  group('ApprovalOverlay', () {
+    testWidgets('renders tool name and parameters', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => ApprovalOverlay(
+                    toolName: 'send_email',
+                    parameters: {'to': 'john@example.com', 'subject': 'Hello'},
+                    approvalId: 'test-123',
+                    client: AgentClient(),
+                    onResolved: () {},
+                  ),
+                );
+              },
+              child: const Text('Show'),
+            ),
+          ),
+        ),
+      ));
+
+      await tester.tap(find.text('Show'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Approval Required'), findsOneWidget);
+      expect(find.text('send email'), findsOneWidget);
+      expect(find.text('Approve'), findsOneWidget);
+      expect(find.text('Reject'), findsOneWidget);
+      expect(find.textContaining('john@example.com'), findsOneWidget);
+    });
+
+    testWidgets('renders shield icon', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => ApprovalOverlay(
+                    toolName: 'merge_pr',
+                    parameters: {},
+                    approvalId: 'test-456',
+                    client: AgentClient(),
+                    onResolved: () {},
+                  ),
+                );
+              },
+              child: const Text('Show'),
+            ),
+          ),
+        ),
+      ));
+
+      await tester.tap(find.text('Show'));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.shield_outlined), findsOneWidget);
+    });
+
+    testWidgets('shows formatted parameters', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (_) => ApprovalOverlay(
+                    toolName: 'archive_email',
+                    parameters: {},
+                    approvalId: 'test-789',
+                    client: AgentClient(),
+                    onResolved: () {},
+                  ),
+                );
+              },
+              child: const Text('Show'),
+            ),
+          ),
+        ),
+      ));
+
+      await tester.tap(find.text('Show'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('No parameters'), findsOneWidget);
     });
   });
 }
