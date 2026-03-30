@@ -133,12 +133,15 @@ var dom = {
   /* Chat */
   chatMessages:     $("chat-messages"),
   /* Tinder */
-  tinderCounter:    $("tinder-counter"),
-  tinderCard:       $("tinder-card"),
-  tinderCardTitle:  $("tinder-card-title"),
-  tinderCardBody:   $("tinder-card-body"),
-  tinderApprove:    $("tinder-approve"),
-  tinderReject:     $("tinder-reject"),
+  tinderCounter:      $("tinder-counter"),
+  tinderCard:         $("tinder-card"),
+  tinderCardLabel:    $("tinder-card-label"),
+  tinderCardSubtitle: $("tinder-card-subtitle"),
+  tinderCardTitle:    $("tinder-card-title"),
+  tinderCardBody:     $("tinder-card-body"),
+  tinderCommentary:   $("tinder-commentary"),
+  tinderApprove:      $("tinder-approve"),
+  tinderReject:       $("tinder-reject"),
   /* Diff */
   diffOriginal:     $("diff-original"),
   diffProposed:     $("diff-proposed"),
@@ -674,9 +677,13 @@ function showErrorInPattern(msg) {
     dom.chatMessages.appendChild(row);
     scrollChat();
   } else if (state.currentPattern === "tinder") {
+    dom.tinderCard.className = "";
+    dom.tinderCard.style.borderColor = "var(--error)";
+    dom.tinderCardLabel.textContent = "";
+    dom.tinderCardLabel.className = "";
+    dom.tinderCardSubtitle.textContent = "";
     dom.tinderCardTitle.textContent = "Error";
     dom.tinderCardBody.textContent = msg;
-    dom.tinderCard.style.borderColor = "var(--error)";
     dom.tinderCounter.textContent = "Something went wrong";
   } else if (state.currentPattern === "diff") {
     var errLine = document.createElement("div");
@@ -693,39 +700,116 @@ function showErrorInPattern(msg) {
    ========================================================= */
 
 /**
+ * Determine the card type ("email", "pr", "task", "item") from a raw item object.
+ * Used to set the label pill style and left border color.
+ *
+ * @param {object} item
+ * @param {string} [hint] - Optional hint from the wrapper key ("emails", "pull_requests", etc.)
+ * @returns {"email"|"pr"|"task"|"item"}
+ */
+function inferCardType(item, hint) {
+  if (hint === "emails" || hint === "messages") return "email";
+  if (hint === "pull_requests" || hint === "prs") return "pr";
+  if (hint === "tasks") return "task";
+  /* Guess from fields */
+  if (item.from || item.from_name || item.snippet) return "email";
+  if (item.head || item.base || item.number || item.merged) return "pr";
+  if (item.due_date || item.assignee) return "task";
+  return "item";
+}
+
+/**
+ * Build a display label string for a card type.
+ *
+ * @param {"email"|"pr"|"task"|"item"} cardType
+ * @returns {string}
+ */
+function cardTypeLabel(cardType) {
+  if (cardType === "email") return "Email";
+  if (cardType === "pr")    return "Pull Request";
+  if (cardType === "task")  return "Task";
+  return "Item";
+}
+
+/**
+ * Build a subtitle string (sender info or author) from a raw item.
+ *
+ * @param {object} item
+ * @param {"email"|"pr"|"task"|"item"} cardType
+ * @returns {string}
+ */
+function buildCardSubtitle(item, cardType) {
+  if (cardType === "email") {
+    var name  = item.from_name || item.sender_name || "";
+    var email = item.from      || item.sender      || "";
+    if (name && email) return name + " <" + email + ">";
+    if (email)         return email;
+    if (name)          return name;
+    return "";
+  }
+  if (cardType === "pr") {
+    var author = item.author || item.user || (item.user && item.user.login) || "";
+    var repo   = item.repo   || item.repository || "";
+    if (author && repo) return repo + " - by " + author;
+    if (author)         return "by " + author;
+    if (repo)           return repo;
+    return "";
+  }
+  return item.author || item.created_by || item.owner || "";
+}
+
+/**
  * Parse an agent text/tool_result blob and extract email or item cards.
  * Attempts JSON parsing first, then falls back to heuristic line parsing.
+ * Each card now carries: { title, subtitle, body, label, cardType, action_id, metadata }
  *
  * @param {string|object} raw - Agent text or parsed object
- * @returns {Array<{title: string, body: string, action_id?: string}>}
+ * @param {string} [hint] - Optional key hint ("emails", "pull_requests", etc.)
+ * @returns {Array<{title: string, subtitle: string, body: string, label: string, cardType: string, action_id?: string, metadata?: object}>}
  */
-function extractTinderCards(raw) {
+function extractTinderCards(raw, hint) {
   var cards = [];
 
   /* If raw is already an array (e.g. from a tool_result with a list) */
   if (Array.isArray(raw)) {
     raw.forEach(function(item) {
-      if (item && typeof item === "object") {
-        cards.push({
-          title:     item.subject || item.title || item.name || item.sender || "Item",
-          body:      item.snippet || item.body || item.description || item.content || JSON.stringify(item, null, 2),
-          action_id: item.id || item.action_id || null,
-        });
-      }
+      if (!item || typeof item !== "object") return;
+      var cardType = inferCardType(item, hint);
+      cards.push({
+        title:     item.subject || item.title || item.name || item.sender || "Item",
+        subtitle:  buildCardSubtitle(item, cardType),
+        body:      item.snippet || item.body || item.description || item.content || "",
+        label:     cardTypeLabel(cardType),
+        cardType:  cardType,
+        action_id: item.id || item.action_id || null,
+        metadata:  item,
+      });
     });
     return cards;
   }
 
-  /* If raw is a single object */
+  /* If raw is a single object - check for known wrapper keys first */
   if (raw && typeof raw === "object") {
-    /* Could be a messages wrapper { messages: [...] } */
-    var items = raw.messages || raw.emails || raw.items || raw.results || raw.pull_requests || null;
-    if (Array.isArray(items)) return extractTinderCards(items);
+    var emailItems = raw.emails || raw.messages;
+    var prItems    = raw.pull_requests || raw.prs;
+    var taskItems  = raw.tasks;
+    var genericItems = raw.items || raw.results;
 
+    if (Array.isArray(emailItems)) return extractTinderCards(emailItems, "emails");
+    if (Array.isArray(prItems))    return extractTinderCards(prItems,    "pull_requests");
+    if (Array.isArray(taskItems))  return extractTinderCards(taskItems,  "tasks");
+    if (Array.isArray(genericItems)) return extractTinderCards(genericItems, hint);
+
+    /* Single object as one card */
+    var cardType = inferCardType(raw, hint);
     cards.push({
       title:     raw.subject || raw.title || raw.name || raw.sender || "Item",
-      body:      raw.snippet || raw.body || raw.description || raw.content || JSON.stringify(raw, null, 2),
+      subtitle:  buildCardSubtitle(raw, cardType),
+      body:      raw.snippet || raw.body || raw.description || raw.content || "",
+      label:     cardTypeLabel(cardType),
+      cardType:  cardType,
       action_id: raw.id || raw.action_id || null,
+      metadata:  raw,
     });
     return cards;
   }
@@ -737,7 +821,7 @@ function extractTinderCards(raw) {
     /* Try full JSON parse */
     try {
       var parsed = JSON.parse(str);
-      return extractTinderCards(parsed);
+      return extractTinderCards(parsed, hint);
     } catch (e) {
       /* Not valid JSON */
     }
@@ -750,7 +834,7 @@ function extractTinderCards(raw) {
       if (!line) return;
       try {
         var obj = JSON.parse(line);
-        var c = extractTinderCards(obj);
+        var c = extractTinderCards(obj, hint);
         c.forEach(function(card) { cards.push(card); });
         foundJson = true;
       } catch (e) {
@@ -766,9 +850,15 @@ function extractTinderCards(raw) {
         var clean = m.replace(/^\d+\.\s+/, "").trim();
         var dashIdx = clean.indexOf(" - ");
         if (dashIdx > -1) {
-          cards.push({ title: clean.slice(0, dashIdx), body: clean.slice(dashIdx + 3) });
+          cards.push({
+            title:    clean.slice(0, dashIdx),
+            subtitle: "",
+            body:     clean.slice(dashIdx + 3),
+            label:    "Item",
+            cardType: "item",
+          });
         } else {
-          cards.push({ title: clean, body: "" });
+          cards.push({ title: clean, subtitle: "", body: "", label: "Item", cardType: "item" });
         }
       });
       return cards;
@@ -778,8 +868,11 @@ function extractTinderCards(raw) {
     if (str.length > 0) {
       var lines2 = str.split("\n").filter(function(l) { return l.trim(); });
       cards.push({
-        title: lines2[0] ? lines2[0].slice(0, 80) : "Item",
-        body:  lines2.slice(1).join("\n").trim() || str,
+        title:    lines2[0] ? lines2[0].slice(0, 80) : "Item",
+        subtitle: "",
+        body:     lines2.slice(1).join("\n").trim() || str,
+        label:    "Item",
+        cardType: "item",
       });
     }
   }
@@ -803,7 +896,8 @@ function enqueueTinderCard(data) {
 
 /**
  * Dequeue and display the next card in the tinder queue.
- * Shows "All done!" with a check mark when the queue is exhausted.
+ * Renders the rich card structure: label pill, subtitle, title, body snippet.
+ * Shows "All done!" summary when the queue is exhausted.
  */
 function showNextTinderCard() {
   /* Remove any lingering animation classes */
@@ -812,8 +906,15 @@ function showNextTinderCard() {
 
   if (state.tinder.queue.length === 0) {
     state.tinder.current = null;
+
+    /* Show completion state inside the card */
+    dom.tinderCard.className = ""; /* Reset type class */
+    dom.tinderCardLabel.textContent = "";
+    dom.tinderCardLabel.className = "";
+    dom.tinderCardSubtitle.textContent = "";
     dom.tinderCardTitle.textContent = "All done!";
-    dom.tinderCardBody.textContent = "You've reviewed all items.";
+    dom.tinderCardBody.textContent =
+      "Processed " + state.tinder.index + " item" + (state.tinder.index === 1 ? "" : "s") + ".";
     dom.tinderCounter.textContent = "\u2713 " + state.tinder.index + " reviewed";
     return;
   }
@@ -822,8 +923,21 @@ function showNextTinderCard() {
   state.tinder.current = card;
   state.tinder.index++;
 
+  /* Set card type class for left border and animation tints */
+  dom.tinderCard.className = card.cardType ? "card-type-" + card.cardType : "";
+
+  /* Label pill */
+  dom.tinderCardLabel.textContent = card.label || "";
+  dom.tinderCardLabel.className = card.cardType ? "label-" + card.cardType : "";
+
+  /* Subtitle (sender / author) */
+  dom.tinderCardSubtitle.textContent = card.subtitle || "";
+
+  /* Title (subject / PR title) */
   dom.tinderCardTitle.textContent = card.title || "";
-  renderMessageContent(dom.tinderCardBody, card.body || card.text || "");
+
+  /* Body snippet */
+  dom.tinderCardBody.textContent = card.body || "";
 
   var total = state.tinder.total || "?";
   dom.tinderCounter.textContent = state.tinder.index + " of " + total;
@@ -1196,10 +1310,15 @@ function appendStreamText(chunk) {
     case "tinder":
       /* Accumulate into buffer; cards are built from tool_result events */
       state._tinderBuffer = (state._tinderBuffer || "") + chunk;
-      /* Show partial content in the card body while streaming */
-      if (!state.tinder.current) {
+      /* If cards are already showing, route text to the commentary area below the card */
+      if (state.tinder.current || state.tinder.index > 0) {
+        dom.tinderCommentary.textContent = state._tinderBuffer.trim();
+      } else {
+        /* No cards yet - show a loading state */
+        dom.tinderCardLabel.textContent = "";
+        dom.tinderCardSubtitle.textContent = "";
         dom.tinderCardTitle.textContent = "Loading...";
-        renderMessageContent(dom.tinderCardBody, state._tinderBuffer);
+        dom.tinderCardBody.textContent = "";
       }
       break;
 
@@ -1258,11 +1377,15 @@ function clearPatternContent(pattern) {
       state.tinder.current = null;
       state.tinder.index = 0;
       state.tinder.total = 0;
-      dom.tinderCardTitle.textContent = "";
-      dom.tinderCardBody.innerHTML = "";
-      dom.tinderCounter.textContent = "";
-      dom.tinderCard.classList.remove("exit-left", "exit-right");
+      dom.tinderCard.className = "";
       dom.tinderCard.style.borderColor = "";
+      dom.tinderCardLabel.textContent = "";
+      dom.tinderCardLabel.className = "";
+      dom.tinderCardSubtitle.textContent = "";
+      dom.tinderCardTitle.textContent = "";
+      dom.tinderCardBody.textContent = "";
+      dom.tinderCommentary.textContent = "";
+      dom.tinderCounter.textContent = "";
       break;
     case "diff":
       dom.diffOriginal.innerHTML = "";
@@ -1421,14 +1544,20 @@ function handleDone() {
   hideThinking();
   hideApprovalModal();
 
-  /* Finalize tinder: if buffer has content and no cards were enqueued, parse it */
+  /* Finalize tinder: clear commentary, then if buffer has content and no cards were enqueued, parse it */
   if (state.currentPattern === "tinder") {
+    /* Clear commentary since streaming is done */
+    dom.tinderCommentary.textContent = "";
     if (state._tinderBuffer && state.tinder.queue.length === 0 && !state.tinder.current) {
       var cards = extractTinderCards(state._tinderBuffer);
       if (cards.length > 0) {
         state.tinder.total = cards.length;
         cards.forEach(function(c) { enqueueTinderCard(c); });
       } else {
+        dom.tinderCard.className = "";
+        dom.tinderCardLabel.textContent = "";
+        dom.tinderCardLabel.className = "";
+        dom.tinderCardSubtitle.textContent = "";
         dom.tinderCardTitle.textContent = "Done";
         dom.tinderCardBody.textContent = state._tinderBuffer.trim() || "Agent completed.";
         dom.tinderCounter.textContent = "Complete";
@@ -1710,6 +1839,132 @@ document.getElementById("conn-status").addEventListener("click", function() {
 });
 
 /* =========================================================
+   Integrations - connection status + OAuth flow
+   ========================================================= */
+
+/**
+ * Update the visual state of a connect button.
+ *
+ * @param {HTMLElement} btn - The button element to update
+ * @param {"connected"|"pending"|"disconnected"} status
+ */
+function setConnectBtnStatus(btn, status) {
+  btn.classList.remove("connect-btn--connected", "connect-btn--disconnected", "connect-btn--pending");
+  if (status === "connected") {
+    btn.classList.add("connect-btn--connected");
+    btn.title = "Connected";
+    btn.disabled = true;
+  } else if (status === "pending") {
+    btn.classList.add("connect-btn--pending");
+    btn.title = "Waiting for authorization...";
+    btn.disabled = false;
+  } else {
+    btn.classList.add("connect-btn--disconnected");
+    btn.title = "Click to connect";
+    btn.disabled = false;
+  }
+}
+
+/**
+ * Fetch the current connection state from the backend and update buttons.
+ * Called on boot and after an OAuth connect attempt.
+ */
+function refreshConnections() {
+  var gmailBtn   = document.getElementById("connect-gmail-btn");
+  var githubBtn  = document.getElementById("connect-github-btn");
+  if (!gmailBtn || !githubBtn) return;
+
+  fetch(BACKEND + "/connections", { method: "GET", cache: "no-store" })
+    .then(function(res) { return res.ok ? res.json() : []; })
+    .then(function(connections) {
+      var gmailConn  = null;
+      var githubConn = null;
+      for (var i = 0; i < connections.length; i++) {
+        var svc = (connections[i].service || "").toLowerCase();
+        if (svc === "gmail")  gmailConn  = connections[i];
+        if (svc === "github") githubConn = connections[i];
+      }
+
+      // A Composio connection is fully active when status is "active" or "connected".
+      // "initiated" means the user has not finished the OAuth flow yet.
+      setConnectBtnStatus(gmailBtn,  gmailConn  && gmailConn.connected  ? "connected"  : "disconnected");
+      setConnectBtnStatus(githubBtn, githubConn && githubConn.connected ? "connected" : "disconnected");
+    })
+    .catch(function() {
+      // Backend unreachable - show disconnected state silently
+    });
+}
+
+/**
+ * Initiate an OAuth flow for a service.
+ * POSTs to /connect/{service}, gets back a redirect_url, and opens it.
+ * After the user completes auth, Composio handles the callback server-side.
+ *
+ * @param {string} service - "gmail" or "github"
+ * @param {HTMLElement} btn - The button that was clicked
+ */
+function initiateOAuth(service, btn) {
+  btn.disabled = true;
+  btn.textContent = "Connecting...";
+
+  fetch(BACKEND + "/connect/" + encodeURIComponent(service), { method: "POST" })
+    .then(function(res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then(function(data) {
+      if (data.stub) {
+        // Stub mode - no real OAuth needed, just refresh to show connected
+        refreshConnections();
+        return;
+      }
+      if (data.redirect_url) {
+        setConnectBtnStatus(btn, "pending");
+        // Open the Composio OAuth redirect in a new tab
+        window.open(data.redirect_url, "_blank", "noopener,noreferrer");
+        // Poll for connection completion every 4 seconds for up to 2 minutes
+        var attempts = 0;
+        var maxAttempts = 30;
+        var pollId = setInterval(function() {
+          attempts++;
+          refreshConnections();
+          // Stop polling once the button goes connected or we time out
+          var currentStatus = btn.classList.contains("connect-btn--connected");
+          if (currentStatus || attempts >= maxAttempts) {
+            clearInterval(pollId);
+            if (!currentStatus) setConnectBtnStatus(btn, "disconnected");
+          }
+        }, 4000);
+      } else {
+        // Unexpected - treat as disconnected
+        setConnectBtnStatus(btn, "disconnected");
+      }
+    })
+    .catch(function(e) {
+      console.warn("OAuth connect error:", e);
+      setConnectBtnStatus(btn, "disconnected");
+    });
+}
+
+/* Wire up connect buttons */
+(function() {
+  var gmailBtn  = document.getElementById("connect-gmail-btn");
+  var githubBtn = document.getElementById("connect-github-btn");
+
+  if (gmailBtn) {
+    gmailBtn.addEventListener("click", function() {
+      initiateOAuth("gmail", gmailBtn);
+    });
+  }
+
+  if (githubBtn) {
+    githubBtn.addEventListener("click", function() {
+      initiateOAuth("github", githubBtn);
+    });
+  }
+})();
+
+/* =========================================================
    Boot
    ========================================================= */
 
@@ -1718,6 +1973,7 @@ function boot() {
   showPattern("welcome");
   checkHealth();
   setInterval(checkHealth, HEALTH_INTERVAL_MS);
+  refreshConnections();
   dom.intentInput.focus();
 }
 

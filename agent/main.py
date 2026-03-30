@@ -14,6 +14,9 @@ Endpoints:
   GET  /sessions/{session_id}            - full session details including events
   POST /sessions/{session_id}/cancel     - cancel a running session
 
+  POST /connect/{service}               - initiate OAuth for gmail or github
+  GET  /connections                     - list which services are connected
+
 Session state is held in memory (dict). For production, swap with Redis or SQLite.
 """
 
@@ -31,6 +34,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from agents import create_agent
 from config import get_config
+from integrations.oauth import OAuthManager
 from models import (
     AgentEvent,
     ApprovalRequest,
@@ -449,6 +453,77 @@ async def cancel_session(session_id: str) -> JSONResponse:
     session.add_event(cancel_event)
 
     return JSONResponse({"status": "cancelled", "session_id": session_id})
+
+
+# ---------------------------------------------------------------------------
+# POST /connect/{service}
+# ---------------------------------------------------------------------------
+
+
+@app.post("/connect/{service}")
+async def connect_service(service: str) -> JSONResponse:
+    """
+    Initiate an OAuth connection for a service via Composio.
+
+    Returns a redirect_url the frontend should open in a browser. After the
+    user authorises, Composio handles the callback and the connection becomes
+    active. The frontend should then poll GET /connections to confirm.
+
+    In stub mode (no COMPOSIO_API_KEY), returns a simulated connected state
+    so the rest of the system keeps working during local development.
+
+    Args:
+        service: Service to connect - "gmail" or "github".
+
+    Returns:
+        JSON with status, service, and redirect_url (when pending OAuth).
+
+    Raises:
+        HTTPException 400: If the service name is not supported.
+    """
+    manager = OAuthManager(user_id="default")
+    try:
+        result = manager.initiate_oauth(service)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return JSONResponse(result)
+
+
+# ---------------------------------------------------------------------------
+# GET /connections
+# ---------------------------------------------------------------------------
+
+
+@app.get("/connections")
+async def list_connections() -> JSONResponse:
+    """
+    List which services are currently connected via Composio.
+
+    In live mode, queries Composio for active connections for the default
+    entity. In stub mode, returns a simulated list showing both services
+    connected so the frontend behaves normally during development.
+
+    Returns:
+        JSON array where each entry has service, status, and connection_id.
+        The connected field is true when status is "active" or "connected".
+    """
+    from integrations.composio_client import ComposioClient
+
+    client = ComposioClient()
+    connections = client.list_connections(user_id="default")
+
+    # Annotate each connection with a simple boolean for the frontend
+    result = [
+        {
+            **conn,
+            "connected": conn.get("status", "").lower() in ("active", "connected"),
+        }
+        for conn in connections
+    ]
+    return JSONResponse(result)
 
 
 # ---------------------------------------------------------------------------

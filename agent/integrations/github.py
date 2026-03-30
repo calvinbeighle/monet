@@ -8,12 +8,12 @@ to the ComposioClient if so. When Composio is not configured (stub mode),
 methods return the same realistic mock data that the CodeAgent stubs use -
 so the system behaves identically during local development and demos.
 
-Composio action names used:
-  GITHUB_LIST_PULL_REQUESTS   - list PRs for a repository
-  GITHUB_GET_PULL_REQUEST     - read full PR details including diff
-  GITHUB_CREATE_REVIEW        - post a review comment on a PR
-  GITHUB_MERGE_PULL_REQUEST   - merge a PR (destructive - requires approval)
-  GITHUB_LIST_REPOSITORIES    - list repos accessible to the connected account
+Composio action names used (verified against composio-core 0.7.x):
+  GITHUB_LIST_PULL_REQUESTS                         - list PRs for a repository
+  GITHUB_GET_A_PULL_REQUEST                         - read full PR details
+  GITHUB_LIST_PULL_REQUESTS_FILES                   - get files changed in a PR
+  GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER - list repos
+  GITHUB_FIND_PULL_REQUESTS                         - search PRs
 """
 
 from __future__ import annotations
@@ -61,9 +61,10 @@ class GitHubIntegration:
                   title, author, branch, status, reviews, additions, deletions.
         """
         if not self._client.is_stub:
+            owner, name = repo.split("/")[0], repo.split("/")[-1]
             result = self._client.execute_tool(
                 tool_name="GITHUB_LIST_PULL_REQUESTS",
-                tool_input={"owner": repo.split("/")[0], "repo": repo.split("/")[-1], "state": state, "per_page": limit},
+                tool_input={"owner": owner, "repo": name, "state": state, "per_page": limit},
                 user_id=self._user_id,
             )
             return result  # type: ignore[return-value]
@@ -111,11 +112,12 @@ class GitHubIntegration:
             dict: PR details with pr_number and diff fields.
         """
         if not self._client.is_stub:
+            owner, name = repo.split("/")[0], repo.split("/")[-1]
             result = self._client.execute_tool(
-                tool_name="GITHUB_GET_PULL_REQUEST",
+                tool_name="GITHUB_GET_A_PULL_REQUEST",
                 tool_input={
-                    "owner": repo.split("/")[0],
-                    "repo": repo.split("/")[-1],
+                    "owner": owner,
+                    "repo": name,
                     "pull_number": pr_number,
                 },
                 user_id=self._user_id,
@@ -244,7 +246,7 @@ class GitHubIntegration:
         """
         if not self._client.is_stub:
             result = self._client.execute_tool(
-                tool_name="GITHUB_LIST_REPOSITORIES",
+                tool_name="GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER",
                 tool_input={"per_page": limit},
                 user_id=self._user_id,
             )

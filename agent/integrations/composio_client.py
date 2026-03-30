@@ -62,6 +62,8 @@ class ComposioClient:
         """
         Initialise the Composio SDK client with the configured API key.
 
+        Uses `composio.ComposioToolSet` from the composio-core package.
+
         Raises:
             ImportError: If the composio-core package is not installed.
             RuntimeError: If SDK initialisation fails for any reason.
@@ -70,7 +72,7 @@ class ComposioClient:
             Any: Initialised Composio SDK client instance.
         """
         try:
-            from composio_openai import ComposioToolSet  # type: ignore[import]
+            from composio import ComposioToolSet  # type: ignore[import]
         except ImportError as exc:
             raise ImportError(
                 "composio-core is not installed. "
@@ -99,13 +101,14 @@ class ComposioClient:
         Initiate a Gmail OAuth connection via Composio.
 
         In stub mode, returns a mock connection record indicating Gmail is
-        pre-connected. In live mode, triggers the Composio OAuth flow.
+        pre-connected. In live mode, triggers the Composio OAuth flow and
+        returns the redirect URL the user must visit to authorize.
 
         Args:
             user_id: Identifier for the user initiating the connection.
 
         Returns:
-            dict: Connection record with status, service, and redirect URL if applicable.
+            dict: Connection record with status, service, and redirect_url when pending.
         """
         if self._stub:
             return {
@@ -117,6 +120,7 @@ class ComposioClient:
             }
 
         try:
+            # initiate_connection returns a model with redirectUrl and connectedAccountId
             connection = self._sdk.initiate_connection(
                 app="GMAIL",
                 entity_id=user_id,
@@ -126,7 +130,7 @@ class ComposioClient:
                 "service": "gmail",
                 "user_id": user_id,
                 "redirect_url": getattr(connection, "redirectUrl", None),
-                "connection_id": getattr(connection, "connectionId", None),
+                "connection_id": getattr(connection, "connectedAccountId", None),
             }
         except Exception as exc:
             raise RuntimeError(f"Failed to connect Gmail via Composio: {exc}") from exc
@@ -136,13 +140,14 @@ class ComposioClient:
         Initiate a GitHub OAuth connection via Composio.
 
         In stub mode, returns a mock connection record indicating GitHub is
-        pre-connected. In live mode, triggers the Composio OAuth flow.
+        pre-connected. In live mode, triggers the Composio OAuth flow and
+        returns the redirect URL the user must visit to authorize.
 
         Args:
             user_id: Identifier for the user initiating the connection.
 
         Returns:
-            dict: Connection record with status, service, and redirect URL if applicable.
+            dict: Connection record with status, service, and redirect_url when pending.
         """
         if self._stub:
             return {
@@ -154,6 +159,7 @@ class ComposioClient:
             }
 
         try:
+            # initiate_connection returns a model with redirectUrl and connectedAccountId
             connection = self._sdk.initiate_connection(
                 app="GITHUB",
                 entity_id=user_id,
@@ -163,7 +169,7 @@ class ComposioClient:
                 "service": "github",
                 "user_id": user_id,
                 "redirect_url": getattr(connection, "redirectUrl", None),
-                "connection_id": getattr(connection, "connectionId", None),
+                "connection_id": getattr(connection, "connectedAccountId", None),
             }
         except Exception as exc:
             raise RuntimeError(f"Failed to connect GitHub via Composio: {exc}") from exc
@@ -198,15 +204,17 @@ class ComposioClient:
             ]
 
         try:
-            connections = self._sdk.get_connected_accounts(entity_id=user_id)
+            # get_connected_accounts() takes no arguments - filter by entityId client-side
+            all_connections = self._sdk.get_connected_accounts()
             return [
                 {
                     "service": getattr(c, "appName", "unknown").lower(),
-                    "status": getattr(c, "status", "unknown"),
+                    "status": getattr(c, "status", "unknown").lower(),
                     "connection_id": getattr(c, "id", None),
-                    "user_id": user_id,
+                    "user_id": getattr(c, "entityId", user_id),
                 }
-                for c in (connections or [])
+                for c in (all_connections or [])
+                if getattr(c, "entityId", None) == user_id
             ]
         except Exception as exc:
             raise RuntimeError(f"Failed to list Composio connections: {exc}") from exc
@@ -245,10 +253,12 @@ class ComposioClient:
             }
 
         try:
-            entity = self._sdk.get_entity(id=user_id)
-            result = entity.execute(
+            # execute_action is the primary way to run a Composio action.
+            # Signature: execute_action(action, params, entity_id=None, ...)
+            result = self._sdk.execute_action(
                 action=tool_name,
                 params=tool_input,
+                entity_id=user_id,
             )
             return result
         except Exception as exc:

@@ -8,6 +8,10 @@ Approval gates are inserted before any send_email call to prevent
 accidental sends without explicit user confirmation.
 
 UI pattern: TINDER (swipe-to-act card stack for inbox items)
+
+When COMPOSIO_API_KEY is set and the user has connected Gmail, tool calls
+are routed through GmailIntegration which delegates to the real Composio
+Gmail actions. When no key is set, GmailIntegration falls back to stubs.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import uuid
 from typing import Any
 
 from models import AgentType
+from integrations.gmail import GmailIntegration
 from .base import BaseAgent
 
 
@@ -164,7 +169,17 @@ class EmailAgent(BaseAgent):
 
     Uses the TINDER UI pattern - emails are presented as a swipe-to-act
     card stack in the frontend. Approval gates are inserted before send_email.
+
+    GmailIntegration handles the live/stub decision internally - when
+    COMPOSIO_API_KEY is set and the user has connected Gmail, real Gmail
+    data is returned. Otherwise, realistic stub data is used.
     """
+
+    def __init__(self, session: Any) -> None:
+        super().__init__(session)
+        # GmailIntegration checks COMPOSIO_API_KEY internally and falls
+        # back to stubs automatically when the key is absent.
+        self._gmail = GmailIntegration(user_id="default")
 
     @property
     def agent_type(self) -> AgentType:
@@ -194,148 +209,45 @@ class EmailAgent(BaseAgent):
         self, tool_name: str, tool_input: dict[str, Any]
     ) -> Any:
         """
-        Execute a Gmail tool call.
+        Execute a Gmail tool call via GmailIntegration.
 
-        Currently stub implementations - replace with real Gmail API calls
-        when the Gmail OAuth integration is wired up.
+        GmailIntegration routes to real Composio Gmail actions when
+        COMPOSIO_API_KEY is set, or returns stub data otherwise.
 
         Args:
             tool_name: The Gmail tool to execute.
             tool_input: Structured arguments for the tool.
 
         Returns:
-            Any: Simulated tool result.
+            Any: Tool result from Gmail (live) or stub data.
         """
         if tool_name == "list_emails":
-            return {
-                "total_unread": 5,
-                "emails": [
-                    {
-                        "id": "msg_001",
-                        "subject": "Q1 investor update - need your eyes on this draft",
-                        "from": "sarah.chen@sequoia.com",
-                        "from_name": "Sarah Chen",
-                        "date": "2026-03-29T09:15:00Z",
-                        "snippet": "Hey, wanted to get your review before we circulate to the full LP list. A few sections need tightening...",
-                        "unread": True,
-                        "labels": ["INBOX", "IMPORTANT"],
-                    },
-                    {
-                        "id": "msg_002",
-                        "subject": "Re: enterprise pricing - follow-up from our call",
-                        "from": "marcus.obi@acmecorp.com",
-                        "from_name": "Marcus Obi",
-                        "date": "2026-03-29T08:47:00Z",
-                        "snippet": "Thanks for the breakdown. My main concern is the per-seat model for teams over 50. Can we get on a quick call Thursday?",
-                        "unread": True,
-                        "labels": ["INBOX"],
-                    },
-                    {
-                        "id": "msg_003",
-                        "subject": "Intro: Jared <> David Park (Stripe BD)",
-                        "from": "alex@mutualbff.com",
-                        "from_name": "Alex Rivera",
-                        "date": "2026-03-29T07:30:00Z",
-                        "snippet": "Jared, meet David. David, meet Jared. David runs BD partnerships at Stripe and is exploring integrations in the AI-native space...",
-                        "unread": True,
-                        "labels": ["INBOX"],
-                    },
-                    {
-                        "id": "msg_004",
-                        "subject": "Legal: NDA from Benchmark for diligence materials",
-                        "from": "noreply@docusign.com",
-                        "from_name": "DocuSign",
-                        "date": "2026-03-28T22:10:00Z",
-                        "snippet": "You have a document to review and sign. Sent by: Benchmark Capital. Please sign by March 31, 2026...",
-                        "unread": True,
-                        "labels": ["INBOX"],
-                    },
-                    {
-                        "id": "msg_005",
-                        "subject": "Re: Re: hiring - senior eng candidate feedback",
-                        "from": "priya.nair@gmail.com",
-                        "from_name": "Priya Nair",
-                        "date": "2026-03-28T17:55:00Z",
-                        "snippet": "Loop assessment results are in. Strong on systems design, mixed on the take-home. I'd say move forward with an offer but let's discuss comp...",
-                        "unread": False,
-                        "labels": ["INBOX"],
-                    },
-                ],
-            }
+            return self._gmail.list_messages(
+                max_results=tool_input.get("max_results", 10),
+                label=tool_input.get("label", "INBOX"),
+                query=tool_input.get("query"),
+            )
 
         if tool_name == "read_email":
-            message_id = tool_input.get("message_id", "msg_001")
-            # Return realistic body based on which message is requested
-            bodies: dict[str, dict[str, Any]] = {
-                "msg_001": {
-                    "id": "msg_001",
-                    "subject": "Q1 investor update - need your eyes on this draft",
-                    "from": "sarah.chen@sequoia.com",
-                    "from_name": "Sarah Chen",
-                    "date": "2026-03-29T09:15:00Z",
-                    "body": (
-                        "Hey Jared,\n\n"
-                        "Attaching the Q1 LP update draft for your review. Main sections:\n\n"
-                        "1. Revenue - ARR grew 3.2x YoY. I think you undersell the NRR story here. Let's sharpen that.\n"
-                        "2. Product - the agent OS positioning is still a bit jargon-heavy for a general LP audience.\n"
-                        "3. Team - you added two engineers but didn't mention the CTO search. Should we include?\n"
-                        "4. Outlook - conservative on the H1 targets given market. Benchmark will push on this.\n\n"
-                        "Would love a redline back by EOD Thursday if possible. I want to circulate before the weekend.\n\n"
-                        "- Sarah"
-                    ),
-                    "thread_id": "thread_001",
-                },
-                "msg_002": {
-                    "id": "msg_002",
-                    "subject": "Re: enterprise pricing - follow-up from our call",
-                    "from": "marcus.obi@acmecorp.com",
-                    "from_name": "Marcus Obi",
-                    "date": "2026-03-29T08:47:00Z",
-                    "body": (
-                        "Jared,\n\n"
-                        "Thanks for the time yesterday - really helpful context on the roadmap.\n\n"
-                        "Main sticking point for our team: the per-seat pricing gets painful at scale. "
-                        "We have 80 people who'd realistically use this, but only 20 are power users. "
-                        "Is there a tiered or usage-based model we could explore?\n\n"
-                        "Also flagging that our procurement team needs SOC 2 Type II before any contract. "
-                        "Timeline on that?\n\n"
-                        "Happy to jump on a 20-minute call Thursday afternoon if that works.\n\n"
-                        "Marcus"
-                    ),
-                    "thread_id": "thread_002",
-                },
-            }
-            default_body = {
-                "id": message_id,
-                "subject": "Email content",
-                "from": "sender@example.com",
-                "from_name": "Sender",
-                "date": "2026-03-29T08:00:00Z",
-                "body": "This is a stub email body. No message found with that ID.",
-                "thread_id": f"thread_{message_id}",
-            }
-            return bodies.get(message_id, default_body)
+            message_id = tool_input.get("message_id", "")
+            if not message_id:
+                return {"error": "message_id is required for read_email"}
+            return self._gmail.read_message(message_id)
 
         if tool_name == "draft_email":
-            to = tool_input.get("to", "recipient@example.com")
-            subject = tool_input.get("subject", "(no subject)")
-            return {
-                "draft_id": f"draft_{uuid.uuid4().hex[:8]}",
-                "status": "saved",
-                "to": to,
-                "subject": subject,
-                "message": f"Draft saved to Drafts folder. Ready to review before sending.",
-            }
+            return self._gmail.draft_reply(
+                to=tool_input.get("to", ""),
+                subject=tool_input.get("subject", "(no subject)"),
+                body=tool_input.get("body", ""),
+                reply_to_id=tool_input.get("reply_to_id"),
+            )
 
         if tool_name == "send_email":
-            to = tool_input.get("to", "recipient@example.com")
-            subject = tool_input.get("subject", "(no subject)")
-            return {
-                "message_id": f"sent_{uuid.uuid4().hex[:8]}",
-                "status": "sent",
-                "to": to,
-                "subject": subject,
-                "message": f"Email sent successfully to {to}.",
-            }
+            return self._gmail.send_email(
+                to=tool_input.get("to", ""),
+                subject=tool_input.get("subject", "(no subject)"),
+                body=tool_input.get("body", ""),
+                reply_to_id=tool_input.get("reply_to_id"),
+            )
 
         return {"error": f"Unknown tool: {tool_name}"}

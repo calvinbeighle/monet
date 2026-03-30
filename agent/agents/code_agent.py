@@ -8,6 +8,10 @@ Approval gates are inserted before any destructive GitHub operations:
 merge_pr, approve_pr, push_commit - to prevent accidental changes to repos.
 
 UI pattern: DIFF (side-by-side diff viewer)
+
+When COMPOSIO_API_KEY is set and the user has connected GitHub, tool calls
+are routed through GitHubIntegration which delegates to the real Composio
+GitHub actions. When no key is set, GitHubIntegration falls back to stubs.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import uuid
 from typing import Any
 
 from models import AgentType
+from integrations.github import GitHubIntegration
 from .base import BaseAgent
 
 
@@ -255,7 +260,17 @@ class CodeAgent(BaseAgent):
 
     Uses the DIFF UI pattern - the frontend renders a side-by-side diff viewer.
     Approval gates are required before merge_pr, approve_pr, and push_commit.
+
+    GitHubIntegration handles the live/stub decision internally - when
+    COMPOSIO_API_KEY is set and the user has connected GitHub, real GitHub
+    data is returned. Otherwise, realistic stub data is used.
     """
+
+    def __init__(self, session: Any) -> None:
+        super().__init__(session)
+        # GitHubIntegration checks COMPOSIO_API_KEY internally and falls
+        # back to stubs automatically when the key is absent.
+        self._github = GitHubIntegration(user_id="default")
 
     @property
     def agent_type(self) -> AgentType:
@@ -285,182 +300,82 @@ class CodeAgent(BaseAgent):
         self, tool_name: str, tool_input: dict[str, Any]
     ) -> Any:
         """
-        Execute a GitHub tool call.
+        Execute a GitHub tool call via GitHubIntegration.
 
-        Currently stub implementations - replace with real GitHub API calls
-        (via PyGithub or direct REST) when the GitHub OAuth integration is ready.
+        GitHubIntegration routes to real Composio GitHub actions when
+        COMPOSIO_API_KEY is set, or returns stub data otherwise.
 
         Args:
             tool_name: The GitHub tool to execute.
             tool_input: Structured arguments for the tool.
 
         Returns:
-            Any: Simulated tool result.
+            Any: Tool result from GitHub (live) or stub data.
         """
         if tool_name == "list_prs":
-            repo = tool_input.get("repo", "acme/backend")
-            return {
-                "repo": repo,
-                "open_count": 3,
-                "prs": [
-                    {
-                        "number": 47,
-                        "title": "feat: resumable SSE streams for agent sessions",
-                        "author": "maya-dev",
-                        "branch": "feature/resumable-streams",
-                        "base": "main",
-                        "status": "open",
-                        "review_status": "review_required",
-                        "checks": "passing",
-                        "additions": 412,
-                        "deletions": 58,
-                        "files_changed": 6,
-                        "created_at": "2026-03-28T14:00:00Z",
-                        "description": (
-                            "Implements resumable SSE streams so clients can reconnect "
-                            "mid-session without losing events. Adds a cursor-based replay "
-                            "mechanism in the event store."
-                        ),
-                    },
-                    {
-                        "number": 46,
-                        "title": "fix: session status race condition under concurrent approvals",
-                        "author": "tom-eng",
-                        "branch": "fix/approval-race",
-                        "base": "main",
-                        "status": "open",
-                        "review_status": "changes_requested",
-                        "checks": "passing",
-                        "additions": 34,
-                        "deletions": 12,
-                        "files_changed": 2,
-                        "created_at": "2026-03-27T18:30:00Z",
-                        "description": (
-                            "Fixes a race where two simultaneous approval requests for the "
-                            "same action_id could both set approved=True and release the gate twice."
-                        ),
-                    },
-                    {
-                        "number": 44,
-                        "title": "chore: upgrade httpx to 0.28 and pin pydantic to 2.7",
-                        "author": "bot-dependabot",
-                        "branch": "deps/httpx-0.28",
-                        "base": "main",
-                        "status": "open",
-                        "review_status": "review_required",
-                        "checks": "failing",
-                        "additions": 8,
-                        "deletions": 8,
-                        "files_changed": 2,
-                        "created_at": "2026-03-26T09:00:00Z",
-                        "description": "Automated dependency update. CI is red - breaking change in httpx timeout API.",
-                    },
-                ],
-            }
+            repo = tool_input.get("repo", "")
+            if not repo:
+                return {"error": "repo is required for list_prs"}
+            return self._github.list_prs(
+                repo=repo,
+                state=tool_input.get("state", "open"),
+                limit=tool_input.get("limit", 10),
+            )
 
         if tool_name == "read_diff":
-            pr_number = tool_input.get("pr_number", 47)
-            repo = tool_input.get("repo", "acme/backend")
-            diffs: dict[int, str] = {
-                47: (
-                    "diff --git a/agent/main.py b/agent/main.py\n"
-                    "index a3f2c01..b7d9e44 100644\n"
-                    "--- a/agent/main.py\n"
-                    "+++ b/agent/main.py\n"
-                    "@@ -191,6 +191,8 @@ async def stream_events(session_id: str) -> EventSourceResponse:\n"
-                    "     async def event_generator() -> AsyncIterator[dict[str, str]]:\n"
-                    '         \"\"\"Yield SSE events until the session reaches a terminal state.\"\"\"\n'
-                    "         session, _ = _sessions[session_id]\n"
-                    "-        cursor = 0  # index of next event to yield\n"
-                    "+        # Accept Last-Event-ID header for reconnect cursor\n"
-                    "+        last_id = request.headers.get('last-event-id', '0')\n"
-                    "+        cursor = int(last_id) if last_id.isdigit() else 0\n"
-                    "\n"
-                    "         while True:\n"
-                    "             events = session.events\n"
-                    "diff --git a/agent/models.py b/agent/models.py\n"
-                    "--- a/agent/models.py\n"
-                    "+++ b/agent/models.py\n"
-                    "@@ -180,6 +180,10 @@ class SessionState(BaseModel):\n"
-                    "     def add_event(self, event: AgentEvent) -> None:\n"
-                    '         \"\"\"Append an event and update the session timestamp.\"\"\"\n'
-                    "         self.events.append(event)\n"
-                    "         self.updated_at = datetime.utcnow()\n"
-                    "+\n"
-                    "+    def events_from(self, cursor: int) -> list[AgentEvent]:\n"
-                    '+        \"\"\"Return all events at or after the given sequence cursor.\"\"\"\n'
-                    "         return self.events[cursor:]\n"
-                ),
-                46: (
-                    "diff --git a/agent/agents/base.py b/agent/agents/base.py\n"
-                    "--- a/agent/agents/base.py\n"
-                    "+++ b/agent/agents/base.py\n"
-                    "@@ -390,7 +390,12 @@ class BaseAgent(ABC):\n"
-                    "         gate = asyncio.Event()\n"
-                    "         self._approval_events[action_id] = gate\n"
-                    "\n"
-                    "-        await gate.wait()\n"
-                    "-        del self._approval_events[action_id]\n"
-                    "+        # Use a lock to prevent double-release under concurrent approvals\n"
-                    "+        async with self._approval_lock:\n"
-                    "+            if action_id in self._approval_events:\n"
-                    "+                await gate.wait()\n"
-                    "+                del self._approval_events[action_id]\n"
-                    "+            # else: already resolved by a concurrent caller, skip\n"
-                ),
-            }
-            default_diff = (
-                f"diff --git a/README.md b/README.md\n"
-                f"--- a/README.md\n"
-                f"+++ b/README.md\n"
-                f"@@ -1,1 +1,1 @@\n"
-                f"-Old content\n"
-                f"+New content for PR #{pr_number}\n"
-            )
-            return {
-                "repo": repo,
-                "pr_number": pr_number,
-                "diff": diffs.get(pr_number, default_diff),
-            }
+            repo = tool_input.get("repo", "")
+            pr_number = tool_input.get("pr_number", 0)
+            if not repo or not pr_number:
+                return {"error": "repo and pr_number are required for read_diff"}
+            return self._github.get_pr(repo=repo, pr_number=pr_number)
 
         if tool_name == "post_review":
+            repo = tool_input.get("repo", "")
             pr_number = tool_input.get("pr_number", 0)
-            event = tool_input.get("event", "COMMENT")
-            return {
-                "status": "posted",
-                "pr_number": pr_number,
-                "review_id": f"review_{uuid.uuid4().hex[:8]}",
-                "event": event,
-                "message": f"Review posted on PR #{pr_number}.",
-            }
+            if not repo or not pr_number:
+                return {"error": "repo and pr_number are required for post_review"}
+            return self._github.create_review(
+                repo=repo,
+                pr_number=pr_number,
+                body=tool_input.get("body", ""),
+                event=tool_input.get("event", "COMMENT"),
+                comments=tool_input.get("comments"),
+            )
 
         if tool_name == "approve_pr":
+            repo = tool_input.get("repo", "")
             pr_number = tool_input.get("pr_number", 0)
-            return {
-                "status": "approved",
-                "pr_number": pr_number,
-                "review_id": f"review_{uuid.uuid4().hex[:8]}",
-                "message": f"PR #{pr_number} approved.",
-            }
+            if not repo or not pr_number:
+                return {"error": "repo and pr_number are required for approve_pr"}
+            # Approval is submitted as a review with the APPROVE event
+            return self._github.create_review(
+                repo=repo,
+                pr_number=pr_number,
+                body=tool_input.get("body", "Approved."),
+                event="APPROVE",
+            )
 
         if tool_name == "merge_pr":
+            repo = tool_input.get("repo", "")
             pr_number = tool_input.get("pr_number", 0)
-            method = tool_input.get("merge_method", "squash")
-            return {
-                "status": "merged",
-                "pr_number": pr_number,
-                "merge_method": method,
-                "sha": uuid.uuid4().hex[:40],
-                "message": f"PR #{pr_number} merged via {method}.",
-            }
+            if not repo or not pr_number:
+                return {"error": "repo and pr_number are required for merge_pr"}
+            return self._github.merge_pr(
+                repo=repo,
+                pr_number=pr_number,
+                merge_method=tool_input.get("merge_method", "squash"),
+            )
 
         if tool_name == "push_commit":
+            # push_commit is not directly supported by Composio's standard
+            # GitHub actions in this version - fall back to a stub response.
             branch = tool_input.get("branch", "main")
             return {
                 "status": "pushed",
                 "branch": branch,
                 "sha": uuid.uuid4().hex[:40],
                 "message": f"Commit pushed to {branch}.",
+                "note": "push_commit uses stub - connect a CI tool for real pushes.",
             }
 
         return {"error": f"Unknown tool: {tool_name}"}

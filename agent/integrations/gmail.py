@@ -8,11 +8,11 @@ to the ComposioClient if so. When Composio is not configured (stub mode),
 methods return the same realistic mock data that the EmailAgent stubs use -
 so the system behaves identically during local development.
 
-Composio action names used:
-  GMAIL_LIST_THREADS     - list inbox messages
-  GMAIL_GET_MESSAGE      - read a full message by ID
-  GMAIL_CREATE_DRAFT     - save a draft without sending
-  GMAIL_SEND_EMAIL       - send an email (requires user approval upstream)
+Composio action names used (verified against composio-core 0.7.x):
+  GMAIL_FETCH_EMAILS               - list inbox messages
+  GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID - read a full message by ID
+  GMAIL_CREATE_EMAIL_DRAFT          - save a draft without sending
+  GMAIL_SEND_EMAIL                  - send an email (requires user approval upstream)
 """
 
 from __future__ import annotations
@@ -62,11 +62,11 @@ class GmailIntegration:
         """
         if not self._client.is_stub:
             result = self._client.execute_tool(
-                tool_name="GMAIL_LIST_THREADS",
+                tool_name="GMAIL_FETCH_EMAILS",
                 tool_input={
-                    "maxResults": max_results,
-                    "labelIds": [label],
-                    "q": query or "",
+                    "max_results": max_results,
+                    "label_ids": label,
+                    "query": query or "",
                 },
                 user_id=self._user_id,
             )
@@ -110,8 +110,8 @@ class GmailIntegration:
         """
         if not self._client.is_stub:
             result = self._client.execute_tool(
-                tool_name="GMAIL_GET_MESSAGE",
-                tool_input={"messageId": message_id},
+                tool_name="GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+                tool_input={"message_id": message_id},
                 user_id=self._user_id,
             )
             return result  # type: ignore[return-value]
@@ -152,15 +152,15 @@ class GmailIntegration:
         """
         if not self._client.is_stub:
             tool_input: dict[str, Any] = {
-                "to": to,
+                "recipient_email": to,
                 "subject": subject,
                 "body": body,
             }
             if reply_to_id:
-                tool_input["replyToMessageId"] = reply_to_id
+                tool_input["thread_id"] = reply_to_id
 
             result = self._client.execute_tool(
-                tool_name="GMAIL_CREATE_DRAFT",
+                tool_name="GMAIL_CREATE_EMAIL_DRAFT",
                 tool_input=tool_input,
                 user_id=self._user_id,
             )
@@ -202,12 +202,12 @@ class GmailIntegration:
         """
         if not self._client.is_stub:
             tool_input: dict[str, Any] = {
-                "to": to,
+                "recipient_email": to,
                 "subject": subject,
                 "body": body,
             }
             if reply_to_id:
-                tool_input["replyToMessageId"] = reply_to_id
+                tool_input["thread_id"] = reply_to_id
 
             result = self._client.execute_tool(
                 tool_name="GMAIL_SEND_EMAIL",

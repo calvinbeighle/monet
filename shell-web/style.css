@@ -292,6 +292,59 @@ body {
   opacity: 0.6;
 }
 
+#welcome-connections {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+#welcome-connections-label {
+  font-size: 11px;
+  color: var(--text-muted, rgba(255,255,255,0.3));
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-right: 2px;
+}
+
+.connect-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  border: 1px solid;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.connect-btn--disconnected {
+  background: transparent;
+  border-color: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.4);
+}
+
+.connect-btn--disconnected:hover {
+  border-color: rgba(255,255,255,0.28);
+  color: rgba(255,255,255,0.75);
+  transform: translateY(-1px);
+}
+
+.connect-btn--connected {
+  background: rgba(52, 199, 89, 0.1);
+  border-color: rgba(52, 199, 89, 0.35);
+  color: rgb(52, 199, 89);
+  cursor: default;
+}
+
+.connect-btn--pending {
+  background: rgba(255, 204, 0, 0.08);
+  border-color: rgba(255, 204, 0, 0.3);
+  color: rgba(255, 204, 0, 0.75);
+}
+
 /* =========================================================
    CHAT PATTERN
    ========================================================= */
@@ -531,7 +584,7 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 28px;
+  gap: 24px;
   padding: 32px 24px;
 }
 
@@ -546,19 +599,24 @@ body {
   position: relative;
   width: 100%;
   max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 #tinder-card {
   background: var(--surface);
   border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius-xl);
-  padding: 28px 32px;
-  min-height: 200px;
-  max-height: 55vh;
+  padding: 24px 28px;
+  min-height: 180px;
+  max-height: 52vh;
   overflow-y: auto;
   box-shadow: var(--shadow-md);
   transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              opacity  0.35s ease;
+              opacity  0.35s ease,
+              box-shadow 0.2s ease;
   will-change: transform, opacity;
 }
 
@@ -568,27 +626,112 @@ body {
 #tinder-card.exit-left {
   transform: translateX(-140%) rotate(-12deg);
   opacity: 0;
+  box-shadow: -8px 0 32px rgba(239, 68, 68, 0.25);
 }
 
 #tinder-card.exit-right {
   transform: translateX(140%) rotate(12deg);
   opacity: 0;
+  box-shadow: 8px 0 32px rgba(34, 197, 94, 0.25);
 }
 
+/* Label pill at top of card - color varies by card type */
+#tinder-card-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  color: var(--accent-hover);
+}
+
+#tinder-card-label:empty {
+  display: none;
+}
+
+/* Label color variants */
+#tinder-card-label.label-email {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.25);
+  color: #c4b5fd;
+}
+
+#tinder-card-label.label-pr {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+}
+
+#tinder-card-label.label-task {
+  background: rgba(34, 197, 94, 0.10);
+  border-color: rgba(34, 197, 94, 0.22);
+  color: #86efac;
+}
+
+/* Left border color to match label type */
+#tinder-card.card-type-email  { border-left-color: #8b5cf6; }
+#tinder-card.card-type-pr     { border-left-color: #3b82f6; }
+#tinder-card.card-type-task   { border-left-color: #22c55e; }
+
+/* Sender / author - muted subtitle below label */
+#tinder-card-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+#tinder-card-subtitle:empty {
+  display: none;
+}
+
+/* Subject / PR title - primary bold text */
 #tinder-card-title {
-  font-size: 16px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 12px;
   line-height: 1.4;
 }
 
+/* Snippet / description preview */
 #tinder-card-body {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.7;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Commentary area below card - agent's text while in tinder mode */
+#tinder-commentary {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  padding: 10px 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-height: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+#tinder-commentary:empty {
+  display: none;
 }
 
 #tinder-actions {
