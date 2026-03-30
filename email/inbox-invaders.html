@@ -1,0 +1,1659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inbox Invaders</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #000;
+  overflow: hidden;
+  font-family: 'Press Start 2P', monospace;
+  color: #fff;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* CRT curve effect */
+#game-wrapper {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  box-shadow: inset 0 0 120px rgba(0,0,0,0.7);
+  border-radius: 8px;
+}
+
+/* Scan lines overlay */
+#game-wrapper::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+  pointer-events: none;
+  z-index: 1000;
+}
+
+canvas {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* HUD */
+#hud-top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  z-index: 100;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+}
+
+.hud-label {
+  font-size: 8px;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.hud-value {
+  font-size: 14px;
+  color: #0ff;
+  text-shadow: 0 0 8px rgba(0,255,255,0.5);
+}
+
+.hud-value.score { color: #0f0; text-shadow: 0 0 8px rgba(0,255,0,0.5); }
+.hud-value.lives { color: #f44; text-shadow: 0 0 8px rgba(255,68,68,0.5); }
+.hud-value.highscore { color: #ff0; text-shadow: 0 0 8px rgba(255,255,0,0.5); }
+
+/* Right sidebar */
+#sidebar-right {
+  position: absolute;
+  top: 60px;
+  right: 0;
+  width: 260px;
+  bottom: 80px;
+  z-index: 100;
+  padding: 10px;
+  pointer-events: none;
+}
+
+#preview-panel {
+  background: rgba(0,20,40,0.85);
+  border: 1px solid rgba(0,255,255,0.2);
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 10px;
+  display: none;
+  pointer-events: auto;
+}
+
+#preview-panel .preview-type {
+  font-size: 7px;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+#preview-panel .preview-sender {
+  font-size: 9px;
+  color: #0ff;
+  margin-bottom: 4px;
+}
+
+#preview-panel .preview-subject {
+  font-size: 8px;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+#preview-panel .preview-body {
+  font-size: 7px;
+  color: rgba(255,255,255,0.6);
+  line-height: 1.6;
+}
+
+#saved-panel {
+  background: rgba(40,30,0,0.6);
+  border: 1px solid rgba(255,215,0,0.2);
+  border-radius: 4px;
+  padding: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+#saved-panel .saved-title {
+  font-size: 8px;
+  color: rgba(255,215,0,0.7);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.saved-item {
+  font-size: 6px;
+  color: rgba(255,255,255,0.5);
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,215,0,0.1);
+}
+
+/* Left sidebar - power-ups */
+#sidebar-left {
+  position: absolute;
+  top: 60px;
+  left: 0;
+  width: 180px;
+  z-index: 100;
+  padding: 10px;
+  pointer-events: none;
+}
+
+.powerup-slot {
+  background: rgba(0,20,40,0.6);
+  border: 1px solid rgba(0,255,255,0.15);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 6px;
+  font-size: 7px;
+  color: rgba(255,255,255,0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.powerup-slot.active {
+  border-color: rgba(0,255,255,0.6);
+  color: #0ff;
+  background: rgba(0,40,60,0.7);
+}
+
+.powerup-key {
+  background: rgba(255,255,255,0.1);
+  padding: 2px 6px;
+  border-radius: 2px;
+  font-size: 7px;
+}
+
+/* Bottom weapon indicator */
+#weapon-bar {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 16px;
+  z-index: 100;
+  background: rgba(0,0,0,0.6);
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
+.weapon-key {
+  font-size: 7px;
+  color: rgba(255,255,255,0.4);
+  text-align: center;
+}
+
+.weapon-key span {
+  display: block;
+  font-size: 10px;
+  margin-bottom: 2px;
+}
+
+.weapon-key.active span {
+  color: #0ff;
+  text-shadow: 0 0 6px rgba(0,255,255,0.6);
+}
+
+/* Reply panel */
+#reply-panel {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 500px;
+  background: rgba(0,20,40,0.95);
+  border: 1px solid rgba(0,255,255,0.4);
+  border-radius: 6px;
+  padding: 16px;
+  z-index: 200;
+  display: none;
+}
+
+#reply-panel .reply-to {
+  font-size: 8px;
+  color: rgba(255,255,255,0.5);
+  margin-bottom: 8px;
+}
+
+#reply-panel textarea {
+  width: 100%;
+  height: 80px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(0,255,255,0.2);
+  color: #0f0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  padding: 8px;
+  resize: none;
+  border-radius: 3px;
+  outline: none;
+}
+
+#reply-panel .reply-hint {
+  font-size: 6px;
+  color: rgba(255,255,255,0.3);
+  margin-top: 6px;
+}
+
+/* Start screen */
+#start-screen {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.95);
+}
+
+#start-screen h1 {
+  font-size: 28px;
+  color: #0ff;
+  text-shadow: 0 0 20px rgba(0,255,255,0.6), 0 0 40px rgba(0,255,255,0.3);
+  margin-bottom: 8px;
+}
+
+#start-screen .subtitle {
+  font-size: 9px;
+  color: rgba(255,255,255,0.4);
+  margin-bottom: 40px;
+}
+
+.controls-list {
+  text-align: left;
+  margin-bottom: 30px;
+}
+
+.controls-list div {
+  font-size: 8px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 10px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.controls-list .key {
+  color: #0ff;
+  min-width: 100px;
+  text-align: right;
+}
+
+#start-screen .start-prompt {
+  font-size: 10px;
+  color: #0f0;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Game over */
+#gameover-screen {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 500;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.9);
+}
+
+#gameover-screen h1 {
+  font-size: 24px;
+  color: #f44;
+  text-shadow: 0 0 20px rgba(255,68,68,0.6);
+  margin-bottom: 20px;
+}
+
+#gameover-screen .final-score {
+  font-size: 12px;
+  color: #ff0;
+  margin-bottom: 30px;
+}
+
+#high-scores {
+  margin-bottom: 30px;
+}
+
+#high-scores .hs-title {
+  font-size: 9px;
+  color: rgba(255,255,255,0.5);
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+#high-scores .hs-entry {
+  font-size: 8px;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 6px;
+  display: flex;
+  gap: 20px;
+}
+
+#high-scores .hs-entry .rank { color: #0ff; min-width: 30px; }
+#high-scores .hs-entry .hs-score { color: #ff0; }
+
+/* Wave announcement */
+#wave-announce {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 300;
+  font-size: 24px;
+  color: #0ff;
+  text-shadow: 0 0 30px rgba(0,255,255,0.8);
+  display: none;
+  text-align: center;
+}
+
+#wave-announce .wave-sub {
+  font-size: 9px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 10px;
+}
+
+/* Pause overlay */
+#pause-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 400;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.7);
+}
+
+#pause-overlay h2 {
+  font-size: 20px;
+  color: #ff0;
+  text-shadow: 0 0 15px rgba(255,255,0,0.5);
+}
+
+/* Screen flash */
+#screen-flash {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 150;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+</style>
+</head>
+<body>
+<div id="game-wrapper">
+  <canvas id="game-canvas"></canvas>
+
+  <div id="hud-top">
+    <div>
+      <div class="hud-label">Wave</div>
+      <div class="hud-value" id="hud-wave">1</div>
+    </div>
+    <div>
+      <div class="hud-label">Score</div>
+      <div class="hud-value score" id="hud-score">0</div>
+    </div>
+    <div>
+      <div class="hud-label">Lives</div>
+      <div class="hud-value lives" id="hud-lives">III</div>
+    </div>
+    <div>
+      <div class="hud-label">High Score</div>
+      <div class="hud-value highscore" id="hud-highscore">0</div>
+    </div>
+  </div>
+
+  <div id="sidebar-right">
+    <div id="preview-panel">
+      <div class="preview-type" id="preview-type"></div>
+      <div class="preview-sender" id="preview-sender"></div>
+      <div class="preview-subject" id="preview-subject"></div>
+      <div class="preview-body" id="preview-body"></div>
+    </div>
+    <div id="saved-panel">
+      <div class="saved-title">Saved Emails</div>
+      <div id="saved-list"></div>
+    </div>
+  </div>
+
+  <div id="sidebar-left">
+    <div class="powerup-slot" id="pu-selectall">
+      <span class="powerup-key">1</span>
+      <span>Select All (zap spam)</span>
+    </div>
+    <div class="powerup-slot" id="pu-autoreply">
+      <span class="powerup-key">2</span>
+      <span>AI Auto-Reply</span>
+    </div>
+    <div class="powerup-slot" id="pu-freeze">
+      <span class="powerup-key">3</span>
+      <span>Time Freeze</span>
+    </div>
+    <div class="powerup-slot" id="pu-scanner">
+      <span class="powerup-key">4</span>
+      <span>Priority Scanner</span>
+    </div>
+  </div>
+
+  <div id="weapon-bar">
+    <div class="weapon-key"><span>SPACE</span>Archive</div>
+    <div class="weapon-key"><span>R</span>Reply</div>
+    <div class="weapon-key"><span>S</span>Star</div>
+    <div class="weapon-key"><span>D</span>Delete</div>
+    <div class="weapon-key"><span>F</span>Forward</div>
+  </div>
+
+  <div id="reply-panel">
+    <div class="reply-to" id="reply-to"></div>
+    <textarea id="reply-text"></textarea>
+    <div class="reply-hint">ENTER to send reply -- ESC to cancel</div>
+  </div>
+
+  <div id="wave-announce">
+    <div id="wave-text"></div>
+    <div class="wave-sub" id="wave-sub"></div>
+  </div>
+
+  <div id="pause-overlay"><h2>PAUSED</h2></div>
+
+  <div id="screen-flash"></div>
+
+  <div id="start-screen">
+    <h1>INBOX INVADERS</h1>
+    <div class="subtitle">Defend your productivity from the email onslaught</div>
+    <div class="controls-list">
+      <div><span class="key">LEFT / RIGHT</span> Move ship</div>
+      <div><span class="key">SPACE</span> Archive email</div>
+      <div><span class="key">R</span> Reply (AI draft)</div>
+      <div><span class="key">S</span> Star / Save</div>
+      <div><span class="key">D</span> Delete</div>
+      <div><span class="key">F</span> Forward</div>
+      <div><span class="key">1-4</span> Use power-ups</div>
+      <div><span class="key">ESC</span> Pause</div>
+    </div>
+    <div class="start-prompt">PRESS ENTER TO START</div>
+  </div>
+
+  <div id="gameover-screen">
+    <h1>INBOX OVERFLOW</h1>
+    <div class="final-score">SCORE: <span id="final-score-val">0</span></div>
+    <div id="high-scores">
+      <div class="hs-title">HIGH SCORES</div>
+      <div id="hs-list"></div>
+    </div>
+    <div class="start-prompt">PRESS ENTER TO PLAY AGAIN</div>
+  </div>
+</div>
+
+<script>
+// ---- AUDIO ENGINE (Web Audio API) ----
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, duration, type, volume, rampDown) {
+  ensureAudio();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'square';
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(volume || 0.15, audioCtx.currentTime);
+  if (rampDown !== false) {
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  }
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function playNoise(duration, volume) {
+  ensureAudio();
+  const bufferSize = audioCtx.sampleRate * duration;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(volume || 0.1, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  source.connect(gain);
+  gain.connect(audioCtx.destination);
+  source.start();
+}
+
+const SFX = {
+  archive: () => {
+    playTone(800, 0.08, 'square', 0.12);
+    setTimeout(() => playTone(1200, 0.06, 'square', 0.1), 40);
+  },
+  delete: () => {
+    playNoise(0.2, 0.15);
+    playTone(200, 0.15, 'sawtooth', 0.1);
+  },
+  star: () => {
+    playTone(523, 0.08, 'sine', 0.12);
+    setTimeout(() => playTone(659, 0.08, 'sine', 0.12), 60);
+    setTimeout(() => playTone(784, 0.1, 'sine', 0.12), 120);
+  },
+  forward: () => {
+    playTone(400, 0.05, 'triangle', 0.1);
+    setTimeout(() => playTone(600, 0.05, 'triangle', 0.1), 50);
+  },
+  reply: () => {
+    playTone(440, 0.1, 'sine', 0.1);
+  },
+  powerup: () => {
+    [523, 659, 784, 1047].forEach((f, i) => {
+      setTimeout(() => playTone(f, 0.1, 'sine', 0.1), i * 80);
+    });
+  },
+  waveComplete: () => {
+    [523, 659, 784, 1047, 1319].forEach((f, i) => {
+      setTimeout(() => playTone(f, 0.15, 'square', 0.08), i * 100);
+    });
+  },
+  loseLife: () => {
+    playTone(300, 0.2, 'sawtooth', 0.15);
+    setTimeout(() => playTone(200, 0.2, 'sawtooth', 0.15), 150);
+    setTimeout(() => playTone(100, 0.3, 'sawtooth', 0.15), 300);
+  },
+  gameOver: () => {
+    [400, 350, 300, 250, 200].forEach((f, i) => {
+      setTimeout(() => playTone(f, 0.3, 'sawtooth', 0.1), i * 200);
+    });
+  }
+};
+
+// ---- MOCK EMAIL DATA ----
+const EMAIL_TYPES = {
+  SPAM: { color: '#f44', shape: 'triangle', size: 36, points: 10, label: 'Spam' },
+  NEWSLETTER: { color: '#48f', shape: 'square', size: 42, points: 20, label: 'Newsletter' },
+  IMPORTANT: { color: '#ffd700', shape: 'hexagon', size: 52, points: 50, label: 'Important', deletesPenalty: true },
+  PERSONAL: { color: '#4f4', shape: 'circle', size: 40, points: 30, label: 'Personal' },
+  CALENDAR: { color: '#a855f7', shape: 'diamond', size: 38, points: 25, label: 'Calendar' }
+};
+
+const WAVE_DATA = [
+  // Wave 1 - Pure spam and newsletters
+  {
+    name: 'THE DAILY DELUGE',
+    subtitle: 'Easy pickings - spam and newsletters',
+    emails: [
+      { type: 'SPAM', sender: 'Nigerian Prince', subject: 'Urgent: $10M inheritance awaits', body: 'Dear friend, I am a prince with a very large sum of money that I need your help transferring...' },
+      { type: 'NEWSLETTER', sender: 'TechCrunch', subject: 'Top 10 AI startups this week', body: 'This week in tech: Another round of funding announcements and product launches from the AI space.' },
+      { type: 'SPAM', sender: 'V1agra Deal$', subject: 'Limited time offer!!!', body: 'Click here for amazing deals you will not believe. Act now before time runs out forever.' },
+      { type: 'NEWSLETTER', sender: 'Product Hunt', subject: 'Daily Digest - New launches', body: 'Check out today\'s top products: a new note-taking app, another todo list, and a crypto dashboard.' },
+      { type: 'SPAM', sender: 'Free iPhone', subject: 'You won! Claim your prize', body: 'Congratulations! You have been selected as today\'s winner. Click the link to claim your free device.' }
+    ]
+  },
+  // Wave 2 - Mix of spam and team updates
+  {
+    name: 'TEAM CHATTER',
+    subtitle: 'Spam mixed with real team updates',
+    emails: [
+      { type: 'SPAM', sender: 'Crypto Guru', subject: 'Turn $100 into $1M overnight', body: 'Exclusive trading signals that the banks don\'t want you to know about. Join now.' },
+      { type: 'NEWSLETTER', sender: 'GitHub', subject: 'Explore trending repositories', body: 'Trending this week: a new Rust framework, a Python ML library, and a TypeScript ORM.' },
+      { type: 'PERSONAL', sender: 'Sarah Chen', subject: 'Standup notes from today', body: 'Hey, just wanted to share my notes from standup. Blocked on the API integration, could use help tomorrow.' },
+      { type: 'CALENDAR', sender: 'Google Calendar', subject: 'Reminder: Design review at 3pm', body: 'Design review meeting in 30 minutes. Please have your mockups ready for presentation.' },
+      { type: 'SPAM', sender: 'Weight Loss Now', subject: 'Doctors hate this one trick', body: 'Revolutionary new method discovered by scientists. Results guaranteed in just 7 days.' },
+      { type: 'PERSONAL', sender: 'Mike Torres', subject: 'Quick question about deploy', body: 'Hey, are we still targeting Friday for the release? Need to coordinate with QA on timing.' }
+    ]
+  },
+  // Wave 3 - Client emails start appearing
+  {
+    name: 'CLIENT INCOMING',
+    subtitle: 'Watch out - client emails mixed in',
+    emails: [
+      { type: 'IMPORTANT', sender: 'Lisa Park (Acme Corp)', subject: 'Contract renewal discussion', body: 'Hi, we need to discuss the contract renewal before end of quarter. Can we set up a call this week?' },
+      { type: 'NEWSLETTER', sender: 'Hacker News', subject: 'Daily top stories', body: 'Top stories: Show HN post about a new database, a blog post about scaling, and a flamewar about tabs vs spaces.' },
+      { type: 'PERSONAL', sender: 'Dev Team', subject: 'PR needs review: auth refactor', body: 'The auth refactor PR is ready for review. Changes affect login flow and session management.' },
+      { type: 'SPAM', sender: 'SEO Expert', subject: 'Get your site to #1 on Google', body: 'Our proven SEO strategies will get your website ranking on the first page guaranteed.' },
+      { type: 'IMPORTANT', sender: 'Jordan Blake (Initech)', subject: 'Bug report: dashboard broken', body: 'Our team is seeing 500 errors on the dashboard since this morning. This is blocking our daily reporting workflow.' },
+      { type: 'CALENDAR', sender: 'Zoom', subject: 'Meeting starting: Weekly sync', body: 'Your weekly sync meeting is starting now. Click to join the Zoom call.' }
+    ]
+  },
+  // Wave 4 - Urgent items mixed in
+  {
+    name: 'URGENT MATTERS',
+    subtitle: 'Priority emails incoming - choose wisely',
+    emails: [
+      { type: 'IMPORTANT', sender: 'CEO', subject: 'Board deck - need input by EOD', body: 'The board meeting is tomorrow. I need your section of the deck finalized by end of day today. No exceptions.' },
+      { type: 'PERSONAL', sender: 'Alex Kim', subject: 'Lunch tomorrow?', body: 'Hey, want to grab lunch tomorrow? That new ramen place opened up down the street.' },
+      { type: 'SPAM', sender: 'Luxury Watches', subject: 'Replica Rolex 90% off', body: 'Premium quality timepieces at unbelievable prices. Free shipping on all orders.' },
+      { type: 'IMPORTANT', sender: 'Security Team', subject: 'ALERT: Suspicious login detected', body: 'A login from an unrecognized device was detected on your account. If this was not you, change your password immediately.' },
+      { type: 'CALENDAR', sender: 'Calendly', subject: 'New booking: Demo with prospect', body: 'A new demo has been booked for Thursday at 2pm with DataFlow Inc. Prepare the standard pitch deck.' },
+      { type: 'NEWSLETTER', sender: 'Morning Brew', subject: 'Your daily business news', body: 'Markets are up, a major acquisition was announced, and a new regulation is causing waves in fintech.' },
+      { type: 'IMPORTANT', sender: 'AWS', subject: 'Billing alert: Usage spike', body: 'Your AWS account has exceeded the billing threshold. Current projected cost is 340% above normal.' }
+    ]
+  },
+  // Wave 5 - Complex threads
+  {
+    name: 'THREAD STORM',
+    subtitle: 'Complex threads that need real replies',
+    emails: [
+      { type: 'IMPORTANT', sender: 'VP Engineering', subject: 'Re: Architecture proposal feedback', body: 'I have concerns about the microservices approach. Can you address the latency implications and write up alternatives?' },
+      { type: 'PERSONAL', sender: 'Recruiter', subject: 'Exciting opportunity at Series B startup', body: 'Your profile caught my eye. We have a role that might be a great fit. Would love to chat.' },
+      { type: 'IMPORTANT', sender: 'Lisa Park (Acme Corp)', subject: 'Re: Contract renewal - revised terms', body: 'We reviewed the proposal. The pricing works but we need to adjust the SLA terms. See attached redlines.' },
+      { type: 'CALENDAR', sender: 'Google Calendar', subject: 'Conflict: 2 meetings at 2pm', body: 'You have overlapping meetings: Design Review and Client Call. Please resolve the conflict.' },
+      { type: 'SPAM', sender: 'Hot Singles', subject: 'Match found near you!', body: 'Someone in your area is looking for you. Click to see who it is.' },
+      { type: 'IMPORTANT', sender: 'Legal Team', subject: 'NDA review required before Friday', body: 'The NDA for the new partnership needs your technical review. Key concern is the data sharing clause in section 4.' },
+      { type: 'PERSONAL', sender: 'Mom', subject: 'Thanksgiving plans?', body: 'Hi sweetie, are you coming home for Thanksgiving? Your aunt is asking about headcount for dinner.' }
+    ]
+  },
+  // Wave 6 - Boss wave
+  {
+    name: 'BOSS WAVE',
+    subtitle: 'The inbox apocalypse - one critical email demands attention',
+    emails: [
+      { type: 'SPAM', sender: 'Casino Bonus', subject: 'Free $500 welcome bonus', body: 'Sign up now and receive a $500 bonus on your first deposit. Terms and conditions apply.' },
+      { type: 'SPAM', sender: 'Pill Shop', subject: 'Pharmacy deals online', body: 'Discount medications shipped directly to your door. No prescription needed.' },
+      { type: 'NEWSLETTER', sender: 'Substack', subject: 'New post from your subscriptions', body: 'Three new posts from writers you follow. Catch up on the latest essays and analysis.' },
+      { type: 'IMPORTANT', sender: 'Board of Directors', subject: 'CRITICAL: Due diligence findings - acquisition at risk', body: 'The due diligence review has surfaced significant concerns about the target company\'s technical debt and security posture. We need a comprehensive technical assessment from your team by Wednesday, or the $50M acquisition may be called off. This is our top priority. Please loop in your senior engineers and prepare a detailed report covering: infrastructure reliability, security audit findings, code quality metrics, and scalability concerns. The board meets Thursday morning.' },
+      { type: 'CALENDAR', sender: 'Google Calendar', subject: 'Tomorrow: All-hands meeting', body: 'Reminder: company all-hands is tomorrow at 10am. Attendance is mandatory.' },
+      { type: 'IMPORTANT', sender: 'CTO', subject: 'Re: Acquisition tech review', body: 'I saw the board email. I need you to lead this. Pull whoever you need. Clear your calendar.' },
+      { type: 'PERSONAL', sender: 'Best Friend', subject: 'Concert tickets - are you in?', body: 'Got 2 extra tickets for Saturday night. Let me know before they are gone.' }
+    ]
+  }
+];
+
+const AI_REPLIES = {
+  SPAM: 'This appears to be spam. Archive or delete recommended.',
+  NEWSLETTER: 'Newsletter content. No reply needed - archive or save for later.',
+  PERSONAL: 'Thanks for reaching out! Let me get back to you on this shortly.',
+  CALENDAR: 'Noted - I will be there. Thanks for the reminder.',
+  IMPORTANT: 'Thank you for flagging this. I am reviewing now and will have a detailed response within the hour. Let me loop in the relevant stakeholders.'
+};
+
+// ---- GAME STATE ----
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const STATE = {
+  phase: 'start', // start, playing, paused, gameover, waveIntro, reply
+  score: 0,
+  lives: 3,
+  wave: 0,
+  highScore: parseInt(localStorage.getItem('inbox-invaders-hs') || '0'),
+  emails: [],
+  beams: [],
+  particles: [],
+  stars: [],
+  savedEmails: [],
+  powerups: { selectAll: 0, autoReply: 0, freeze: 0, scanner: 0 },
+  freezeTimer: 0,
+  scannerTimer: 0,
+  ship: { x: 0, y: 0, width: 60, height: 30, targetX: 0 },
+  selectedEmail: null,
+  waveTimer: 0,
+  spawnQueue: [],
+  spawnTimer: 0,
+  comboCount: 0,
+  comboTimer: 0,
+  flashAlpha: 0,
+  flashColor: '#f00',
+  announceTimer: 0,
+  keys: {},
+  dropPowerups: [], // powerup drops falling on screen
+  lastTime: 0,
+  emailSpeed: 0.3
+};
+
+// Initialize stars
+for (let i = 0; i < 200; i++) {
+  STATE.stars.push({
+    x: Math.random() * 2000,
+    y: Math.random() * 2000,
+    size: Math.random() * 2 + 0.5,
+    speed: Math.random() * 0.3 + 0.05,
+    brightness: Math.random()
+  });
+}
+
+// Initialize ship position
+STATE.ship.x = W / 2;
+STATE.ship.y = H - 70;
+STATE.ship.targetX = W / 2;
+
+// ---- INPUT ----
+const keysDown = {};
+
+document.addEventListener('keydown', (e) => {
+  keysDown[e.key] = true;
+
+  if (STATE.phase === 'start' && e.key === 'Enter') {
+    ensureAudio();
+    startGame();
+    return;
+  }
+
+  if (STATE.phase === 'gameover' && e.key === 'Enter') {
+    ensureAudio();
+    startGame();
+    return;
+  }
+
+  if (STATE.phase === 'reply') {
+    if (e.key === 'Escape') {
+      closeReply();
+      e.preventDefault();
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      sendReply();
+      e.preventDefault();
+      return;
+    }
+    return; // let typing happen
+  }
+
+  if (STATE.phase === 'playing') {
+    if (e.key === 'Escape') {
+      STATE.phase = 'paused';
+      document.getElementById('pause-overlay').style.display = 'flex';
+      e.preventDefault();
+      return;
+    }
+    if (e.key === ' ') { fireBeam('archive'); e.preventDefault(); }
+    if (e.key === 'r' || e.key === 'R') { openReply(); e.preventDefault(); }
+    if (e.key === 's' || e.key === 'S') { fireBeam('star'); e.preventDefault(); }
+    if (e.key === 'd' || e.key === 'D') { fireBeam('delete'); e.preventDefault(); }
+    if (e.key === 'f' || e.key === 'F') { fireBeam('forward'); e.preventDefault(); }
+    if (e.key === '1') { usePowerup('selectAll'); e.preventDefault(); }
+    if (e.key === '2') { usePowerup('autoReply'); e.preventDefault(); }
+    if (e.key === '3') { usePowerup('freeze'); e.preventDefault(); }
+    if (e.key === '4') { usePowerup('scanner'); e.preventDefault(); }
+  }
+
+  if (STATE.phase === 'paused' && e.key === 'Escape') {
+    STATE.phase = 'playing';
+    document.getElementById('pause-overlay').style.display = 'none';
+    e.preventDefault();
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  keysDown[e.key] = false;
+});
+
+// ---- GAME FUNCTIONS ----
+
+function startGame() {
+  STATE.phase = 'playing';
+  STATE.score = 0;
+  STATE.lives = 3;
+  STATE.wave = 0;
+  STATE.emails = [];
+  STATE.beams = [];
+  STATE.particles = [];
+  STATE.savedEmails = [];
+  STATE.powerups = { selectAll: 0, autoReply: 0, freeze: 0, scanner: 0 };
+  STATE.freezeTimer = 0;
+  STATE.scannerTimer = 0;
+  STATE.spawnQueue = [];
+  STATE.dropPowerups = [];
+  STATE.comboCount = 0;
+  STATE.comboTimer = 0;
+  STATE.emailSpeed = 0.3;
+  STATE.selectedEmail = null;
+  STATE.ship.x = W / 2;
+  STATE.ship.targetX = W / 2;
+
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('gameover-screen').style.display = 'none';
+  document.getElementById('saved-list').innerHTML = '';
+
+  updateHUD();
+  startWave();
+}
+
+function startWave() {
+  STATE.wave++;
+  STATE.emailSpeed = 0.3 + (STATE.wave - 1) * 0.08;
+
+  if (STATE.wave > WAVE_DATA.length) {
+    // Loop waves with increased speed
+    STATE.emailSpeed += 0.2;
+  }
+
+  const waveIdx = Math.min(STATE.wave - 1, WAVE_DATA.length - 1);
+  const waveInfo = WAVE_DATA[waveIdx];
+
+  // Queue emails for spawning
+  STATE.spawnQueue = waveInfo.emails.map((emailData, i) => ({
+    ...emailData,
+    typeInfo: EMAIL_TYPES[emailData.type],
+    delay: i * (1200 - STATE.wave * 80)
+  }));
+  STATE.spawnTimer = 0;
+
+  // Show wave announcement
+  const announceEl = document.getElementById('wave-announce');
+  document.getElementById('wave-text').textContent = 'WAVE ' + STATE.wave;
+  document.getElementById('wave-sub').textContent = waveInfo.name + ' - ' + waveInfo.subtitle;
+  announceEl.style.display = 'block';
+  STATE.announceTimer = 2000;
+
+  SFX.waveComplete();
+
+  // Random powerup drop chance increases with wave
+  if (STATE.wave > 1 && Math.random() < 0.5 + STATE.wave * 0.05) {
+    const puTypes = ['selectAll', 'autoReply', 'freeze', 'scanner'];
+    const pu = puTypes[Math.floor(Math.random() * puTypes.length)];
+    STATE.powerups[pu]++;
+    updatePowerupHUD();
+    SFX.powerup();
+  }
+
+  updateHUD();
+}
+
+function spawnEmail(data) {
+  const playAreaLeft = 190;
+  const playAreaRight = W - 270;
+  const x = playAreaLeft + Math.random() * (playAreaRight - playAreaLeft);
+
+  STATE.emails.push({
+    x: x,
+    y: -data.typeInfo.size,
+    type: data.type,
+    typeInfo: data.typeInfo,
+    sender: data.sender,
+    subject: data.subject,
+    body: data.body,
+    speed: STATE.emailSpeed * (0.8 + Math.random() * 0.4),
+    wobble: Math.random() * Math.PI * 2,
+    wobbleSpeed: 0.5 + Math.random() * 1.5,
+    alive: true,
+    flash: 0,
+    hp: data.type === 'IMPORTANT' && STATE.wave >= 6 ? 2 : 1 // Boss wave important emails are tougher
+  });
+}
+
+function fireBeam(type) {
+  const colors = {
+    archive: '#0ff',
+    star: '#ffd700',
+    delete: '#f44',
+    forward: '#48f'
+  };
+
+  SFX[type === 'archive' ? 'archive' : type === 'delete' ? 'delete' : type === 'star' ? 'star' : 'forward']();
+
+  STATE.beams.push({
+    x: STATE.ship.x,
+    y: STATE.ship.y - 15,
+    width: type === 'delete' ? 6 : 3,
+    speed: 12,
+    color: colors[type],
+    type: type,
+    alive: true
+  });
+}
+
+function openReply() {
+  // Find closest email above ship
+  let closest = null;
+  let closestDist = Infinity;
+  for (const email of STATE.emails) {
+    if (!email.alive) continue;
+    const dist = Math.abs(email.x - STATE.ship.x) + (STATE.ship.y - email.y);
+    if (dist < closestDist && email.y < STATE.ship.y) {
+      closest = email;
+      closestDist = dist;
+    }
+  }
+
+  if (!closest) return;
+
+  STATE.phase = 'reply';
+  STATE.selectedEmail = closest;
+  SFX.reply();
+
+  const panel = document.getElementById('reply-panel');
+  document.getElementById('reply-to').textContent = 'Replying to: ' + closest.sender + ' - ' + closest.subject;
+  document.getElementById('reply-text').value = AI_REPLIES[closest.type];
+  panel.style.display = 'block';
+
+  setTimeout(() => document.getElementById('reply-text').focus(), 50);
+}
+
+function closeReply() {
+  STATE.phase = 'playing';
+  document.getElementById('reply-panel').style.display = 'none';
+  STATE.selectedEmail = null;
+}
+
+function sendReply() {
+  if (STATE.selectedEmail) {
+    handleEmail(STATE.selectedEmail, 'reply');
+  }
+  closeReply();
+}
+
+function handleEmail(email, action) {
+  email.alive = false;
+
+  let points = email.typeInfo.points;
+
+  // Penalty for deleting important emails
+  if (action === 'delete' && email.typeInfo.deletesPenalty) {
+    points = -100;
+    flashScreen('#f00');
+  }
+
+  // Speed bonus
+  if (email.y < H * 0.3) points = Math.floor(points * 1.5);
+
+  // Combo
+  STATE.comboCount++;
+  STATE.comboTimer = 2000;
+  if (STATE.comboCount > 2) {
+    points = Math.floor(points * (1 + STATE.comboCount * 0.2));
+  }
+
+  STATE.score += points;
+  if (STATE.score < 0) STATE.score = 0;
+
+  // Particles
+  const pColor = action === 'delete' ? '#f44' :
+                 action === 'star' ? '#ffd700' :
+                 action === 'forward' ? '#48f' :
+                 action === 'reply' ? '#0f0' : '#0ff';
+
+  for (let i = 0; i < (action === 'delete' ? 25 : 15); i++) {
+    STATE.particles.push({
+      x: email.x,
+      y: email.y,
+      vx: (Math.random() - 0.5) * 8,
+      vy: (Math.random() - 0.5) * 8,
+      life: 1,
+      decay: 0.015 + Math.random() * 0.02,
+      color: pColor,
+      size: 2 + Math.random() * 4
+    });
+  }
+
+  // Score popup particle
+  STATE.particles.push({
+    x: email.x,
+    y: email.y - 20,
+    vx: 0,
+    vy: -1.5,
+    life: 1,
+    decay: 0.012,
+    text: (points >= 0 ? '+' : '') + points,
+    color: points >= 0 ? '#0f0' : '#f44',
+    size: 0
+  });
+
+  // Star action - save to sidebar
+  if (action === 'star') {
+    STATE.savedEmails.push({ sender: email.sender, subject: email.subject });
+    updateSavedList();
+  }
+
+  // Forward action - visual split effect
+  if (action === 'forward') {
+    for (let i = 0; i < 3; i++) {
+      STATE.particles.push({
+        x: email.x + (i - 1) * 30,
+        y: email.y,
+        vx: (i - 1) * 3,
+        vy: -4,
+        life: 1,
+        decay: 0.03,
+        color: '#48f',
+        size: 8,
+        isForwardCopy: true
+      });
+    }
+  }
+
+  updateHUD();
+}
+
+function emailReachedBottom(email) {
+  email.alive = false;
+  STATE.lives--;
+  STATE.comboCount = 0;
+  SFX.loseLife();
+  flashScreen('#f00');
+
+  // Particles for missed email
+  for (let i = 0; i < 10; i++) {
+    STATE.particles.push({
+      x: email.x,
+      y: H - 60,
+      vx: (Math.random() - 0.5) * 4,
+      vy: -Math.random() * 3,
+      life: 1,
+      decay: 0.02,
+      color: '#f44',
+      size: 3
+    });
+  }
+
+  if (STATE.lives <= 0) {
+    gameOver();
+  }
+
+  updateHUD();
+}
+
+function gameOver() {
+  STATE.phase = 'gameover';
+  SFX.gameOver();
+
+  // Save high score
+  if (STATE.score > STATE.highScore) {
+    STATE.highScore = STATE.score;
+    localStorage.setItem('inbox-invaders-hs', STATE.highScore.toString());
+  }
+
+  // Update high score list
+  let scores = JSON.parse(localStorage.getItem('inbox-invaders-scores') || '[]');
+  scores.push({ score: STATE.score, wave: STATE.wave, date: new Date().toLocaleDateString() });
+  scores.sort((a, b) => b.score - a.score);
+  scores = scores.slice(0, 10);
+  localStorage.setItem('inbox-invaders-scores', JSON.stringify(scores));
+
+  document.getElementById('final-score-val').textContent = STATE.score;
+  const hsList = document.getElementById('hs-list');
+  hsList.innerHTML = scores.map((s, i) =>
+    '<div class="hs-entry"><span class="rank">' + (i + 1) + '.</span><span class="hs-score">' + s.score + '</span><span>Wave ' + s.wave + '</span></div>'
+  ).join('');
+
+  document.getElementById('gameover-screen').style.display = 'flex';
+  updateHUD();
+}
+
+function flashScreen(color) {
+  STATE.flashAlpha = 0.4;
+  STATE.flashColor = color;
+}
+
+function usePowerup(type) {
+  if (STATE.powerups[type] <= 0) return;
+  STATE.powerups[type]--;
+  SFX.powerup();
+
+  switch (type) {
+    case 'selectAll':
+      // Zap all spam
+      STATE.emails.forEach(e => {
+        if (e.alive && (e.type === 'SPAM' || e.type === 'NEWSLETTER')) {
+          handleEmail(e, 'archive');
+        }
+      });
+      break;
+    case 'autoReply':
+      // Auto-reply to all visible
+      STATE.emails.forEach(e => {
+        if (e.alive && (e.type === 'PERSONAL' || e.type === 'IMPORTANT')) {
+          handleEmail(e, 'reply');
+        }
+      });
+      break;
+    case 'freeze':
+      STATE.freezeTimer = 10000;
+      flashScreen('#00f');
+      break;
+    case 'scanner':
+      STATE.scannerTimer = 8000;
+      flashScreen('#ffd700');
+      break;
+  }
+
+  updatePowerupHUD();
+}
+
+function updateHUD() {
+  document.getElementById('hud-wave').textContent = STATE.wave;
+  document.getElementById('hud-score').textContent = STATE.score;
+  const lifeStr = 'I'.repeat(Math.max(0, STATE.lives));
+  document.getElementById('hud-lives').textContent = lifeStr || 'NONE';
+  document.getElementById('hud-highscore').textContent = Math.max(STATE.highScore, STATE.score);
+}
+
+function updatePowerupHUD() {
+  const map = { selectAll: 'pu-selectall', autoReply: 'pu-autoreply', freeze: 'pu-freeze', scanner: 'pu-scanner' };
+  for (const [key, id] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (STATE.powerups[key] > 0) {
+      el.classList.add('active');
+      el.querySelector('.powerup-key').textContent = STATE.powerups[key] > 1 ? STATE.powerups[key] + 'x' : (Object.keys(map).indexOf(key) + 1).toString();
+    } else {
+      el.classList.remove('active');
+      el.querySelector('.powerup-key').textContent = (Object.keys(map).indexOf(key) + 1).toString();
+    }
+  }
+}
+
+function updateSavedList() {
+  const list = document.getElementById('saved-list');
+  list.innerHTML = STATE.savedEmails.map(e =>
+    '<div class="saved-item">' + e.sender + ': ' + e.subject.substring(0, 30) + '</div>'
+  ).join('');
+}
+
+function updatePreview() {
+  // Find email closest to ship horizontally
+  let closest = null;
+  let closestDist = Infinity;
+  for (const email of STATE.emails) {
+    if (!email.alive) continue;
+    const dist = Math.abs(email.x - STATE.ship.x);
+    if (dist < closestDist) {
+      closest = email;
+      closestDist = dist;
+    }
+  }
+
+  const panel = document.getElementById('preview-panel');
+  if (closest && closestDist < 150) {
+    panel.style.display = 'block';
+    document.getElementById('preview-type').textContent = closest.typeInfo.label;
+    document.getElementById('preview-sender').textContent = closest.sender;
+    document.getElementById('preview-subject').textContent = closest.subject;
+    document.getElementById('preview-body').textContent = closest.body;
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+// ---- RENDERING ----
+
+function drawStars() {
+  for (const star of STATE.stars) {
+    const flicker = 0.5 + Math.sin(performance.now() * 0.001 * star.speed + star.brightness * 10) * 0.5;
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.2 + flicker * 0.6) + ')';
+    ctx.fillRect(star.x % W, star.y % H, star.size, star.size);
+  }
+}
+
+function drawGrid() {
+  const gridY = H - 50;
+  ctx.strokeStyle = 'rgba(0,255,255,0.08)';
+  ctx.lineWidth = 1;
+
+  // Horizontal lines
+  for (let y = gridY; y < H; y += 10) {
+    const alpha = 0.08 * (1 - (y - gridY) / (H - gridY));
+    ctx.strokeStyle = 'rgba(0,255,255,' + alpha + ')';
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  // Vertical lines with perspective
+  const cx = W / 2;
+  for (let i = -20; i <= 20; i++) {
+    const x = cx + i * 50;
+    ctx.strokeStyle = 'rgba(0,255,255,0.06)';
+    ctx.beginPath();
+    ctx.moveTo(x, gridY);
+    ctx.lineTo(cx + (x - cx) * 2, H);
+    ctx.stroke();
+  }
+
+  // Glow line at grid top
+  const grad = ctx.createLinearGradient(0, gridY - 2, 0, gridY + 2);
+  grad.addColorStop(0, 'rgba(0,255,255,0)');
+  grad.addColorStop(0.5, 'rgba(0,255,255,0.3)');
+  grad.addColorStop(1, 'rgba(0,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, gridY - 2, W, 4);
+}
+
+function drawShip() {
+  const s = STATE.ship;
+  ctx.save();
+  ctx.translate(s.x, s.y);
+
+  // Trail glow
+  const trailGrad = ctx.createRadialGradient(0, 10, 0, 0, 10, 40);
+  trailGrad.addColorStop(0, 'rgba(0,255,255,0.3)');
+  trailGrad.addColorStop(1, 'rgba(0,255,255,0)');
+  ctx.fillStyle = trailGrad;
+  ctx.fillRect(-30, 0, 60, 40);
+
+  // Ship body
+  ctx.fillStyle = '#0ff';
+  ctx.shadowColor = '#0ff';
+  ctx.shadowBlur = 15;
+  ctx.beginPath();
+  ctx.moveTo(0, -15);
+  ctx.lineTo(-25, 12);
+  ctx.lineTo(-15, 8);
+  ctx.lineTo(-15, 15);
+  ctx.lineTo(15, 15);
+  ctx.lineTo(15, 8);
+  ctx.lineTo(25, 12);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cockpit
+  ctx.fillStyle = '#fff';
+  ctx.shadowBlur = 5;
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  // Targeting line (subtle)
+  ctx.strokeStyle = 'rgba(0,255,255,0.1)';
+  ctx.setLineDash([4, 8]);
+  ctx.beginPath();
+  ctx.moveTo(0, -15);
+  ctx.lineTo(0, -H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.restore();
+}
+
+function drawEmailShape(x, y, typeInfo, flash, scannerActive) {
+  ctx.save();
+  ctx.translate(x, y);
+
+  const s = typeInfo.size / 2;
+  let color = typeInfo.color;
+
+  if (flash > 0) {
+    color = '#fff';
+  }
+
+  if (scannerActive && typeInfo.deletesPenalty) {
+    // Gold pulsing glow for important emails
+    const pulse = 0.5 + Math.sin(performance.now() * 0.005) * 0.5;
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 20 + pulse * 15;
+  }
+
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+
+  switch (typeInfo.shape) {
+    case 'triangle':
+      ctx.beginPath();
+      ctx.moveTo(0, -s);
+      ctx.lineTo(-s, s);
+      ctx.lineTo(s, s);
+      ctx.closePath();
+      ctx.fill();
+      break;
+
+    case 'square':
+      ctx.fillRect(-s, -s, s * 2, s * 2);
+      break;
+
+    case 'hexagon':
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i - Math.PI / 6;
+        const hx = Math.cos(angle) * s;
+        const hy = Math.sin(angle) * s;
+        if (i === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.fill();
+      break;
+
+    case 'circle':
+      ctx.beginPath();
+      ctx.arc(0, 0, s, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+
+    case 'diamond':
+      ctx.beginPath();
+      ctx.moveTo(0, -s);
+      ctx.lineTo(s, 0);
+      ctx.lineTo(0, s);
+      ctx.lineTo(-s, 0);
+      ctx.closePath();
+      ctx.fill();
+      break;
+  }
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawEmailText(x, y, email) {
+  ctx.save();
+  ctx.font = '6px "Press Start 2P"';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#000';
+
+  // Sender
+  const senderText = email.sender.length > 12 ? email.sender.substring(0, 12) : email.sender;
+  ctx.fillText(senderText, x, y - 2);
+
+  // Subject (truncated)
+  const subjText = email.subject.length > 16 ? email.subject.substring(0, 16) + '..' : email.subject;
+  ctx.fillText(subjText, x, y + 7);
+
+  ctx.restore();
+}
+
+function drawBeam(beam) {
+  ctx.save();
+  ctx.fillStyle = beam.color;
+  ctx.shadowColor = beam.color;
+  ctx.shadowBlur = 10;
+
+  // Main beam
+  ctx.fillRect(beam.x - beam.width / 2, beam.y - 12, beam.width, 12);
+
+  // Glow
+  const grad = ctx.createRadialGradient(beam.x, beam.y - 6, 0, beam.x, beam.y - 6, 15);
+  grad.addColorStop(0, beam.color.replace(')', ',0.4)').replace('rgb', 'rgba'));
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(beam.x - 15, beam.y - 20, 30, 28);
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawParticles() {
+  for (const p of STATE.particles) {
+    ctx.save();
+    if (p.text) {
+      ctx.font = '8px "Press Start 2P"';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = p.life;
+      ctx.fillText(p.text, p.x, p.y);
+    } else if (p.isForwardCopy) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    } else {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 4;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.restore();
+  }
+}
+
+// ---- GAME LOOP ----
+
+function update(dt) {
+  if (STATE.phase !== 'playing' && STATE.phase !== 'reply') return;
+
+  // Ship movement
+  if (keysDown['ArrowLeft'] || keysDown['a'] || keysDown['A']) {
+    STATE.ship.targetX -= 6;
+  }
+  if (keysDown['ArrowRight'] || keysDown['d'] || keysDown['D']) {
+    STATE.ship.targetX += 6;
+  }
+
+  STATE.ship.targetX = Math.max(30, Math.min(W - 30, STATE.ship.targetX));
+  STATE.ship.x += (STATE.ship.targetX - STATE.ship.x) * 0.15;
+
+  // Spawn queued emails
+  if (STATE.spawnQueue.length > 0) {
+    STATE.spawnTimer += dt;
+    while (STATE.spawnQueue.length > 0 && STATE.spawnTimer >= STATE.spawnQueue[0].delay) {
+      const data = STATE.spawnQueue.shift();
+      spawnEmail(data);
+    }
+  }
+
+  // Update timers
+  if (STATE.freezeTimer > 0) STATE.freezeTimer -= dt;
+  if (STATE.scannerTimer > 0) STATE.scannerTimer -= dt;
+  if (STATE.comboTimer > 0) {
+    STATE.comboTimer -= dt;
+    if (STATE.comboTimer <= 0) STATE.comboCount = 0;
+  }
+  if (STATE.announceTimer > 0) {
+    STATE.announceTimer -= dt;
+    if (STATE.announceTimer <= 0) {
+      document.getElementById('wave-announce').style.display = 'none';
+    }
+  }
+  if (STATE.flashAlpha > 0) {
+    STATE.flashAlpha -= dt * 0.003;
+    if (STATE.flashAlpha < 0) STATE.flashAlpha = 0;
+  }
+
+  const frozen = STATE.freezeTimer > 0;
+
+  // Update emails
+  for (const email of STATE.emails) {
+    if (!email.alive) continue;
+
+    if (!frozen && STATE.phase === 'playing') {
+      email.y += email.speed * (dt / 16);
+    }
+
+    email.wobble += email.wobbleSpeed * 0.01;
+    email.x += Math.sin(email.wobble) * 0.3;
+
+    if (email.flash > 0) email.flash -= dt * 0.003;
+
+    // Check if reached bottom
+    if (email.y > H - 55) {
+      emailReachedBottom(email);
+    }
+  }
+
+  // Update beams
+  for (const beam of STATE.beams) {
+    if (!beam.alive) continue;
+    beam.y -= beam.speed * (dt / 16);
+
+    if (beam.y < -20) {
+      beam.alive = false;
+      continue;
+    }
+
+    // Collision with emails
+    for (const email of STATE.emails) {
+      if (!email.alive) continue;
+      const dx = Math.abs(beam.x - email.x);
+      const dy = Math.abs(beam.y - email.y);
+      const hitDist = email.typeInfo.size / 2 + 5;
+
+      if (dx < hitDist && dy < hitDist) {
+        beam.alive = false;
+        email.hp--;
+        email.flash = 1;
+
+        if (email.hp <= 0) {
+          handleEmail(email, beam.type);
+        } else {
+          // Hit but not dead - small particle burst
+          for (let i = 0; i < 5; i++) {
+            STATE.particles.push({
+              x: email.x,
+              y: email.y,
+              vx: (Math.random() - 0.5) * 4,
+              vy: (Math.random() - 0.5) * 4,
+              life: 0.8,
+              decay: 0.04,
+              color: beam.color,
+              size: 2
+            });
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // Update particles
+  for (const p of STATE.particles) {
+    p.x += (p.vx || 0) * (dt / 16);
+    p.y += (p.vy || 0) * (dt / 16);
+    p.life -= p.decay * (dt / 16);
+  }
+
+  // Clean up dead entities
+  STATE.emails = STATE.emails.filter(e => e.alive);
+  STATE.beams = STATE.beams.filter(b => b.alive);
+  STATE.particles = STATE.particles.filter(p => p.life > 0);
+
+  // Check wave complete
+  if (STATE.spawnQueue.length === 0 && STATE.emails.length === 0 && STATE.phase === 'playing') {
+    startWave();
+  }
+
+  // Update star positions slowly
+  for (const star of STATE.stars) {
+    star.y += star.speed * (dt / 16);
+    if (star.y > H) star.y = 0;
+  }
+
+  // Update preview
+  updatePreview();
+}
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#0a0a12';
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars();
+  drawGrid();
+
+  // Draw emails
+  for (const email of STATE.emails) {
+    if (!email.alive) continue;
+    drawEmailShape(email.x, email.y, email.typeInfo, email.flash, STATE.scannerTimer > 0);
+    drawEmailText(email.x, email.y, email);
+  }
+
+  // Draw beams
+  for (const beam of STATE.beams) {
+    if (!beam.alive) continue;
+    drawBeam(beam);
+  }
+
+  // Draw particles
+  drawParticles();
+
+  // Draw ship
+  drawShip();
+
+  // Combo indicator
+  if (STATE.comboCount > 2) {
+    ctx.save();
+    ctx.font = '8px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,0,' + (0.5 + Math.sin(performance.now() * 0.005) * 0.3) + ')';
+    ctx.fillText('COMBO x' + STATE.comboCount, STATE.ship.x, STATE.ship.y - 30);
+    ctx.restore();
+  }
+
+  // Freeze effect
+  if (STATE.freezeTimer > 0) {
+    ctx.fillStyle = 'rgba(0,0,255,0.05)';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.font = '7px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(100,150,255,0.6)';
+    ctx.fillText('TIME FROZEN - ' + Math.ceil(STATE.freezeTimer / 1000) + 's', W / 2, 55);
+    ctx.restore();
+  }
+
+  // Scanner effect
+  if (STATE.scannerTimer > 0) {
+    ctx.save();
+    ctx.font = '7px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,215,0,0.6)';
+    ctx.fillText('PRIORITY SCANNER ACTIVE - ' + Math.ceil(STATE.scannerTimer / 1000) + 's', W / 2, 55);
+    ctx.restore();
+  }
+
+  // Screen flash
+  if (STATE.flashAlpha > 0) {
+    ctx.fillStyle = STATE.flashColor;
+    ctx.globalAlpha = STATE.flashAlpha;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function gameLoop(timestamp) {
+  const dt = Math.min(timestamp - (STATE.lastTime || timestamp), 50);
+  STATE.lastTime = timestamp;
+
+  update(dt);
+  render();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// ---- INIT ----
+document.getElementById('hud-highscore').textContent = STATE.highScore;
+updatePowerupHUD();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

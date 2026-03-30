@@ -457,6 +457,42 @@ void main() {
       expect(find.text('Rejected'), findsOneWidget);
       expect(find.byIcon(Icons.cancel), findsOneWidget);
     });
+
+    testWidgets('mutable content updates render on rebuild', (tester) async {
+      final messages = [
+        ChatMessage(content: 'Hello', isUser: true),
+        ChatMessage(content: 'Hi', isUser: false),
+      ];
+      // isStreaming false: no typing indicator, simulates state after first token
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(messages: messages, isStreaming: false),
+        ),
+      ));
+      expect(find.text('Hi'), findsOneWidget);
+
+      // Simulate streaming token appended to last message
+      messages.last.content += ' there, how are you?';
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(messages: messages, isStreaming: false),
+        ),
+      ));
+      expect(find.text('Hi there, how are you?'), findsOneWidget);
+    });
+
+    testWidgets('typing indicator hidden when isStreaming false', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [ChatMessage(content: 'test', isUser: false)],
+            isStreaming: false,
+          ),
+        ),
+      ));
+      // ListView item count should be exactly the message count (no typing indicator)
+      expect(find.text('test'), findsOneWidget);
+    });
   });
 
   // -- DiffPattern tests --

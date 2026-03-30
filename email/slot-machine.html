@@ -1,0 +1,2102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email Slot Machine - Inbox Roulette</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Oswald:wght@400;500;700&family=Roboto+Mono:wght@400;700&display=swap');
+
+:root {
+  --gold: #ffd700;
+  --gold-dark: #b8960f;
+  --gold-light: #ffe44d;
+  --red-deep: #8b0000;
+  --red-bright: #cc0000;
+  --chrome-light: #e8e8e8;
+  --chrome-mid: #999;
+  --chrome-dark: #444;
+  --velvet: #1a0a0a;
+  --velvet-light: #2a1515;
+  --felt-green: #0a3a0a;
+  --bg: #0d0505;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  font-family: 'Oswald', sans-serif;
+  background: var(--bg);
+  color: #fff;
+}
+
+body {
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(139,0,0,0.15) 0%, transparent 60%),
+    radial-gradient(ellipse at 50% 80%, rgba(255,215,0,0.05) 0%, transparent 50%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(255,255,255,0.01) 2px,
+      rgba(255,255,255,0.01) 4px
+    ),
+    var(--bg);
+}
+
+/* ===== START SCREEN ===== */
+#start-screen {
+  position: fixed; inset: 0;
+  z-index: 1000;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background:
+    radial-gradient(ellipse at 50% 20%, rgba(139,0,0,0.3) 0%, transparent 60%),
+    radial-gradient(ellipse at 50% 90%, rgba(255,215,0,0.1) 0%, transparent 40%),
+    linear-gradient(180deg, #0a0202 0%, #1a0808 40%, #0a0202 100%);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+#start-screen.hidden {
+  opacity: 0; pointer-events: none; transform: scale(1.1);
+}
+
+.start-title {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2rem, 6vw, 5rem);
+  font-weight: 700;
+  color: var(--gold);
+  text-shadow:
+    0 0 20px rgba(255,215,0,0.5),
+    0 0 60px rgba(255,215,0,0.2),
+    0 4px 8px rgba(0,0,0,0.8);
+  letter-spacing: 4px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.start-subtitle {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: clamp(0.9rem, 2vw, 1.4rem);
+  color: rgba(255,215,0,0.6);
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  margin-bottom: 60px;
+}
+
+.start-btn {
+  font-family: 'Oswald', sans-serif;
+  font-size: 1.4rem;
+  font-weight: 500;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(180deg, var(--red-deep), #5a0000);
+  border: 2px solid var(--gold);
+  padding: 18px 60px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s ease;
+  box-shadow:
+    0 0 20px rgba(255,215,0,0.2),
+    inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+.start-btn:hover {
+  background: linear-gradient(180deg, #a50000, var(--red-deep));
+  box-shadow:
+    0 0 40px rgba(255,215,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.2);
+  transform: translateY(-2px);
+}
+
+.start-lights {
+  position: absolute;
+  width: 400px; height: 400px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* ===== MAIN LAYOUT ===== */
+#game-screen {
+  display: none;
+  width: 100%; height: 100vh;
+  grid-template-columns: 220px 1fr 120px;
+  grid-template-rows: 60px 1fr 50px;
+  grid-template-areas:
+    "top top top"
+    "left center right"
+    "bottom bottom bottom";
+  gap: 0;
+}
+
+#game-screen.active { display: grid; }
+
+/* ===== TOP BAR ===== */
+.top-bar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  padding: 0 20px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.8), rgba(0,0,0,0.4));
+  border-bottom: 1px solid rgba(255,215,0,0.15);
+}
+
+.stat-display {
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 1.1rem;
+  color: var(--gold);
+  text-shadow: 0 0 10px rgba(255,215,0,0.3);
+}
+
+.stat-display .label {
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.4);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.stat-display .value {
+  min-width: 60px;
+  text-align: right;
+}
+
+.coin-icon {
+  width: 20px; height: 20px;
+  background: radial-gradient(circle at 40% 40%, var(--gold-light), var(--gold-dark));
+  border-radius: 50%;
+  border: 2px solid var(--gold-dark);
+  display: inline-block;
+  box-shadow: 0 0 6px rgba(255,215,0,0.4);
+}
+
+/* Achievement toast */
+.achievement-toast {
+  position: fixed;
+  top: 80px; left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(139,0,0,0.2));
+  border: 1px solid var(--gold);
+  padding: 12px 30px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 1rem;
+  color: var(--gold);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0;
+  z-index: 500;
+  transition: all 0.4s ease;
+  pointer-events: none;
+  box-shadow: 0 0 30px rgba(255,215,0,0.2);
+}
+
+.achievement-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ===== LEFT PANEL - History ===== */
+.left-panel {
+  grid-area: left;
+  padding: 15px 10px;
+  overflow-y: auto;
+  border-right: 1px solid rgba(255,215,0,0.08);
+  background: rgba(0,0,0,0.3);
+}
+
+.left-panel h3 {
+  font-size: 0.7rem;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.3);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.history-item {
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  font-size: 0.75rem;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.history-item:hover { opacity: 1; }
+
+.history-item .h-sender {
+  color: var(--gold);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.history-item .h-subject {
+  color: rgba(255,255,255,0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item .h-action {
+  color: rgba(255,255,255,0.3);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+
+/* ===== CENTER - Slot Machine ===== */
+.center-area {
+  grid-area: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 15px 10px 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Machine frame */
+.machine-frame {
+  position: relative;
+  width: 520px;
+  max-width: 95vw;
+  background: linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 5%, #2a2a2a 50%, #1a1a1a 95%, #3a3a3a 100%);
+  border: 3px solid #555;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow:
+    0 0 30px rgba(0,0,0,0.8),
+    inset 0 1px 0 rgba(255,255,255,0.1),
+    inset 0 -1px 0 rgba(0,0,0,0.3),
+    0 0 60px rgba(139,0,0,0.1);
+  flex-shrink: 0;
+}
+
+/* Chasing lights */
+.light-strip {
+  position: absolute;
+  top: -8px; left: 20px; right: 20px;
+  display: flex;
+  justify-content: space-around;
+  pointer-events: none;
+}
+
+.light-strip.bottom { top: auto; bottom: -8px; }
+
+.light-bulb {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 6px var(--gold);
+  opacity: 0.3;
+  transition: opacity 0.15s;
+}
+
+.light-bulb.on {
+  opacity: 1;
+  box-shadow: 0 0 12px var(--gold), 0 0 24px rgba(255,215,0,0.3);
+}
+
+.light-bulb.red { background: var(--red-bright); box-shadow: 0 0 6px var(--red-bright); }
+.light-bulb.red.on { box-shadow: 0 0 12px var(--red-bright), 0 0 24px rgba(204,0,0,0.3); }
+
+/* Machine header */
+.machine-header {
+  text-align: center;
+  margin-bottom: 15px;
+}
+
+.machine-header h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.3rem;
+  color: var(--gold);
+  text-shadow: 0 0 15px rgba(255,215,0,0.3);
+  letter-spacing: 3px;
+}
+
+.machine-header .payout-line {
+  font-size: 0.6rem;
+  color: rgba(255,215,255,0.3);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* Reels container */
+.reels-container {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  background: #0a0a0a;
+  border: 2px solid #333;
+  border-radius: 6px;
+  padding: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Win line */
+.reels-container::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  top: 50%; transform: translateY(-50%);
+  height: 2px;
+  background: var(--gold);
+  opacity: 0.3;
+  z-index: 10;
+  box-shadow: 0 0 8px rgba(255,215,0,0.3);
+  pointer-events: none;
+}
+
+.reel-window {
+  width: 150px;
+  height: 180px;
+  overflow: hidden;
+  position: relative;
+  background: linear-gradient(180deg,
+    rgba(0,0,0,0.9) 0%,
+    rgba(0,0,0,0.2) 30%,
+    transparent 45%,
+    transparent 55%,
+    rgba(0,0,0,0.2) 70%,
+    rgba(0,0,0,0.9) 100%
+  );
+  border-radius: 4px;
+}
+
+.reel-strip {
+  position: absolute;
+  width: 100%;
+  transition: none;
+  will-change: transform;
+}
+
+.reel-symbol {
+  width: 100%;
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+
+.reel-symbol .symbol-icon {
+  font-size: 1.4rem;
+  margin-bottom: 2px;
+}
+
+/* Symbol colors */
+.reel-symbol[data-type="work"] .symbol-icon { color: #4a9eff; }
+.reel-symbol[data-type="personal"] .symbol-icon { color: #ff6b9d; }
+.reel-symbol[data-type="newsletter"] .symbol-icon { color: #8b8b8b; }
+.reel-symbol[data-type="urgent"] .symbol-icon { color: #ff3333; }
+.reel-symbol[data-type="money"] .symbol-icon { color: #33cc33; }
+.reel-symbol[data-type="mystery"] .symbol-icon { color: var(--gold); }
+
+.reel-symbol[data-type="reply"] .symbol-icon { color: var(--gold); }
+.reel-symbol[data-type="archive"] .symbol-icon { color: #aaa; }
+.reel-symbol[data-type="forward"] .symbol-icon { color: #4a9eff; }
+.reel-symbol[data-type="star"] .symbol-icon { color: var(--gold-light); }
+.reel-symbol[data-type="snooze"] .symbol-icon { color: #9b59b6; }
+
+.reel-symbol[data-type="x1"] .symbol-icon { color: #aaa; }
+.reel-symbol[data-type="x2"] .symbol-icon { color: #4a9eff; }
+.reel-symbol[data-type="x3"] .symbol-icon { color: var(--gold); }
+.reel-symbol[data-type="x5"] .symbol-icon { color: #ff3333; }
+.reel-symbol[data-type="jackpot"] .symbol-icon { color: var(--gold-light); }
+.reel-symbol[data-type="jackpot"] { animation: jackpotPulse 1s ease infinite; }
+
+@keyframes jackpotPulse {
+  0%, 100% { text-shadow: 0 0 5px rgba(255,215,0,0.3); }
+  50% { text-shadow: 0 0 20px rgba(255,215,0,0.8), 0 0 40px rgba(255,215,0,0.3); }
+}
+
+/* Machine controls */
+.machine-controls {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.spin-btn {
+  font-family: 'Oswald', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(180deg, var(--red-bright), var(--red-deep));
+  border: 2px solid var(--gold);
+  padding: 12px 40px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(139,0,0,0.4);
+}
+
+.spin-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(139,0,0,0.6), 0 0 20px rgba(255,215,0,0.2);
+}
+
+.spin-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 2px 8px rgba(139,0,0,0.4);
+}
+
+.spin-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.power-btn {
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: rgba(255,215,0,0.08);
+  border: 1px solid rgba(255,215,0,0.2);
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.power-btn:hover:not(:disabled) {
+  background: rgba(255,215,0,0.15);
+  border-color: rgba(255,215,0,0.4);
+}
+
+.power-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ===== LEVER (right side) ===== */
+.right-panel {
+  grid-area: right;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 30px;
+  gap: 30px;
+}
+
+.lever-container {
+  position: relative;
+  width: 60px;
+  height: 200px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.lever-track {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12px;
+  height: 160px;
+  top: 20px;
+  background: linear-gradient(90deg, #333, #555, #333);
+  border-radius: 6px;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.lever-handle {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 10px;
+  width: 40px;
+  height: 40px;
+  background: radial-gradient(circle at 40% 35%, #ff4444, var(--red-deep));
+  border-radius: 50%;
+  border: 3px solid #cc3333;
+  box-shadow:
+    0 4px 10px rgba(0,0,0,0.6),
+    inset 0 -2px 4px rgba(0,0,0,0.3),
+    inset 0 2px 4px rgba(255,255,255,0.1);
+  transition: top 0.15s ease-out;
+  z-index: 2;
+}
+
+.lever-container.pulled .lever-handle {
+  top: 140px;
+  transition: top 0.3s cubic-bezier(0.6, -0.28, 0.74, 0.05);
+}
+
+.lever-container.released .lever-handle {
+  top: 10px;
+  transition: top 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.lever-label {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.5rem;
+  color: rgba(255,255,255,0.3);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.daily-wheel-btn {
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.6rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: rgba(255,215,0,0.08);
+  border: 1px solid rgba(255,215,0,0.2);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.daily-wheel-btn:hover:not(:disabled) {
+  background: rgba(255,215,0,0.15);
+  box-shadow: 0 0 15px rgba(255,215,0,0.1);
+}
+
+.daily-wheel-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ===== EMAIL CARD ===== */
+.email-card-area {
+  width: 520px;
+  max-width: 95vw;
+  margin-top: 15px;
+  flex-shrink: 0;
+}
+
+.email-card {
+  background: linear-gradient(180deg, rgba(40,20,20,0.9), rgba(20,10,10,0.95));
+  border: 1px solid rgba(255,215,0,0.12);
+  border-radius: 8px;
+  padding: 20px;
+  opacity: 0;
+  transform: translateY(40px);
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.email-card.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.email-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.email-sender {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.05rem;
+  color: #fff;
+}
+
+.email-bet {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--gold);
+  background: rgba(255,215,0,0.08);
+  border: 1px solid rgba(255,215,0,0.15);
+  padding: 3px 10px;
+  border-radius: 3px;
+}
+
+.email-subject {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.85);
+  margin-bottom: 8px;
+}
+
+.email-preview {
+  font-size: 0.8rem;
+  color: rgba(255,255,255,0.45);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.email-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.25);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 15px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+/* AI suggestion bubble */
+.ai-suggestion {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 15px;
+  padding: 12px;
+  background: rgba(255,215,0,0.03);
+  border: 1px solid rgba(255,215,0,0.08);
+  border-radius: 6px;
+}
+
+.ai-avatar {
+  width: 32px; height: 32px;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--gold-dark), var(--gold));
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  color: #000;
+  font-weight: 700;
+}
+
+.ai-text {
+  font-size: 0.78rem;
+  color: rgba(255,255,255,0.55);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.ai-text strong {
+  color: var(--gold);
+  font-style: normal;
+  font-weight: 500;
+}
+
+/* Action chips */
+.action-chips {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.chip::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50px;
+  border-top: 1px solid rgba(255,255,255,0.15);
+  pointer-events: none;
+}
+
+.chip-reply {
+  background: linear-gradient(180deg, #e6c200, #b8960f);
+  color: #1a1a1a;
+  box-shadow: 0 3px 10px rgba(255,215,0,0.3);
+}
+
+.chip-archive {
+  background: linear-gradient(180deg, #888, #555);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+}
+
+.chip-forward {
+  background: linear-gradient(180deg, #5ab5ff, #2a7acc);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(42,122,204,0.3);
+}
+
+.chip-star {
+  background: linear-gradient(180deg, var(--gold-light), var(--gold));
+  color: #1a1a1a;
+  box-shadow: 0 3px 10px rgba(255,215,0,0.3);
+}
+
+.chip-snooze {
+  background: linear-gradient(180deg, #a66bbe, #7b3f9e);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(123,63,158,0.3);
+}
+
+.chip-delete {
+  background: linear-gradient(180deg, #cc3333, #881111);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(136,17,17,0.3);
+}
+
+.chip.suggested {
+  box-shadow: 0 0 0 2px var(--gold), 0 3px 15px rgba(255,215,0,0.3);
+}
+
+.chip:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.1);
+}
+
+.chip:active {
+  transform: translateY(0);
+  filter: brightness(0.9);
+}
+
+/* ===== BOTTOM BAR ===== */
+.bottom-bar {
+  grid-area: bottom;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  padding: 0 20px;
+  background: linear-gradient(0deg, rgba(0,0,0,0.8), rgba(0,0,0,0.4));
+  border-top: 1px solid rgba(255,215,0,0.08);
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.3);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.bottom-stat { display: flex; gap: 6px; }
+.bottom-stat .val { color: rgba(255,215,0,0.6); }
+
+/* ===== DAILY WHEEL MODAL ===== */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 900;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay.active { display: flex; }
+
+.daily-wheel-modal {
+  background: linear-gradient(180deg, #2a1515, #1a0a0a);
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  padding: 30px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 0 60px rgba(255,215,0,0.15);
+}
+
+.daily-wheel-modal h2 {
+  font-family: 'Playfair Display', serif;
+  color: var(--gold);
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+}
+
+.wheel-container {
+  position: relative;
+  width: 260px; height: 260px;
+  margin: 0 auto 20px;
+}
+
+.wheel {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  border: 4px solid var(--gold);
+  position: relative;
+  overflow: hidden;
+  transition: transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+}
+
+.wheel-segment {
+  position: absolute;
+  width: 50%; height: 50%;
+  top: 0; right: 0;
+  transform-origin: bottom left;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #fff;
+  padding-bottom: 30px;
+  padding-right: 10px;
+}
+
+.wheel-pointer {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-top: 20px solid var(--gold);
+  z-index: 5;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.wheel-spin-btn {
+  font-family: 'Oswald', sans-serif;
+  font-size: 1rem;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(180deg, var(--red-bright), var(--red-deep));
+  border: 2px solid var(--gold);
+  padding: 12px 35px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.wheel-spin-btn:hover { transform: translateY(-1px); }
+
+.wheel-result {
+  margin-top: 15px;
+  font-size: 0.9rem;
+  color: var(--gold);
+  min-height: 24px;
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px; right: 15px;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.3);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+/* ===== BONUS ROUND OVERLAY ===== */
+.bonus-overlay {
+  position: fixed; inset: 0;
+  background: rgba(139,0,0,0.9);
+  z-index: 800;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.bonus-overlay.active { display: flex; }
+
+.bonus-overlay h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 3rem;
+  color: var(--gold);
+  text-shadow: 0 0 40px rgba(255,215,0,0.5);
+  margin-bottom: 10px;
+  animation: bonusPulse 0.5s ease infinite alternate;
+}
+
+@keyframes bonusPulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.05); }
+}
+
+.bonus-timer {
+  font-family: 'Roboto Mono', monospace;
+  font-size: 4rem;
+  color: #fff;
+  margin-bottom: 20px;
+}
+
+.bonus-count {
+  font-size: 1.2rem;
+  color: var(--gold);
+  margin-bottom: 30px;
+}
+
+/* ===== COIN FOUNTAIN ===== */
+.coin-fountain {
+  position: fixed;
+  pointer-events: none;
+  z-index: 600;
+}
+
+.fountain-coin {
+  position: absolute;
+  width: 16px; height: 16px;
+  background: radial-gradient(circle at 40% 35%, var(--gold-light), var(--gold-dark));
+  border-radius: 50%;
+  border: 1px solid var(--gold-dark);
+  animation: coinFly 1.2s ease-out forwards;
+  box-shadow: 0 0 6px rgba(255,215,0,0.4);
+}
+
+@keyframes coinFly {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: translate(var(--tx), var(--ty)) scale(0.3) rotate(720deg); opacity: 0; }
+}
+
+/* ===== AMBIENT GLOW ===== */
+.ambient-glow {
+  position: fixed;
+  width: 300px; height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,215,0,0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: ambientPulse 4s ease-in-out infinite;
+}
+
+@keyframes ambientPulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 800px) {
+  #game-screen {
+    grid-template-columns: 1fr 80px;
+    grid-template-rows: 50px 1fr auto 40px;
+    grid-template-areas:
+      "top top"
+      "center right"
+      "center right"
+      "bottom bottom";
+  }
+  .left-panel { display: none; }
+  .machine-frame { width: 100%; }
+  .email-card-area { width: 100%; }
+  .reel-window { width: 100px; height: 140px; }
+  .reel-symbol { height: 47px; font-size: 0.7rem; }
+  .reel-symbol .symbol-icon { font-size: 1.1rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- Start Screen -->
+<div id="start-screen">
+  <div class="start-title">INBOX ROULETTE</div>
+  <div class="start-subtitle">Where Every Email is a Gamble</div>
+  <button class="start-btn" id="start-btn">Enter the Casino</button>
+</div>
+
+<!-- Achievement Toast -->
+<div class="achievement-toast" id="achievement-toast"></div>
+
+<!-- Ambient glow -->
+<div class="ambient-glow" style="top: 10%; left: 20%;"></div>
+<div class="ambient-glow" style="top: 60%; right: 10%; animation-delay: -2s;"></div>
+
+<!-- Game Screen -->
+<div id="game-screen">
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="stat-display">
+      <div class="label">Score</div>
+      <div class="value" id="score-display">0</div>
+    </div>
+    <div class="stat-display">
+      <span class="coin-icon"></span>
+      <div class="value" id="coin-display">100</div>
+    </div>
+    <div class="stat-display">
+      <div class="label">Streak</div>
+      <div class="value" id="streak-display">0</div>
+    </div>
+  </div>
+
+  <!-- Left Panel -->
+  <div class="left-panel">
+    <h3>Recent Activity</h3>
+    <div id="history-list"></div>
+  </div>
+
+  <!-- Center -->
+  <div class="center-area">
+    <div class="machine-frame" id="machine-frame">
+      <!-- Top lights -->
+      <div class="light-strip" id="lights-top"></div>
+      <div class="light-strip bottom" id="lights-bottom"></div>
+
+      <div class="machine-header">
+        <h2>INBOX ROULETTE</h2>
+        <div class="payout-line">3 Matching = Jackpot Bonus Round</div>
+      </div>
+
+      <div class="reels-container">
+        <div class="reel-window" id="reel-0">
+          <div class="reel-strip" id="reel-strip-0"></div>
+        </div>
+        <div class="reel-window" id="reel-1">
+          <div class="reel-strip" id="reel-strip-1"></div>
+        </div>
+        <div class="reel-window" id="reel-2">
+          <div class="reel-strip" id="reel-strip-2"></div>
+        </div>
+      </div>
+
+      <div class="machine-controls">
+        <button class="power-btn" id="peek-btn" title="Cost: 20 coins">Peek (20)</button>
+        <button class="spin-btn" id="spin-btn">Pull</button>
+        <button class="power-btn" id="respin-btn" title="Cost: 30 coins" disabled>Re-spin (30)</button>
+      </div>
+    </div>
+
+    <div class="email-card-area">
+      <div class="email-card" id="email-card"></div>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div class="right-panel">
+    <div class="lever-container" id="lever" title="Pull the lever or press SPACE">
+      <div class="lever-track"></div>
+      <div class="lever-handle"></div>
+      <div class="lever-label">Pull</div>
+    </div>
+    <button class="daily-wheel-btn" id="daily-wheel-trigger">Daily<br>Wheel</button>
+  </div>
+
+  <!-- Bottom Bar -->
+  <div class="bottom-bar">
+    <div class="bottom-stat">Remaining <span class="val" id="remaining-count">20</span></div>
+    <div class="bottom-stat">Time <span class="val" id="time-played">0:00</span></div>
+    <div class="bottom-stat">Avg <span class="val" id="avg-time">--</span></div>
+  </div>
+</div>
+
+<!-- Daily Wheel Modal -->
+<div class="modal-overlay" id="daily-wheel-modal">
+  <div class="daily-wheel-modal" style="position:relative;">
+    <button class="modal-close" id="daily-wheel-close">x</button>
+    <h2>Daily Wheel</h2>
+    <div class="wheel-container">
+      <div class="wheel-pointer"></div>
+      <canvas id="wheel-canvas" width="260" height="260"></canvas>
+    </div>
+    <button class="wheel-spin-btn" id="wheel-spin-btn">Spin</button>
+    <div class="wheel-result" id="wheel-result"></div>
+  </div>
+</div>
+
+<!-- Bonus Round Overlay -->
+<div class="bonus-overlay" id="bonus-overlay">
+  <h1>JACKPOT BONUS</h1>
+  <div class="bonus-timer" id="bonus-timer">30</div>
+  <div class="bonus-count">Emails Cleared: <span id="bonus-count">0</span> / 5</div>
+  <button class="spin-btn" id="bonus-next-btn">Next Email</button>
+</div>
+
+<!-- Coin Fountain container -->
+<div class="coin-fountain" id="coin-fountain"></div>
+
+<script>
+// ==========================================================
+// EMAIL SLOT MACHINE - Inbox Roulette
+// ==========================================================
+
+(function() {
+  'use strict';
+
+  // ---------- Audio Engine (Web Audio API) ----------
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  let audioCtx;
+
+  function ensureAudio() {
+    if (!audioCtx) audioCtx = new AudioCtx();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function playTone(freq, duration, type, volume, delay) {
+    ensureAudio();
+    const t = audioCtx.currentTime + (delay || 0);
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(volume || 0.1, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + duration);
+  }
+
+  function playNoise(duration, volume, delay) {
+    ensureAudio();
+    const t = audioCtx.currentTime + (delay || 0);
+    const bufferSize = audioCtx.sampleRate * duration;
+    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(volume || 0.05, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+    source.connect(gain);
+    gain.connect(audioCtx.destination);
+    source.start(t);
+  }
+
+  const SFX = {
+    reelClick() { playTone(800 + Math.random() * 400, 0.03, 'square', 0.04); },
+    reelStop() {
+      playTone(200, 0.15, 'sine', 0.15);
+      playNoise(0.08, 0.1);
+    },
+    win() {
+      [523, 659, 784, 1047].forEach((f, i) => playTone(f, 0.3, 'sine', 0.1, i * 0.12));
+    },
+    jackpot() {
+      const notes = [523, 659, 784, 1047, 784, 1047, 1319, 1568];
+      notes.forEach((f, i) => playTone(f, 0.4, 'sine', 0.12, i * 0.1));
+      playNoise(0.5, 0.08, 0.6);
+    },
+    coin() { playTone(1200, 0.08, 'sine', 0.08); playTone(1800, 0.08, 'sine', 0.06, 0.05); },
+    lever() { playNoise(0.15, 0.08); playTone(150, 0.2, 'sawtooth', 0.05); },
+    whoosh() { playNoise(0.25, 0.04); },
+    achievement() {
+      [784, 988, 1175, 1568].forEach((f, i) => playTone(f, 0.35, 'triangle', 0.1, i * 0.15));
+    }
+  };
+
+  // ---------- Symbols ----------
+  const REEL_1_SYMBOLS = [
+    { id: 'work', icon: 'W', label: 'Work' },
+    { id: 'personal', icon: 'P', label: 'Personal' },
+    { id: 'newsletter', icon: 'N', label: 'Newsletter' },
+    { id: 'urgent', icon: '!', label: 'Urgent' },
+    { id: 'money', icon: '$', label: 'Money' },
+    { id: 'mystery', icon: '?', label: 'Mystery' }
+  ];
+
+  const REEL_2_SYMBOLS = [
+    { id: 'reply', icon: 'R', label: 'Reply' },
+    { id: 'archive', icon: 'A', label: 'Archive' },
+    { id: 'forward', icon: 'F', label: 'Forward' },
+    { id: 'star', icon: 'S', label: 'Star' },
+    { id: 'snooze', icon: 'Z', label: 'Snooze' },
+    { id: 'mystery', icon: '?', label: 'Mystery' }
+  ];
+
+  const REEL_3_SYMBOLS = [
+    { id: 'x1', icon: 'x1', label: 'x1' },
+    { id: 'x2', icon: 'x2', label: 'x2' },
+    { id: 'x1', icon: 'x1', label: 'x1' },
+    { id: 'x3', icon: 'x3', label: 'x3' },
+    { id: 'x1', icon: 'x1', label: 'x1' },
+    { id: 'x5', icon: 'x5', label: 'x5' },
+    { id: 'x1', icon: 'x1', label: 'x1' },
+    { id: 'x2', icon: 'x2', label: 'x2' },
+    { id: 'jackpot', icon: 'JP', label: 'Jackpot' }
+  ];
+
+  const ALL_REELS = [REEL_1_SYMBOLS, REEL_2_SYMBOLS, REEL_3_SYMBOLS];
+
+  // ---------- Mock Emails ----------
+  const EMAILS = [
+    { sender: 'Alex Chen', subject: 'Q3 Revenue Projections', preview: 'Attached are the updated projections for next quarter. Key highlights include a 15% increase in recurring revenue...', time: '10:32 AM', importance: 4, category: 'work', aiAction: 'reply', aiDraft: 'Thanks Alex. I have reviewed the projections - the recurring revenue growth looks strong. Let me loop in finance for sign-off.' },
+    { sender: 'Mom', subject: 'Sunday dinner?', preview: 'Hi honey, are you free this Sunday for dinner? Dad is grilling steaks and your sister is bringing the kids...', time: '9:15 AM', importance: 3, category: 'personal', aiAction: 'reply', aiDraft: 'Sounds great! I will be there around 5. Should I bring anything?' },
+    { sender: 'TechCrunch Daily', subject: 'AI Funding Hits New Record', preview: 'Venture capital funding for AI startups reached $48B in Q2, setting a new quarterly record. Anthropic leads the pack...', time: '6:00 AM', importance: 1, category: 'newsletter', aiAction: 'archive', aiDraft: null },
+    { sender: 'Sarah Kim (CEO)', subject: 'URGENT: Board Meeting Moved', preview: 'The board meeting has been moved to Thursday at 2PM. Please update your materials accordingly. We need the deck by EOD Wednesday.', time: '8:45 AM', importance: 5, category: 'urgent', aiAction: 'reply', aiDraft: 'Understood. I will have the updated deck ready by Wednesday EOD. Should I coordinate with the team on the revised timeline?' },
+    { sender: 'Stripe', subject: 'Your January Invoice', preview: 'Your invoice for January is ready. Total amount: $2,847.50. Payment is due by February 15th...', time: 'Yesterday', importance: 3, category: 'financial', aiAction: 'star', aiDraft: null },
+    { sender: 'Jake Morrison', subject: 'RE: Code Review - Auth Module', preview: 'Left some comments on the PR. Main concern is the token refresh logic - there is a potential race condition when multiple tabs are open...', time: '11:02 AM', importance: 4, category: 'work', aiAction: 'reply', aiDraft: 'Good catch on the race condition. I will add a mutex lock around the refresh flow and update the PR today.' },
+    { sender: 'LinkedIn', subject: '12 people viewed your profile', preview: 'Your profile was viewed by recruiters at Google, Meta, and Anthropic this week. See who is looking...', time: '7:30 AM', importance: 1, category: 'newsletter', aiAction: 'archive', aiDraft: null },
+    { sender: 'David Park', subject: 'Basketball Thursday?', preview: 'Hey, we need one more for the Thursday game. 6pm at the usual court. You in?', time: '2:15 PM', importance: 2, category: 'personal', aiAction: 'reply', aiDraft: 'Count me in. See you at 6.' },
+    { sender: 'AWS Billing', subject: 'Your AWS bill is available', preview: 'Your AWS bill for the period ending Jan 31 is now available. Total charges: $1,234.56. This represents a 23% increase from last month.', time: 'Yesterday', importance: 3, category: 'financial', aiAction: 'star', aiDraft: null },
+    { sender: 'Maria Gonzalez', subject: 'Partnership Proposal', preview: 'Following up on our conversation at the conference. I have put together a partnership proposal that I think could be mutually beneficial...', time: '3:30 PM', importance: 4, category: 'work', aiAction: 'reply', aiDraft: 'Thanks for putting this together Maria. I have reviewed the proposal and have a few questions. Can we schedule a call this week?' },
+    { sender: 'IT Security', subject: 'ACTION REQUIRED: Password Expiry', preview: 'Your corporate password will expire in 3 days. Please update it immediately to avoid being locked out of your account...', time: '8:00 AM', importance: 5, category: 'urgent', aiAction: 'star', aiDraft: null },
+    { sender: 'The Hustle', subject: 'Why Every CEO is Talking About Agents', preview: 'This week in tech: the agent revolution is here. From autonomous coding to email triage, AI agents are reshaping how we work...', time: '5:45 AM', importance: 1, category: 'newsletter', aiAction: 'archive', aiDraft: null },
+    { sender: 'Emily Watson', subject: 'Wedding RSVP Reminder', preview: 'Just a friendly reminder to RSVP for our wedding by February 28th. We would love to have you there! The ceremony starts at 4pm...', time: '4:20 PM', importance: 3, category: 'personal', aiAction: 'reply', aiDraft: 'Congratulations again! I will be there - RSVP confirmed. Looking forward to celebrating with you both.' },
+    { sender: 'GitHub', subject: '[monet-os] Issue #247: Memory leak in session handler', preview: 'New issue reported by user jsmith42: The session handler appears to leak memory when handling concurrent WebSocket connections...', time: '11:30 AM', importance: 4, category: 'work', aiAction: 'reply', aiDraft: 'Thanks for the report. I can reproduce this locally. Looks like the cleanup callback is not being called on disconnect. Working on a fix.' },
+    { sender: 'PayPal', subject: 'You received a payment of $500.00', preview: 'John Anderson sent you $500.00. Note: Freelance work - January. The funds are now available in your PayPal balance...', time: 'Yesterday', importance: 2, category: 'financial', aiAction: 'archive', aiDraft: null },
+    { sender: 'Tom Bradley (CTO)', subject: 'RE: Architecture Decision', preview: 'I agree with your proposal to move to event-driven architecture. Let us schedule a deep dive with the platform team next week...', time: '1:45 PM', importance: 4, category: 'work', aiAction: 'reply', aiDraft: 'Great, I will set up a meeting with the platform team for Tuesday. I will prepare a detailed technical spec beforehand.' },
+    { sender: 'Substack', subject: 'New post from Stratechery', preview: 'Ben Thompson: The Great AI Unbundling - How foundation model companies are disrupting every layer of the software stack...', time: '7:00 AM', importance: 1, category: 'newsletter', aiAction: 'archive', aiDraft: null },
+    { sender: 'Sister', subject: 'Photo dump from Christmas', preview: 'Finally got around to sorting through the Christmas photos. Attached are the best ones. The one of Dad falling asleep in his chair is gold...', time: '10:00 AM', importance: 2, category: 'personal', aiAction: 'reply', aiDraft: 'These are amazing! The one of Dad is hilarious. Can you send me the originals so I can print a few?' },
+    { sender: 'Ops Alert', subject: 'HIGH: API Latency Spike Detected', preview: 'Average API response time exceeded 2000ms threshold at 14:32 UTC. Affected services: auth, payments, user-profile. Current p99: 3400ms...', time: '2:32 PM', importance: 5, category: 'urgent', aiAction: 'reply', aiDraft: 'Acknowledged. Checking dashboards now. Likely related to the database migration running in parallel. Will report back in 15 minutes.' },
+    { sender: 'Bank of America', subject: 'Your statement is ready', preview: 'Your monthly statement for account ending in 4521 is now available. Log in to view your transactions and account balance...', time: 'Yesterday', importance: 2, category: 'financial', aiAction: 'archive', aiDraft: null }
+  ];
+
+  // ---------- State ----------
+  let state = {
+    score: 0,
+    coins: 100,
+    streak: 0,
+    trustStreak: 0,
+    emailIndex: 0,
+    history: [],
+    spinning: false,
+    currentEmail: null,
+    currentSpin: null,
+    emailsHandled: 0,
+    startTime: null,
+    handlingTimes: [],
+    emailShownAt: null,
+    dailyWheelUsed: false,
+    bonusActive: false,
+    bonusCount: 0,
+    bonusTimer: null,
+    achievements: {}
+  };
+
+  // Load persisted data
+  const saved = localStorage.getItem('inboxRoulette');
+  if (saved) {
+    try {
+      const s = JSON.parse(saved);
+      state.coins = s.coins || 100;
+      state.score = s.score || 0;
+      state.achievements = s.achievements || {};
+      state.dailyWheelUsed = s.dailyWheelDate === new Date().toDateString();
+    } catch(e) {}
+  }
+
+  function saveState() {
+    localStorage.setItem('inboxRoulette', JSON.stringify({
+      coins: state.coins,
+      score: state.score,
+      achievements: state.achievements,
+      dailyWheelDate: state.dailyWheelUsed ? new Date().toDateString() : null
+    }));
+  }
+
+  // ---------- DOM refs ----------
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => document.querySelectorAll(sel);
+
+  const startScreen = $('#start-screen');
+  const gameScreen = $('#game-screen');
+  const spinBtn = $('#spin-btn');
+  const peekBtn = $('#peek-btn');
+  const respinBtn = $('#respin-btn');
+  const lever = $('#lever');
+  const scoreDisplay = $('#score-display');
+  const coinDisplay = $('#coin-display');
+  const streakDisplay = $('#streak-display');
+  const emailCard = $('#email-card');
+  const historyList = $('#history-list');
+  const remainingCount = $('#remaining-count');
+  const timePlayed = $('#time-played');
+  const avgTime = $('#avg-time');
+  const achievementToast = $('#achievement-toast');
+  const dailyWheelModal = $('#daily-wheel-modal');
+  const bonusOverlay = $('#bonus-overlay');
+
+  // ---------- Initialize lights ----------
+  function initLights() {
+    const topStrip = $('#lights-top');
+    const bottomStrip = $('#lights-bottom');
+    for (let i = 0; i < 18; i++) {
+      const b1 = document.createElement('div');
+      b1.className = 'light-bulb' + (i % 2 === 0 ? ' red' : '');
+      topStrip.appendChild(b1);
+      const b2 = document.createElement('div');
+      b2.className = 'light-bulb' + (i % 2 === 1 ? ' red' : '');
+      bottomStrip.appendChild(b2);
+    }
+  }
+
+  let lightPhase = 0;
+  function animateLights() {
+    const bulbs = $$('.light-bulb');
+    bulbs.forEach((b, i) => {
+      b.classList.toggle('on', (i + lightPhase) % 3 === 0);
+    });
+    lightPhase++;
+    setTimeout(animateLights, 300);
+  }
+
+  // ---------- Build reel strips ----------
+  const SYMBOL_HEIGHT = 60;
+  const VISIBLE_SYMBOLS = 3;
+  const REEL_COPIES = 8; // repeat symbols to allow long spin
+
+  function buildReelStrip(reelIndex) {
+    const strip = $(`#reel-strip-${reelIndex}`);
+    strip.innerHTML = '';
+    const symbols = ALL_REELS[reelIndex];
+    for (let c = 0; c < REEL_COPIES; c++) {
+      symbols.forEach(sym => {
+        const el = document.createElement('div');
+        el.className = 'reel-symbol';
+        el.dataset.type = sym.id;
+        el.innerHTML = `<span class="symbol-icon">${sym.icon}</span><span>${sym.label}</span>`;
+        strip.appendChild(el);
+      });
+    }
+  }
+
+  // ---------- Reel spinning ----------
+  function getReelSymbolCount(reelIndex) {
+    return ALL_REELS[reelIndex].length;
+  }
+
+  // Returns the Y offset to show a given symbol index in the center
+  function symbolOffset(symbolIndex, reelIndex) {
+    // Center the window: offset so that the target symbol is in the middle (index 1 of 3 visible)
+    return -(symbolIndex * SYMBOL_HEIGHT) + SYMBOL_HEIGHT;
+  }
+
+  function spinReels(callback) {
+    state.spinning = true;
+    spinBtn.disabled = true;
+    peekBtn.disabled = true;
+    respinBtn.disabled = true;
+
+    // Pick results
+    const results = ALL_REELS.map(symbols => {
+      const idx = Math.floor(Math.random() * symbols.length);
+      return { index: idx, symbol: symbols[idx] };
+    });
+
+    state.currentSpin = results;
+
+    // Animate each reel
+    const reelDurations = [1200, 1800, 2400];
+    let completed = 0;
+
+    results.forEach((result, ri) => {
+      const strip = $(`#reel-strip-${ri}`);
+      const totalSymbols = getReelSymbolCount(ri) * REEL_COPIES;
+      // Spin several full cycles then land on result
+      const targetCopy = REEL_COPIES - 2;
+      const targetAbsolute = targetCopy * getReelSymbolCount(ri) + result.index;
+      const targetY = symbolOffset(targetAbsolute, ri);
+
+      const duration = reelDurations[ri];
+      const startTime = performance.now();
+      const startY = parseFloat(strip.style.transform?.replace('translateY(', '')?.replace('px)', '') || '0');
+
+      // During spin, use rapid movement
+      const totalDistance = Math.abs(targetY - startY);
+      let lastClickTime = 0;
+
+      function animate(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Easing: cubic deceleration
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const currentY = startY + (targetY - startY) * eased;
+
+        strip.style.transform = `translateY(${currentY}px)`;
+
+        // Click sound during spin (rate slows down as it decelerates)
+        const clickInterval = 30 + progress * 150;
+        if (now - lastClickTime > clickInterval && progress < 0.95) {
+          SFX.reelClick();
+          lastClickTime = now;
+        }
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          // Snap to exact position
+          strip.style.transform = `translateY(${targetY}px)`;
+          SFX.reelStop();
+          completed++;
+          if (completed === 3) {
+            setTimeout(() => callback(results), 200);
+          }
+        }
+      }
+
+      // Small delay before each reel starts (like real slot machine)
+      setTimeout(() => requestAnimationFrame(animate), ri * 100);
+    });
+  }
+
+  // ---------- Process spin result ----------
+  function processSpinResult(results) {
+    const [cat, action, mult] = results.map(r => r.symbol);
+
+    // Check for mystery
+    const hasMystery = cat.id === 'mystery' || action.id === 'mystery';
+
+    // Check for jackpot (all same first letter or jackpot multiplier)
+    const isJackpot = mult.id === 'jackpot' ||
+      (cat.id === action.id && cat.id !== 'mystery');
+
+    // Determine multiplier value
+    let multiplier = 1;
+    if (mult.id === 'x2') multiplier = 2;
+    else if (mult.id === 'x3') multiplier = 3;
+    else if (mult.id === 'x5') multiplier = 5;
+    else if (mult.id === 'jackpot') multiplier = 10;
+
+    if (isJackpot) {
+      SFX.jackpot();
+      flashLights();
+    } else if (multiplier >= 3) {
+      SFX.win();
+    }
+
+    // Select email
+    let email = selectEmail(cat.id);
+    if (!email) {
+      // Ran out of emails
+      showAchievement('Inbox Zero - All Emails Cleared');
+      unlockAchievement('inbox_zero');
+      state.spinning = false;
+      spinBtn.disabled = false;
+      return;
+    }
+
+    state.currentEmail = { email, action: action.id, multiplier, isJackpot, hasMystery };
+
+    if (isJackpot && !state.bonusActive) {
+      startBonusRound();
+      return;
+    }
+
+    showEmailCard(email, action, multiplier, hasMystery);
+    state.emailShownAt = Date.now();
+    respinBtn.disabled = false;
+  }
+
+  function selectEmail(categoryId) {
+    // Try to find matching category, else return any available
+    const remaining = EMAILS.filter((e, i) => !state.history.some(h => h.index === i));
+    if (remaining.length === 0) return null;
+
+    const catMap = { work: 'work', personal: 'personal', newsletter: 'newsletter', urgent: 'urgent', money: 'financial', mystery: null };
+    const targetCat = catMap[categoryId];
+
+    if (targetCat) {
+      const matches = EMAILS.reduce((acc, e, i) => {
+        if (e.category === targetCat && !state.history.some(h => h.index === i)) acc.push(i);
+        return acc;
+      }, []);
+      if (matches.length > 0) {
+        const idx = matches[Math.floor(Math.random() * matches.length)];
+        return { ...EMAILS[idx], _index: idx };
+      }
+    }
+
+    // Fallback: random remaining
+    const available = EMAILS.reduce((acc, e, i) => {
+      if (!state.history.some(h => h.index === i)) acc.push(i);
+      return acc;
+    }, []);
+    const idx = available[Math.floor(Math.random() * available.length)];
+    return { ...EMAILS[idx], _index: idx };
+  }
+
+  // ---------- Show email card ----------
+  function showEmailCard(email, action, multiplier, hasMystery) {
+    const betAmounts = { 1: '$1', 2: '$10', 3: '$50', 4: '$100', 5: '$1,000' };
+    const suggestedAction = hasMystery ? ['reply', 'archive', 'forward', 'star', 'snooze'][Math.floor(Math.random() * 5)] : action.id;
+
+    let aiText = '';
+    if (email.aiDraft) {
+      aiText = `<strong>Suggested: ${suggestedAction.toUpperCase()}</strong><br>${email.aiDraft}`;
+    } else {
+      aiText = `<strong>Suggested: ${suggestedAction.toUpperCase()}</strong><br>No draft needed for this action.`;
+    }
+
+    emailCard.innerHTML = `
+      <div class="email-card-header">
+        <div class="email-sender">${email.sender}</div>
+        <div class="email-bet">${betAmounts[email.importance] || '$10'}</div>
+      </div>
+      <div class="email-subject">${email.subject}</div>
+      <div class="email-preview">${email.preview}</div>
+      <div class="email-meta">
+        <span>${email.time} - ${email.category.toUpperCase()}</span>
+        <span>${multiplier > 1 ? 'MULTIPLIER: x' + multiplier : ''} ${hasMystery ? '[ MYSTERY ]' : ''}</span>
+      </div>
+      <div class="ai-suggestion">
+        <div class="ai-avatar">AI</div>
+        <div class="ai-text">${aiText}</div>
+      </div>
+      <div class="action-chips">
+        <button class="chip chip-reply ${suggestedAction === 'reply' ? 'suggested' : ''}" data-action="reply">Reply</button>
+        <button class="chip chip-archive ${suggestedAction === 'archive' ? 'suggested' : ''}" data-action="archive">Archive</button>
+        <button class="chip chip-forward ${suggestedAction === 'forward' ? 'suggested' : ''}" data-action="forward">Forward</button>
+        <button class="chip chip-star ${suggestedAction === 'star' ? 'suggested' : ''}" data-action="star">Star</button>
+        <button class="chip chip-snooze ${suggestedAction === 'snooze' ? 'suggested' : ''}" data-action="snooze">Snooze</button>
+        <button class="chip chip-delete" data-action="delete">Delete</button>
+      </div>
+    `;
+
+    // Attach action handlers
+    emailCard.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => handleEmailAction(chip.dataset.action, suggestedAction, email, multiplier));
+    });
+
+    SFX.whoosh();
+    requestAnimationFrame(() => emailCard.classList.add('visible'));
+  }
+
+  // ---------- Handle email action ----------
+  function handleEmailAction(action, suggested, email, multiplier) {
+    if (!state.currentEmail) return;
+
+    const handlingTime = (Date.now() - state.emailShownAt) / 1000;
+    state.handlingTimes.push(handlingTime);
+
+    const followedSuggestion = action === suggested;
+    const basePoints = [0, 10, 20, 50, 100, 500][email.importance] || 10;
+    let points = basePoints * multiplier;
+
+    if (followedSuggestion) {
+      state.trustStreak++;
+      state.streak++;
+      if (state.streak >= 3 && state.streak % 3 === 0) {
+        points += 50; // streak bonus
+        showAchievement('Streak Bonus - +50 Points');
+      }
+    } else {
+      state.trustStreak = 0;
+      state.streak = 0;
+    }
+
+    // Coins
+    let coinsEarned = Math.ceil(points / 10);
+    state.coins += coinsEarned;
+    state.score += points;
+    state.emailsHandled++;
+
+    // Record history
+    state.history.push({
+      index: email._index,
+      sender: email.sender,
+      subject: email.subject,
+      action: action,
+      points: points
+    });
+
+    // Coin animation
+    spawnCoinFountain(coinsEarned);
+    SFX.coin();
+
+    // Update UI
+    updateDisplays();
+    addHistoryItem(email, action, points);
+
+    // Hide email card
+    emailCard.classList.remove('visible');
+    setTimeout(() => { emailCard.innerHTML = ''; }, 400);
+
+    // Achievements
+    if (!state.achievements.first_spin) unlockAchievement('first_spin');
+    if (state.streak >= 10 && !state.achievements.hot_streak) unlockAchievement('hot_streak');
+    if (state.trustStreak >= 20 && !state.achievements.trust_fall) unlockAchievement('trust_fall');
+    if (handlingTime < 3 && !state.achievements.speed_demon) unlockAchievement('speed_demon');
+    if (state.history.length >= EMAILS.length && !state.achievements.inbox_zero) unlockAchievement('inbox_zero');
+
+    // Reset
+    state.currentEmail = null;
+    state.spinning = false;
+    spinBtn.disabled = false;
+    peekBtn.disabled = false;
+    respinBtn.disabled = true;
+
+    saveState();
+  }
+
+  // ---------- Bonus Round ----------
+  function startBonusRound() {
+    state.bonusActive = true;
+    state.bonusCount = 0;
+    bonusOverlay.classList.add('active');
+    $('#bonus-count').textContent = '0';
+
+    let timeLeft = 30;
+    $('#bonus-timer').textContent = timeLeft;
+
+    state.bonusTimer = setInterval(() => {
+      timeLeft--;
+      $('#bonus-timer').textContent = timeLeft;
+      if (timeLeft <= 0) endBonusRound(false);
+    }, 1000);
+
+    showBonusEmail();
+  }
+
+  function showBonusEmail() {
+    const remaining = EMAILS.reduce((acc, e, i) => {
+      if (!state.history.some(h => h.index === i)) acc.push(i);
+      return acc;
+    }, []);
+
+    if (remaining.length === 0 || state.bonusCount >= 5) {
+      endBonusRound(state.bonusCount >= 5);
+      return;
+    }
+
+    const idx = remaining[Math.floor(Math.random() * remaining.length)];
+    const email = { ...EMAILS[idx], _index: idx };
+
+    const nextBtn = $('#bonus-next-btn');
+    nextBtn.textContent = `${email.sender}: ${email.subject.substring(0, 30)}... - ARCHIVE`;
+    nextBtn.onclick = () => {
+      state.bonusCount++;
+      $('#bonus-count').textContent = state.bonusCount;
+      state.history.push({
+        index: email._index,
+        sender: email.sender,
+        subject: email.subject,
+        action: 'archive',
+        points: 100
+      });
+      state.score += 100;
+      state.coins += 10;
+      state.emailsHandled++;
+      SFX.coin();
+      updateDisplays();
+
+      if (state.bonusCount >= 5) {
+        endBonusRound(true);
+      } else {
+        showBonusEmail();
+      }
+    };
+  }
+
+  function endBonusRound(success) {
+    clearInterval(state.bonusTimer);
+    state.bonusActive = false;
+
+    if (success) {
+      state.score += 500;
+      state.coins += 50;
+      SFX.jackpot();
+      showAchievement('Bonus Complete - +500 Points');
+    }
+
+    bonusOverlay.classList.remove('active');
+    updateDisplays();
+    state.spinning = false;
+    spinBtn.disabled = false;
+    peekBtn.disabled = false;
+    saveState();
+  }
+
+  // ---------- Coin Fountain ----------
+  function spawnCoinFountain(count) {
+    const container = $('#coin-fountain');
+    const rect = coinDisplay.getBoundingClientRect();
+    container.style.left = rect.left + 'px';
+    container.style.top = rect.top + 'px';
+
+    for (let i = 0; i < Math.min(count, 15); i++) {
+      const coin = document.createElement('div');
+      coin.className = 'fountain-coin';
+      coin.style.setProperty('--tx', (Math.random() * 100 - 50) + 'px');
+      coin.style.setProperty('--ty', -(Math.random() * 80 + 30) + 'px');
+      coin.style.animationDelay = (i * 0.05) + 's';
+      container.appendChild(coin);
+      setTimeout(() => coin.remove(), 1500);
+    }
+  }
+
+  // ---------- Achievements ----------
+  const ACHIEVEMENT_NAMES = {
+    first_spin: 'First Spin - Welcome to the Casino',
+    hot_streak: 'Hot Streak - 10 in a Row',
+    inbox_zero: 'Inbox Zero - The Impossible Dream',
+    speed_demon: 'Speed Demon - Under 3 Seconds',
+    trust_fall: 'Trust Fall - 20 AI Suggestions Accepted'
+  };
+
+  function unlockAchievement(id) {
+    if (state.achievements[id]) return;
+    state.achievements[id] = true;
+    SFX.achievement();
+    showAchievement(ACHIEVEMENT_NAMES[id] || id);
+    saveState();
+  }
+
+  function showAchievement(text) {
+    achievementToast.textContent = text;
+    achievementToast.classList.add('show');
+    setTimeout(() => achievementToast.classList.remove('show'), 3000);
+  }
+
+  // ---------- Flash lights ----------
+  function flashLights() {
+    const bulbs = $$('.light-bulb');
+    let flashes = 0;
+    const interval = setInterval(() => {
+      bulbs.forEach(b => b.classList.toggle('on'));
+      flashes++;
+      if (flashes > 10) clearInterval(interval);
+    }, 100);
+  }
+
+  // ---------- Update displays ----------
+  function updateDisplays() {
+    animateNumber(scoreDisplay, state.score);
+    animateNumber(coinDisplay, state.coins);
+    streakDisplay.textContent = state.streak;
+    remainingCount.textContent = EMAILS.length - state.history.length;
+
+    if (state.startTime) {
+      const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      timePlayed.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    if (state.handlingTimes.length > 0) {
+      const avg = state.handlingTimes.reduce((a, b) => a + b, 0) / state.handlingTimes.length;
+      avgTime.textContent = avg.toFixed(1) + 's';
+    }
+
+    peekBtn.disabled = state.coins < 20 || state.spinning;
+  }
+
+  function animateNumber(el, target) {
+    const current = parseInt(el.textContent) || 0;
+    if (current === target) return;
+    const diff = target - current;
+    const steps = 20;
+    let step = 0;
+    const interval = setInterval(() => {
+      step++;
+      const val = Math.round(current + diff * (step / steps));
+      el.textContent = val.toLocaleString();
+      if (step >= steps) {
+        el.textContent = target.toLocaleString();
+        clearInterval(interval);
+      }
+    }, 30);
+  }
+
+  // ---------- History ----------
+  function addHistoryItem(email, action, points) {
+    const el = document.createElement('div');
+    el.className = 'history-item';
+    el.innerHTML = `
+      <div class="h-sender">${email.sender}</div>
+      <div class="h-subject">${email.subject}</div>
+      <div class="h-action">${action} +${points}pts</div>
+    `;
+    historyList.prepend(el);
+    // Keep only 5
+    while (historyList.children.length > 5) {
+      historyList.removeChild(historyList.lastChild);
+    }
+  }
+
+  // ---------- Peek ----------
+  function handlePeek() {
+    if (state.coins < 20 || state.spinning) return;
+    state.coins -= 20;
+    updateDisplays();
+    saveState();
+
+    // Show next available email briefly
+    const remaining = EMAILS.reduce((acc, e, i) => {
+      if (!state.history.some(h => h.index === i)) acc.push(i);
+      return acc;
+    }, []);
+
+    if (remaining.length === 0) return;
+
+    const idx = remaining[Math.floor(Math.random() * remaining.length)];
+    const email = EMAILS[idx];
+
+    showAchievement(`Peek: ${email.sender} - ${email.subject.substring(0, 40)}...`);
+  }
+
+  // ---------- Re-spin ----------
+  function handleRespin() {
+    if (state.coins < 30 || !state.currentEmail) return;
+    state.coins -= 30;
+    state.currentEmail = null;
+    emailCard.classList.remove('visible');
+    setTimeout(() => {
+      emailCard.innerHTML = '';
+      doSpin();
+    }, 300);
+    updateDisplays();
+    saveState();
+  }
+
+  // ---------- Main spin ----------
+  function doSpin() {
+    if (state.spinning) return;
+
+    const remaining = EMAILS.filter((e, i) => !state.history.some(h => h.index === i));
+    if (remaining.length === 0) {
+      showAchievement('No emails remaining - Inbox Zero achieved');
+      return;
+    }
+
+    // Hide current email
+    emailCard.classList.remove('visible');
+    setTimeout(() => emailCard.innerHTML = '', 300);
+
+    SFX.lever();
+    spinReels(processSpinResult);
+  }
+
+  // ---------- Lever interaction ----------
+  function pullLever() {
+    if (state.spinning) return;
+    lever.classList.add('pulled');
+    lever.classList.remove('released');
+    SFX.lever();
+    setTimeout(() => {
+      lever.classList.remove('pulled');
+      lever.classList.add('released');
+      doSpin();
+    }, 400);
+  }
+
+  // Touch/mouse drag for lever
+  let leverDragging = false;
+  lever.addEventListener('mousedown', (e) => { leverDragging = true; e.preventDefault(); });
+  lever.addEventListener('touchstart', (e) => { leverDragging = true; e.preventDefault(); });
+  document.addEventListener('mouseup', () => { if (leverDragging) { leverDragging = false; pullLever(); } });
+  document.addEventListener('touchend', () => { if (leverDragging) { leverDragging = false; pullLever(); } });
+
+  // Click lever directly
+  lever.addEventListener('click', (e) => {
+    if (!leverDragging) pullLever();
+  });
+
+  // ---------- Daily Wheel ----------
+  const WHEEL_SEGMENTS = [
+    { label: 'Sort All\nNewsletters', color: '#8b0000', action: 'sort_newsletters' },
+    { label: '+50\nCoins', color: '#0a3a0a', action: 'coins_50' },
+    { label: 'AI Draft\nAll Replies', color: '#1a1a4a', action: 'draft_all' },
+    { label: '+100\nCoins', color: '#4a3a0a', action: 'coins_100' },
+    { label: 'Auto\nArchive 3', color: '#3a0a3a', action: 'auto_archive' },
+    { label: '+200\nCoins', color: '#0a3a3a', action: 'coins_200' },
+    { label: 'Double\nPoints 5min', color: '#3a1a0a', action: 'double_points' },
+    { label: 'Free\nRe-spin x3', color: '#2a2a0a', action: 'free_respins' }
+  ];
+
+  let wheelAngle = 0;
+  let wheelSpinning = false;
+
+  function drawWheel() {
+    const canvas = $('#wheel-canvas');
+    const ctx = canvas.getContext('2d');
+    const cx = 130, cy = 130, r = 120;
+    const segAngle = (2 * Math.PI) / WHEEL_SEGMENTS.length;
+
+    ctx.clearRect(0, 0, 260, 260);
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(wheelAngle * Math.PI / 180);
+
+    WHEEL_SEGMENTS.forEach((seg, i) => {
+      const startAngle = i * segAngle - Math.PI / 2;
+      const endAngle = startAngle + segAngle;
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, r, startAngle, endAngle);
+      ctx.closePath();
+      ctx.fillStyle = seg.color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,215,0,0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Label
+      ctx.save();
+      ctx.rotate(startAngle + segAngle / 2);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff';
+      ctx.font = '10px Oswald, sans-serif';
+      const lines = seg.label.split('\n');
+      lines.forEach((line, li) => {
+        ctx.fillText(line, r * 0.6, (li - lines.length / 2 + 0.5) * 13);
+      });
+      ctx.restore();
+    });
+
+    // Center cap
+    ctx.beginPath();
+    ctx.arc(0, 0, 15, 0, Math.PI * 2);
+    ctx.fillStyle = 'var(--gold)';
+    ctx.fill();
+    ctx.strokeStyle = '#b8960f';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function spinDailyWheel() {
+    if (wheelSpinning || state.dailyWheelUsed) return;
+    wheelSpinning = true;
+    state.dailyWheelUsed = true;
+    $('#daily-wheel-trigger').disabled = true;
+
+    const targetSegment = Math.floor(Math.random() * WHEEL_SEGMENTS.length);
+    const segAngle = 360 / WHEEL_SEGMENTS.length;
+    const targetAngle = 360 * 5 + (360 - targetSegment * segAngle - segAngle / 2);
+
+    const startAngle = wheelAngle;
+    const duration = 4000;
+    const startTime = performance.now();
+
+    function animate(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 4);
+      wheelAngle = startAngle + (targetAngle - startAngle) * eased;
+      drawWheel();
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        wheelSpinning = false;
+        const result = WHEEL_SEGMENTS[targetSegment];
+        applyWheelResult(result);
+      }
+    }
+
+    requestAnimationFrame(animate);
+    saveState();
+  }
+
+  function applyWheelResult(result) {
+    const resultEl = $('#wheel-result');
+    switch (result.action) {
+      case 'coins_50': state.coins += 50; resultEl.textContent = '+50 Coins'; break;
+      case 'coins_100': state.coins += 100; resultEl.textContent = '+100 Coins'; break;
+      case 'coins_200': state.coins += 200; resultEl.textContent = '+200 Coins'; break;
+      case 'sort_newsletters':
+        resultEl.textContent = 'All newsletters auto-sorted';
+        break;
+      case 'draft_all':
+        resultEl.textContent = 'AI drafted all replies';
+        break;
+      case 'auto_archive':
+        // Archive 3 newsletters
+        let archived = 0;
+        EMAILS.forEach((e, i) => {
+          if (archived >= 3) return;
+          if (e.category === 'newsletter' && !state.history.some(h => h.index === i)) {
+            state.history.push({ index: i, sender: e.sender, subject: e.subject, action: 'archive', points: 10 });
+            state.score += 10;
+            state.emailsHandled++;
+            archived++;
+          }
+        });
+        resultEl.textContent = `Auto-archived ${archived} newsletters`;
+        break;
+      case 'double_points':
+        resultEl.textContent = 'Double points for next 5 minutes';
+        break;
+      case 'free_respins':
+        state.coins += 90; // 3 respins worth
+        resultEl.textContent = '3 free re-spins added (90 coins)';
+        break;
+    }
+
+    updateDisplays();
+    SFX.win();
+    spawnCoinFountain(10);
+    saveState();
+  }
+
+  // ---------- Timer ----------
+  function updateTimer() {
+    if (state.startTime) {
+      const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      timePlayed.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+    requestAnimationFrame(updateTimer);
+  }
+
+  // ---------- Key bindings ----------
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !state.spinning && gameScreen.classList.contains('active')) {
+      e.preventDefault();
+      pullLever();
+    }
+  });
+
+  // ---------- Start ----------
+  $('#start-btn').addEventListener('click', () => {
+    ensureAudio();
+    startScreen.classList.add('hidden');
+    gameScreen.classList.add('active');
+    state.startTime = Date.now();
+    updateDisplays();
+    requestAnimationFrame(updateTimer);
+    SFX.whoosh();
+  });
+
+  spinBtn.addEventListener('click', doSpin);
+  peekBtn.addEventListener('click', handlePeek);
+  respinBtn.addEventListener('click', handleRespin);
+
+  $('#daily-wheel-trigger').addEventListener('click', () => {
+    dailyWheelModal.classList.add('active');
+    drawWheel();
+  });
+
+  $('#daily-wheel-close').addEventListener('click', () => {
+    dailyWheelModal.classList.remove('active');
+  });
+
+  $('#wheel-spin-btn').addEventListener('click', spinDailyWheel);
+
+  dailyWheelModal.addEventListener('click', (e) => {
+    if (e.target === dailyWheelModal) dailyWheelModal.classList.remove('active');
+  });
+
+  // ---------- Init ----------
+  initLights();
+  animateLights();
+  ALL_REELS.forEach((_, i) => buildReelStrip(i));
+
+  // Set initial reel positions
+  ALL_REELS.forEach((symbols, i) => {
+    const strip = $(`#reel-strip-${i}`);
+    const randomIndex = Math.floor(Math.random() * symbols.length) + symbols.length * 3;
+    strip.style.transform = `translateY(${symbolOffset(randomIndex, i)}px)`;
+  });
+
+  updateDisplays();
+
+  if (state.dailyWheelUsed) {
+    $('#daily-wheel-trigger').disabled = true;
+  }
+
+})();
+</script>
+</body>
+</html>

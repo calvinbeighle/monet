@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class ChatMessage {
-  final String content;
+  String content;
   final bool isUser;
   final bool isSystem;
   final bool isApproval;
@@ -68,7 +68,7 @@ class ChatPatternState extends State<ChatPattern> {
   @override
   void didUpdateWidget(ChatPattern oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.messages.length != oldWidget.messages.length) {
+    if (widget.messages.length != oldWidget.messages.length || widget.isStreaming) {
       _scrollToBottom();
     }
   }

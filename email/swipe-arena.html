@@ -1,0 +1,1481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Swipe Arena - Email Triage</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --card-bg: rgba(255,255,255,0.06);
+    --card-border: rgba(255,255,255,0.1);
+    --blue: #00d4ff;
+    --pink: #ff0066;
+    --green: #00ff88;
+    --text: #e0e0e0;
+    --text-dim: rgba(255,255,255,0.4);
+    --text-mid: rgba(255,255,255,0.6);
+    --grid-color: rgba(255,255,255,0.03);
+    --shake-x: 0px;
+    --shake-y: 0px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    user-select: none;
+    -webkit-user-select: none;
+    transform: translate(var(--shake-x), var(--shake-y));
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--grid-color) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Particle canvas */
+  #particles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  /* Top bar */
+  .top-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: linear-gradient(to bottom, rgba(10,10,15,0.95), transparent);
+  }
+
+  .level-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--blue);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .level-badge .num {
+    font-size: 24px;
+    font-weight: 800;
+  }
+
+  .xp-container {
+    flex: 1;
+    max-width: 300px;
+    margin: 0 20px;
+  }
+
+  .xp-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  .xp-bar {
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .xp-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--blue), var(--green));
+    border-radius: 3px;
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    width: 0%;
+    position: relative;
+  }
+
+  .xp-fill::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: -2px;
+    bottom: -2px;
+    width: 10px;
+    background: white;
+    border-radius: 2px;
+    filter: blur(4px);
+    opacity: 0.6;
+  }
+
+  .combo-display {
+    text-align: center;
+    min-width: 80px;
+  }
+
+  .combo-count {
+    font-size: 36px;
+    font-weight: 900;
+    line-height: 1;
+    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.3s;
+    color: var(--text-dim);
+  }
+
+  .combo-count.active {
+    color: var(--blue);
+  }
+
+  .combo-count.fire {
+    color: var(--pink);
+    text-shadow: 0 0 20px var(--pink), 0 0 40px rgba(255,0,102,0.4);
+  }
+
+  .combo-count.mega {
+    color: var(--green);
+    text-shadow: 0 0 20px var(--green), 0 0 40px rgba(0,255,136,0.4);
+  }
+
+  .combo-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+  }
+
+  .score-display {
+    text-align: right;
+  }
+
+  .score-num {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .score-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+  }
+
+  .timer-display {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+
+  /* Card stack area */
+  .card-stack {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+
+  .email-card {
+    position: absolute;
+    width: 420px;
+    max-width: calc(100vw - 40px);
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 28px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    cursor: grab;
+    touch-action: none;
+    transition: box-shadow 0.3s;
+    will-change: transform;
+  }
+
+  .email-card:active { cursor: grabbing; }
+
+  .email-card.fire-mode {
+    animation: fireGlow 0.6s ease-in-out infinite alternate;
+  }
+
+  @keyframes fireGlow {
+    0% {
+      box-shadow:
+        0 0 20px rgba(255,0,102,0.3),
+        0 0 40px rgba(255,0,102,0.15),
+        inset 0 0 20px rgba(255,0,102,0.05);
+    }
+    100% {
+      box-shadow:
+        0 0 30px rgba(255,100,0,0.4),
+        0 0 60px rgba(255,0,102,0.2),
+        inset 0 0 30px rgba(255,100,0,0.08);
+    }
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+
+  .avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 16px;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  .sender-info { flex: 1; min-width: 0; }
+
+  .sender-name {
+    font-weight: 600;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .send-time {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .ai-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+  }
+
+  .ai-badge.reply { background: rgba(0,212,255,0.15); color: var(--blue); }
+  .ai-badge.archive { background: rgba(255,255,255,0.08); color: var(--text-dim); }
+  .ai-badge.forward { background: rgba(0,255,136,0.15); color: var(--green); }
+  .ai-badge.star { background: rgba(255,0,102,0.15); color: var(--pink); }
+
+  .subject {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+
+  .preview {
+    font-size: 14px;
+    color: var(--text-mid);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .draft-reply {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .draft-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--blue);
+    margin-bottom: 8px;
+    opacity: 0.7;
+  }
+
+  .draft-text {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-style: italic;
+  }
+
+  /* Swipe direction indicators */
+  .swipe-hint-left,
+  .swipe-hint-right,
+  .swipe-hint-up,
+  .swipe-hint-down {
+    position: fixed;
+    z-index: 5;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+
+  .swipe-hint-left {
+    left: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--pink);
+  }
+
+  .swipe-hint-right {
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--green);
+  }
+
+  .swipe-hint-up {
+    top: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--blue);
+  }
+
+  .swipe-hint-down {
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.3);
+  }
+
+  /* Bottom hints */
+  .bottom-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    padding: 20px 24px;
+    background: linear-gradient(to top, rgba(10,10,15,0.95), transparent);
+  }
+
+  .hint-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .hint-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  .hint-item.left .hint-icon { border-color: rgba(255,0,102,0.3); color: var(--pink); }
+  .hint-item.right .hint-icon { border-color: rgba(0,255,136,0.3); color: var(--green); }
+  .hint-item.up .hint-icon { border-color: rgba(0,212,255,0.3); color: var(--blue); }
+  .hint-item.down .hint-icon { border-color: rgba(255,255,255,0.15); }
+
+  /* Boss fight mode */
+  body.boss-fight {
+    --bg: #040408;
+  }
+
+  body.boss-fight::before {
+    background-image:
+      linear-gradient(rgba(255,0,102,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,0,102,0.03) 1px, transparent 1px);
+  }
+
+  body.boss-fight .email-card {
+    box-shadow:
+      0 0 60px rgba(255,0,102,0.1),
+      0 0 120px rgba(0,212,255,0.05);
+  }
+
+  .boss-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.5s;
+  }
+
+  body.boss-fight .boss-overlay {
+    opacity: 1;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.7) 100%);
+  }
+
+  .boss-text {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 6;
+    font-size: 48px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 8px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s;
+  }
+
+  .boss-pulse {
+    position: fixed;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  body.boss-fight .boss-pulse {
+    animation: bossPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes bossPulse {
+    0%, 100% { opacity: 0; }
+    50% { opacity: 1; background: radial-gradient(ellipse at center, rgba(255,0,102,0.03) 0%, transparent 70%); }
+  }
+
+  /* Emails processed counter */
+  .progress-count {
+    position: fixed;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    font-size: 13px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Level up flash */
+  .level-up-flash {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(0,212,255,0.15), transparent 70%);
+  }
+
+  .level-up-flash.active {
+    animation: levelFlash 0.8s ease-out;
+  }
+
+  @keyframes levelFlash {
+    0% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  .level-up-text {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.5);
+    z-index: 201;
+    font-size: 64px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 6px;
+    color: var(--blue);
+    text-shadow: 0 0 40px var(--blue);
+    pointer-events: none;
+    opacity: 0;
+  }
+
+  .level-up-text.active {
+    animation: levelText 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes levelText {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+    20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+    40% { transform: translate(-50%, -50%) scale(1); }
+    80% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -60%) scale(1); }
+  }
+
+  /* Inbox zero celebration */
+  .inbox-zero {
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.8s;
+  }
+
+  .inbox-zero.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .inbox-zero h1 {
+    font-size: 56px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 10px;
+    background: linear-gradient(135deg, var(--blue), var(--green), var(--pink));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 16px;
+  }
+
+  .inbox-zero .final-stats {
+    font-size: 18px;
+    color: var(--text-mid);
+    text-align: center;
+    line-height: 2;
+  }
+
+  .inbox-zero .final-stats span {
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  /* Card exit animations */
+  .card-exit-left {
+    transition: transform 0.4s cubic-bezier(0.32, 0, 0.67, 0), opacity 0.4s ease;
+    transform: translateX(-150vw) rotate(-30deg) !important;
+    opacity: 0 !important;
+  }
+
+  .card-exit-right {
+    transition: transform 0.4s cubic-bezier(0.32, 0, 0.67, 0), opacity 0.4s ease;
+    transform: translateX(150vw) rotate(30deg) !important;
+    opacity: 0 !important;
+  }
+
+  .card-exit-up {
+    transition: transform 0.4s cubic-bezier(0.32, 0, 0.67, 0), opacity 0.4s ease;
+    transform: translateY(-150vh) rotate(5deg) !important;
+    opacity: 0 !important;
+  }
+
+  .card-exit-down {
+    transition: transform 0.4s cubic-bezier(0.32, 0, 0.67, 0), opacity 0.4s ease;
+    transform: translateY(150vh) !important;
+    opacity: 0 !important;
+  }
+</style>
+</head>
+<body>
+
+<!-- Particle canvas -->
+<canvas id="particles"></canvas>
+
+<!-- Boss fight overlays -->
+<div class="boss-overlay"></div>
+<div class="boss-pulse"></div>
+<div class="boss-text" id="bossText">INBOX ZERO</div>
+
+<!-- Level up effects -->
+<div class="level-up-flash" id="levelFlash"></div>
+<div class="level-up-text" id="levelText">LEVEL UP</div>
+
+<!-- Top bar -->
+<div class="top-bar">
+  <div class="level-badge">
+    LVL <span class="num" id="levelNum">1</span>
+  </div>
+  <div class="xp-container">
+    <div class="xp-label">XP <span id="xpText">0 / 100</span></div>
+    <div class="xp-bar">
+      <div class="xp-fill" id="xpFill"></div>
+    </div>
+  </div>
+  <div class="combo-display">
+    <div class="combo-count" id="comboCount">x1</div>
+    <div class="combo-label">combo</div>
+  </div>
+  <div class="score-display">
+    <div class="score-num" id="scoreNum">0</div>
+    <div class="score-label">Score</div>
+    <div class="timer-display" id="timerDisplay">0.0s</div>
+  </div>
+</div>
+
+<!-- Card stack -->
+<div class="card-stack" id="cardStack"></div>
+
+<!-- Swipe direction hints (shown while dragging) -->
+<div class="swipe-hint-left" id="hintLeft">Archive</div>
+<div class="swipe-hint-right" id="hintRight">Approve</div>
+<div class="swipe-hint-up" id="hintUp">Expand</div>
+<div class="swipe-hint-down" id="hintDown">Snooze</div>
+
+<!-- Progress count -->
+<div class="progress-count" id="progressCount"></div>
+
+<!-- Bottom hints -->
+<div class="bottom-bar">
+  <div class="hint-item left">
+    <div class="hint-icon">&larr;</div>
+    Archive
+  </div>
+  <div class="hint-item down">
+    <div class="hint-icon">&darr;</div>
+    Snooze
+  </div>
+  <div class="hint-item up">
+    <div class="hint-icon">&uarr;</div>
+    Expand
+  </div>
+  <div class="hint-item right">
+    <div class="hint-icon">&rarr;</div>
+    Approve
+  </div>
+</div>
+
+<!-- Inbox zero screen -->
+<div class="inbox-zero" id="inboxZero">
+  <h1>INBOX ZERO</h1>
+  <div class="final-stats" id="finalStats"></div>
+</div>
+
+<script>
+// ---- MOCK DATA ----
+const EMAILS = [
+  {
+    sender: "Sarah Chen",
+    email: "sarah.chen@acmecorp.com",
+    subject: "Q3 Budget Approval Needed",
+    preview: "Hi, I need your sign-off on the Q3 marketing budget before end of day. The total is $142K, broken down across digital, events, and content. Let me know if you have questions.",
+    time: "2m ago",
+    urgent: true,
+    action: "reply",
+    avatarColor: "#6366f1",
+    draft: "Hi Sarah, approved. The breakdown looks solid - let's sync on the events allocation next week to make sure we're covering the September conference."
+  },
+  {
+    sender: "GitHub",
+    email: "notifications@github.com",
+    subject: "[monet-os/core] PR #247: Refactor swipe gesture handler",
+    preview: "calvb requested your review on this pull request. 14 files changed, +382 -156. CI passing. No merge conflicts detected.",
+    time: "8m ago",
+    urgent: false,
+    action: "reply",
+    avatarColor: "#333",
+    draft: "Looks good - left two minor comments on the spring physics constants. Approve once those are addressed."
+  },
+  {
+    sender: "TechCrunch Daily",
+    email: "newsletter@techcrunch.com",
+    subject: "Your Daily Tech Digest - March 30",
+    preview: "Today's top stories: AI agents are reshaping enterprise software. Plus, a deep dive into the latest funding rounds and why investors are betting big on agent-native interfaces.",
+    time: "15m ago",
+    urgent: false,
+    action: "archive",
+    avatarColor: "#059669",
+    draft: null
+  },
+  {
+    sender: "Marcus Webb",
+    email: "m.webb@designlabs.io",
+    subject: "Updated mockups for the card component",
+    preview: "Hey, attached the revised Figma file with the frosted glass effect you mentioned. I also added a dark mode variant. Take a look when you get a chance and let me know your thoughts.",
+    time: "22m ago",
+    urgent: false,
+    action: "reply",
+    avatarColor: "#d946ef",
+    draft: "Marcus, these look great. The frosted glass treatment on the dark variant is exactly what I had in mind. Ship it."
+  },
+  {
+    sender: "Google Calendar",
+    email: "calendar-noreply@google.com",
+    subject: "Reminder: Product Sync in 30 minutes",
+    preview: "Product Sync with Engineering, 2:00 PM - 2:45 PM. Google Meet link attached. Agenda: Sprint review, roadmap priorities, Q3 planning kickoff.",
+    time: "30m ago",
+    urgent: true,
+    action: "archive",
+    avatarColor: "#4285f4",
+    draft: null
+  },
+  {
+    sender: "Jira",
+    email: "jira@acmecorp.atlassian.net",
+    subject: "[MONET-1042] Bug: Card animation jank on low-end devices",
+    preview: "Priority: High. Reported by QA team. The swipe animation drops below 30fps on devices with less than 8GB RAM. Needs investigation before release candidate.",
+    time: "45m ago",
+    urgent: true,
+    action: "star",
+    avatarColor: "#2563eb",
+    draft: null
+  },
+  {
+    sender: "Priya Sharma",
+    email: "priya@startupventures.co",
+    subject: "Re: Partnership discussion follow-up",
+    preview: "Thanks for the great conversation yesterday. I talked to our team and we are excited to explore a deeper integration. Could we set up a technical deep-dive call next week?",
+    time: "1h ago",
+    urgent: false,
+    action: "reply",
+    avatarColor: "#f59e0b",
+    draft: "Hi Priya, great to hear the team is on board. How about Thursday at 11am PT? I will loop in our CTO as well so we can cover the API integration questions."
+  },
+  {
+    sender: "AWS",
+    email: "no-reply@aws.amazon.com",
+    subject: "Your March invoice is ready",
+    preview: "Your AWS bill for March 2026 is $3,847.22. View your detailed billing dashboard for a breakdown by service. Payment will be processed automatically.",
+    time: "1h ago",
+    urgent: false,
+    action: "archive",
+    avatarColor: "#f97316",
+    draft: null
+  },
+  {
+    sender: "Derek Kim",
+    email: "derek.k@acmecorp.com",
+    subject: "Quick question about the demo environment",
+    preview: "Hey, is the staging server up? I am trying to run through the demo flow for the investor meeting tomorrow but getting 502 errors on the swipe endpoint.",
+    time: "2h ago",
+    urgent: true,
+    action: "reply",
+    avatarColor: "#14b8a6",
+    draft: "Derek - just checked, looks like the staging deploy failed at 11am. I kicked off a redeploy. Should be back up in ~10 minutes. Ping me if it is still down."
+  },
+  {
+    sender: "Substack",
+    email: "digest@substack.com",
+    subject: "New post from Stratechery: Agent Operating Systems",
+    preview: "Ben Thompson explores the emerging category of agent-native operating systems and why the traditional app model is about to be disrupted. Plus, an analysis of recent moves by Apple and Google.",
+    time: "2h ago",
+    urgent: false,
+    action: "archive",
+    avatarColor: "#f97316",
+    draft: null
+  },
+  {
+    sender: "Lisa Park",
+    email: "lisa.park@acmecorp.com",
+    subject: "Team offsite planning - need headcount",
+    preview: "Hi all, I am booking the venue for our April offsite. Need a final headcount by Wednesday. Also, any dietary restrictions I should know about for catering? Reply to this thread please.",
+    time: "3h ago",
+    urgent: false,
+    action: "reply",
+    avatarColor: "#ec4899",
+    draft: "Lisa, count me in. No dietary restrictions. Looking forward to it."
+  },
+  {
+    sender: "Zendesk",
+    email: "support@acmecorp.zendesk.com",
+    subject: "Ticket #8841: User cannot export data to CSV",
+    preview: "Priority: Medium. Customer reports that the CSV export button on the dashboard returns a blank file. Reproducible on Chrome and Firefox. Account: Enterprise tier.",
+    time: "3h ago",
+    urgent: false,
+    action: "forward",
+    avatarColor: "#78716c",
+    draft: null
+  },
+  {
+    sender: "Mom",
+    email: "janet.b@gmail.com",
+    subject: "Sunday dinner this week?",
+    preview: "Hi honey, are you free for dinner this Sunday? Dad is making his famous lasagna. Your sister is coming too. Let me know so I can plan portions. Love you!",
+    time: "4h ago",
+    urgent: false,
+    action: "reply",
+    avatarColor: "#e11d48",
+    draft: "Hi Mom, would love to! I will be there around 5. Can I bring anything? Tell Dad I have been thinking about that lasagna all week."
+  },
+  {
+    sender: "Stripe",
+    email: "notifications@stripe.com",
+    subject: "Payout of $12,450.00 initiated",
+    preview: "A payout of $12,450.00 has been initiated to your bank account ending in 4821. Expected arrival: April 1, 2026. View transaction details in your dashboard.",
+    time: "5h ago",
+    urgent: false,
+    action: "archive",
+    avatarColor: "#6366f1",
+    draft: null
+  },
+  {
+    sender: "Alex Torres",
+    email: "alex.t@rivalco.com",
+    subject: "Congrats on the launch",
+    preview: "Just saw the Product Hunt launch - incredible work. The swipe-based email triage concept is brilliant. Would love to grab coffee sometime and hear more about the vision. No agenda, just genuinely impressed.",
+    time: "6h ago",
+    urgent: false,
+    action: "reply",
+    avatarColor: "#0ea5e9",
+    draft: "Alex, thanks for the kind words - means a lot coming from you. Let's definitely grab coffee. How about next Thursday afternoon?"
+  }
+];
+
+// ---- AUDIO ENGINE ----
+const AudioEngine = {
+  ctx: null,
+
+  init() {
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  },
+
+  ensure() {
+    if (!this.ctx) this.init();
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+  },
+
+  whoosh(direction) {
+    this.ensure();
+    const ctx = this.ctx;
+    const duration = 0.25;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2000, ctx.currentTime);
+    filter.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + duration);
+
+    osc.type = 'sawtooth';
+    const baseFreq = direction === 'right' ? 300 : direction === 'left' ? 200 : 250;
+    osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + duration);
+
+    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  },
+
+  ding(combo) {
+    this.ensure();
+    const ctx = this.ctx;
+    const baseFreq = 600 + combo * 80;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.5, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  },
+
+  levelUp() {
+    this.ensure();
+    const ctx = this.ctx;
+    const notes = [523, 659, 784, 1047];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.1);
+      gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.1);
+      gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + i * 0.1 + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.1 + 0.5);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.1);
+      osc.stop(ctx.currentTime + i * 0.1 + 0.5);
+    });
+  },
+
+  bossBoom() {
+    this.ensure();
+    const ctx = this.ctx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(80, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 1.5);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 1.5);
+
+    // Sub rumble
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(40, ctx.currentTime);
+    osc2.frequency.exponentialRampToValueAtTime(20, ctx.currentTime + 2);
+    gain2.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(ctx.currentTime);
+    osc2.stop(ctx.currentTime + 2);
+  }
+};
+
+// ---- PARTICLE SYSTEM ----
+const ParticleSystem = {
+  canvas: null,
+  ctx: null,
+  particles: [],
+  raf: null,
+
+  init() {
+    this.canvas = document.getElementById('particles');
+    this.ctx = this.canvas.getContext('2d');
+    this.resize();
+    window.addEventListener('resize', () => this.resize());
+    this.loop();
+  },
+
+  resize() {
+    this.canvas.width = window.innerWidth;
+    this.canvas.height = window.innerHeight;
+  },
+
+  emit(x, y, direction, count) {
+    const colors = ['#00d4ff', '#ff0066', '#00ff88', '#ffffff'];
+    for (let i = 0; i < count; i++) {
+      let vx, vy;
+      const speed = 4 + Math.random() * 8;
+      const spread = Math.PI * 0.6;
+      let baseAngle;
+
+      if (direction === 'left') baseAngle = Math.PI;
+      else if (direction === 'right') baseAngle = 0;
+      else if (direction === 'up') baseAngle = -Math.PI / 2;
+      else baseAngle = Math.PI / 2;
+
+      const angle = baseAngle + (Math.random() - 0.5) * spread;
+      vx = Math.cos(angle) * speed;
+      vy = Math.sin(angle) * speed;
+
+      this.particles.push({
+        x, y,
+        vx, vy,
+        life: 1,
+        decay: 0.015 + Math.random() * 0.02,
+        size: 2 + Math.random() * 4,
+        color: colors[Math.floor(Math.random() * colors.length)]
+      });
+    }
+  },
+
+  loop() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.15; // gravity
+      p.vx *= 0.98;
+      p.life -= p.decay;
+      if (p.life <= 0) {
+        this.particles.splice(i, 1);
+        continue;
+      }
+      this.ctx.globalAlpha = p.life;
+      this.ctx.fillStyle = p.color;
+      this.ctx.beginPath();
+      this.ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+    this.ctx.globalAlpha = 1;
+    this.raf = requestAnimationFrame(() => this.loop());
+  }
+};
+
+// ---- GAME STATE ----
+const State = {
+  emails: [...EMAILS],
+  currentIndex: 0,
+  score: 0,
+  combo: 0,
+  maxCombo: 0,
+  level: 1,
+  xp: 0,
+  xpToLevel: 100,
+  processed: 0,
+  totalEmails: EMAILS.length,
+  emailTimer: 0,
+  bestTime: Infinity,
+  totalTime: 0,
+  lastSwipeTime: 0,
+  comboTimeout: null,
+  bossFight: false,
+  timerInterval: null,
+  startTime: null
+};
+
+// ---- DOM REFS ----
+const DOM = {
+  cardStack: document.getElementById('cardStack'),
+  comboCount: document.getElementById('comboCount'),
+  scoreNum: document.getElementById('scoreNum'),
+  levelNum: document.getElementById('levelNum'),
+  xpFill: document.getElementById('xpFill'),
+  xpText: document.getElementById('xpText'),
+  timerDisplay: document.getElementById('timerDisplay'),
+  progressCount: document.getElementById('progressCount'),
+  hintLeft: document.getElementById('hintLeft'),
+  hintRight: document.getElementById('hintRight'),
+  hintUp: document.getElementById('hintUp'),
+  hintDown: document.getElementById('hintDown'),
+  levelFlash: document.getElementById('levelFlash'),
+  levelText: document.getElementById('levelText'),
+  bossText: document.getElementById('bossText'),
+  inboxZero: document.getElementById('inboxZero'),
+  finalStats: document.getElementById('finalStats')
+};
+
+// ---- CARD RENDERING ----
+function createCardEl(email, zIndex, offset) {
+  const card = document.createElement('div');
+  card.className = 'email-card';
+  card.style.zIndex = zIndex;
+  card.style.transform = `translateY(${offset * 6}px) scale(${1 - offset * 0.03})`;
+  card.style.opacity = Math.max(0, 1 - offset * 0.25);
+  if (offset > 0) {
+    card.style.pointerEvents = 'none';
+  }
+
+  const initials = email.sender.split(' ').map(w => w[0]).join('').substring(0, 2);
+
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="avatar" style="background: ${email.avatarColor}">${initials}</div>
+      <div class="sender-info">
+        <div class="sender-name">${email.sender}</div>
+        <div class="send-time">${email.time}${email.urgent ? ' - URGENT' : ''}</div>
+      </div>
+      <div class="ai-badge ${email.action}">${email.action}</div>
+    </div>
+    <div class="subject">${email.subject}</div>
+    <div class="preview">${email.preview}</div>
+    ${email.draft ? `
+    <div class="draft-reply">
+      <div class="draft-label">AI Draft Reply</div>
+      <div class="draft-text">${email.draft}</div>
+    </div>` : ''}
+  `;
+
+  return card;
+}
+
+function renderCards() {
+  DOM.cardStack.innerHTML = '';
+  const remaining = State.emails.length - State.currentIndex;
+  const cardsToShow = Math.min(remaining, 3);
+
+  for (let i = cardsToShow - 1; i >= 0; i--) {
+    const email = State.emails[State.currentIndex + i];
+    if (!email) continue;
+    const card = createCardEl(email, 10 + (cardsToShow - i), i);
+    DOM.cardStack.appendChild(card);
+    if (i === 0) {
+      setupSwipeHandlers(card);
+      if (State.combo >= 5) {
+        card.classList.add('fire-mode');
+      }
+    }
+  }
+
+  DOM.progressCount.textContent = `${State.currentIndex} / ${State.totalEmails} processed`;
+
+  // Check boss fight
+  if (remaining <= 3 && remaining > 0 && !State.bossFight) {
+    enterBossFight();
+  }
+}
+
+// ---- SWIPE HANDLING ----
+function setupSwipeHandlers(card) {
+  let startX = 0, startY = 0;
+  let currentX = 0, currentY = 0;
+  let isDragging = false;
+
+  function onStart(e) {
+    isDragging = true;
+    const point = e.touches ? e.touches[0] : e;
+    startX = point.clientX;
+    startY = point.clientY;
+    currentX = 0;
+    currentY = 0;
+    card.style.transition = 'none';
+
+    // Start email timer
+    if (!State.startTime) {
+      State.startTime = performance.now();
+    }
+  }
+
+  function onMove(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    const point = e.touches ? e.touches[0] : e;
+    currentX = point.clientX - startX;
+    currentY = point.clientY - startY;
+
+    const rotation = currentX * 0.08;
+    card.style.transform = `translate(${currentX}px, ${currentY}px) rotate(${rotation}deg)`;
+
+    // Show directional hints
+    const threshold = 50;
+    DOM.hintLeft.style.opacity = currentX < -threshold ? Math.min(1, (-currentX - threshold) / 100) : 0;
+    DOM.hintRight.style.opacity = currentX > threshold ? Math.min(1, (currentX - threshold) / 100) : 0;
+    DOM.hintUp.style.opacity = currentY < -threshold ? Math.min(1, (-currentY - threshold) / 100) : 0;
+    DOM.hintDown.style.opacity = currentY > threshold ? Math.min(1, (currentY - threshold) / 100) : 0;
+
+    // Color tint on card
+    if (currentX > threshold) {
+      card.style.boxShadow = `0 0 ${Math.min(40, currentX / 3)}px rgba(0,255,136,${Math.min(0.3, currentX / 500)})`;
+    } else if (currentX < -threshold) {
+      card.style.boxShadow = `0 0 ${Math.min(40, -currentX / 3)}px rgba(255,0,102,${Math.min(0.3, -currentX / 500)})`;
+    } else if (currentY < -threshold) {
+      card.style.boxShadow = `0 0 ${Math.min(40, -currentY / 3)}px rgba(0,212,255,${Math.min(0.3, -currentY / 500)})`;
+    }
+  }
+
+  function onEnd() {
+    if (!isDragging) return;
+    isDragging = false;
+
+    DOM.hintLeft.style.opacity = 0;
+    DOM.hintRight.style.opacity = 0;
+    DOM.hintUp.style.opacity = 0;
+    DOM.hintDown.style.opacity = 0;
+
+    const swipeThreshold = 100;
+    const absX = Math.abs(currentX);
+    const absY = Math.abs(currentY);
+
+    let direction = null;
+
+    if (absX > absY && absX > swipeThreshold) {
+      direction = currentX > 0 ? 'right' : 'left';
+    } else if (absY > absX && absY > swipeThreshold) {
+      direction = currentY > 0 ? 'down' : 'up';
+    }
+
+    if (direction) {
+      processSwipe(card, direction);
+    } else {
+      // Snap back with spring
+      card.style.transition = 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s';
+      card.style.transform = 'translate(0px, 0px) rotate(0deg)';
+      card.style.boxShadow = '';
+    }
+  }
+
+  card.addEventListener('mousedown', onStart);
+  card.addEventListener('touchstart', onStart, { passive: true });
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('mouseup', onEnd);
+  window.addEventListener('touchend', onEnd);
+
+  // Store cleanup
+  card._cleanup = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('touchmove', onMove);
+    window.removeEventListener('mouseup', onEnd);
+    window.removeEventListener('touchend', onEnd);
+  };
+}
+
+function processSwipe(card, direction) {
+  // Clean up listeners
+  if (card._cleanup) card._cleanup();
+
+  // Exit animation
+  card.classList.add(`card-exit-${direction}`);
+
+  // Audio
+  AudioEngine.whoosh(direction);
+
+  // Particles
+  const rect = card.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  ParticleSystem.emit(cx, cy, direction, 30 + State.combo * 5);
+
+  // Timing
+  const now = performance.now();
+  const emailTime = State.startTime ? (now - State.startTime) / 1000 : 0;
+  State.totalTime += emailTime;
+  if (emailTime < State.bestTime && emailTime > 0) {
+    State.bestTime = emailTime;
+  }
+  State.startTime = null;
+
+  // Combo logic
+  const timeSinceLast = now - State.lastSwipeTime;
+  State.lastSwipeTime = now;
+
+  if (State.comboTimeout) clearTimeout(State.comboTimeout);
+
+  if (timeSinceLast < 3000 || State.combo === 0) {
+    State.combo++;
+    if (State.combo > State.maxCombo) State.maxCombo = State.combo;
+    AudioEngine.ding(State.combo);
+  } else {
+    State.combo = 1;
+  }
+
+  // Combo decay timeout
+  State.comboTimeout = setTimeout(() => {
+    State.combo = 0;
+    updateUI();
+  }, 4000);
+
+  // Score calculation
+  let multiplier = 1;
+  if (State.combo >= 10) multiplier = 5;
+  else if (State.combo >= 5) multiplier = 3;
+  else if (State.combo >= 3) multiplier = 2;
+
+  const speedBonus = Math.max(0, Math.floor((3 - emailTime) * 10));
+  const basePoints = 100;
+  const points = (basePoints + speedBonus) * multiplier;
+  State.score += points;
+
+  // XP
+  const xpGain = 15 + State.combo * 3;
+  State.xp += xpGain;
+  if (State.xp >= State.xpToLevel) {
+    levelUp();
+  }
+
+  State.processed++;
+  State.currentIndex++;
+
+  // Screen shake on high combo
+  if (State.combo >= 5) {
+    screenShake(State.combo);
+  }
+
+  updateUI();
+
+  // After exit animation, render next cards
+  setTimeout(() => {
+    if (State.currentIndex >= State.emails.length) {
+      showInboxZero();
+    } else {
+      renderCards();
+    }
+  }, 400);
+}
+
+// ---- SCREEN SHAKE ----
+function screenShake(intensity) {
+  const magnitude = Math.min(intensity * 0.8, 8);
+  let frames = 0;
+  const maxFrames = 6;
+
+  function shakeFrame() {
+    if (frames >= maxFrames) {
+      document.body.style.setProperty('--shake-x', '0px');
+      document.body.style.setProperty('--shake-y', '0px');
+      return;
+    }
+    const x = (Math.random() - 0.5) * magnitude * 2;
+    const y = (Math.random() - 0.5) * magnitude * 2;
+    document.body.style.setProperty('--shake-x', x + 'px');
+    document.body.style.setProperty('--shake-y', y + 'px');
+    frames++;
+    requestAnimationFrame(shakeFrame);
+  }
+  shakeFrame();
+}
+
+// ---- LEVEL UP ----
+function levelUp() {
+  State.xp -= State.xpToLevel;
+  State.level++;
+  State.xpToLevel = Math.floor(State.xpToLevel * 1.4);
+
+  AudioEngine.levelUp();
+
+  DOM.levelFlash.classList.add('active');
+  DOM.levelText.classList.add('active');
+
+  setTimeout(() => {
+    DOM.levelFlash.classList.remove('active');
+    DOM.levelText.classList.remove('active');
+  }, 1200);
+}
+
+// ---- BOSS FIGHT ----
+function enterBossFight() {
+  State.bossFight = true;
+  document.body.classList.add('boss-fight');
+
+  AudioEngine.bossBoom();
+
+  // Flash boss text
+  DOM.bossText.style.opacity = '1';
+  DOM.bossText.style.color = 'var(--pink)';
+  DOM.bossText.style.textShadow = '0 0 40px var(--pink), 0 0 80px rgba(255,0,102,0.3)';
+  DOM.bossText.style.animation = 'levelText 2s cubic-bezier(0.22, 1, 0.36, 1)';
+
+  setTimeout(() => {
+    DOM.bossText.style.opacity = '0';
+  }, 2000);
+
+  // Big particle burst
+  ParticleSystem.emit(window.innerWidth / 2, window.innerHeight / 2, 'up', 80);
+}
+
+// ---- INBOX ZERO ----
+function showInboxZero() {
+  const avgTime = State.totalTime / State.totalEmails;
+
+  DOM.finalStats.innerHTML = `
+    Final Score: <span>${State.score.toLocaleString()}</span><br>
+    Max Combo: <span>x${State.maxCombo}</span><br>
+    Average Time: <span>${avgTime.toFixed(1)}s per email</span><br>
+    Best Time: <span>${State.bestTime === Infinity ? '--' : State.bestTime.toFixed(1) + 's'}</span><br>
+    Level Reached: <span>${State.level}</span>
+  `;
+
+  setTimeout(() => {
+    DOM.inboxZero.classList.add('active');
+    AudioEngine.levelUp();
+
+    // Celebration particles
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => {
+        ParticleSystem.emit(
+          cx + (Math.random() - 0.5) * 400,
+          cy + (Math.random() - 0.5) * 200,
+          ['left', 'right', 'up'][Math.floor(Math.random() * 3)],
+          40
+        );
+      }, i * 200);
+    }
+  }, 500);
+}
+
+// ---- UI UPDATE ----
+function updateUI() {
+  // Combo
+  const comboEl = DOM.comboCount;
+  const comboVal = Math.max(1, State.combo);
+  comboEl.textContent = `x${comboVal}`;
+  comboEl.className = 'combo-count';
+  if (State.combo >= 10) {
+    comboEl.classList.add('mega');
+  } else if (State.combo >= 5) {
+    comboEl.classList.add('fire');
+  } else if (State.combo >= 2) {
+    comboEl.classList.add('active');
+  }
+  // Pop animation
+  comboEl.style.transform = 'scale(1.3)';
+  setTimeout(() => { comboEl.style.transform = 'scale(1)'; }, 150);
+
+  // Score
+  DOM.scoreNum.textContent = State.score.toLocaleString();
+
+  // Level
+  DOM.levelNum.textContent = State.level;
+
+  // XP
+  const pct = (State.xp / State.xpToLevel) * 100;
+  DOM.xpFill.style.width = pct + '%';
+  DOM.xpText.textContent = `${State.xp} / ${State.xpToLevel}`;
+
+  // Progress
+  DOM.progressCount.textContent = `${State.currentIndex} / ${State.totalEmails} processed`;
+}
+
+// ---- TIMER ----
+function startTimer() {
+  setInterval(() => {
+    if (State.startTime) {
+      const elapsed = (performance.now() - State.startTime) / 1000;
+      DOM.timerDisplay.textContent = elapsed.toFixed(1) + 's';
+    }
+  }, 100);
+}
+
+// ---- KEYBOARD SUPPORT ----
+document.addEventListener('keydown', (e) => {
+  if (State.currentIndex >= State.emails.length) return;
+  const topCard = DOM.cardStack.querySelector('.email-card:last-child');
+  if (!topCard) return;
+
+  let direction = null;
+  if (e.key === 'ArrowLeft' || e.key === 'a') direction = 'left';
+  else if (e.key === 'ArrowRight' || e.key === 'd') direction = 'right';
+  else if (e.key === 'ArrowUp' || e.key === 'w') direction = 'up';
+  else if (e.key === 'ArrowDown' || e.key === 's') direction = 'down';
+
+  if (direction) {
+    e.preventDefault();
+    if (!State.startTime) State.startTime = performance.now();
+    processSwipe(topCard, direction);
+  }
+});
+
+// ---- INIT ----
+function init() {
+  ParticleSystem.init();
+  renderCards();
+  updateUI();
+  startTimer();
+
+  // Init audio on first interaction
+  document.addEventListener('mousedown', () => AudioEngine.ensure(), { once: true });
+  document.addEventListener('touchstart', () => AudioEngine.ensure(), { once: true });
+}
+
+init();
+</script>
+</body>
+</html>

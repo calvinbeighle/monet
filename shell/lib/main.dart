@@ -76,6 +76,9 @@ class MonetShellState extends State<MonetShell> {
   // Last intent for retry support
   String? _lastIntent;
 
+  // Index of the current streaming assistant message (null when not streaming tokens)
+  int? _streamingMessageIndex;
+
   StreamSubscription<AgentEvent>? _streamSub;
 
   @override
@@ -104,8 +107,6 @@ class MonetShellState extends State<MonetShell> {
       _chatMessages.add(ChatMessage(content: intent, isUser: true));
     });
 
-    String streamedContent = '';
-
     _streamSub?.cancel();
     _streamSub = client.stream(intent, sessionId: _sessionId).listen(
       (event) {
@@ -117,10 +118,18 @@ class MonetShellState extends State<MonetShell> {
               _sessionId ??= event.metadata['session_id'] as String?;
             });
           case 'token':
-            streamedContent += event.data;
+            setState(() {
+              if (_streamingMessageIndex == null) {
+                _chatMessages.add(ChatMessage(content: event.data, isUser: false));
+                _streamingMessageIndex = _chatMessages.length - 1;
+              } else {
+                _chatMessages[_streamingMessageIndex!].content += event.data;
+              }
+            });
           case 'tool_call':
             final toolName = event.data;
             setState(() {
+              _streamingMessageIndex = null;
               _chatMessages.add(
                 ChatMessage(
                   content: 'Using tool: ${toolName.replaceAll('_', ' ')}',
@@ -136,13 +145,7 @@ class MonetShellState extends State<MonetShell> {
             // In chat mode, show inline approval card; otherwise show dialog
             if (_activePattern == 'chat' || _activePattern == null) {
               setState(() {
-                // Add any accumulated text before the approval card
-                if (streamedContent.isNotEmpty) {
-                  _chatMessages.add(
-                    ChatMessage(content: streamedContent, isUser: false),
-                  );
-                  streamedContent = '';
-                }
+                _streamingMessageIndex = null;
                 _chatMessages.add(ChatMessage(
                   content: 'Approve $toolName?',
                   isUser: false,
@@ -158,18 +161,13 @@ class MonetShellState extends State<MonetShell> {
                 parameters: parameters,
               ));
             } else {
+              _streamingMessageIndex = null;
               _showApprovalDialog(approvalId, toolName, parameters);
             }
           case 'error':
             final retryable = event.metadata['retryable'] == true;
             setState(() {
-              // Flush any accumulated text before the error
-              if (streamedContent.isNotEmpty) {
-                _chatMessages.add(
-                  ChatMessage(content: streamedContent, isUser: false),
-                );
-                streamedContent = '';
-              }
+              _streamingMessageIndex = null;
               _chatMessages.add(ChatMessage(
                 content: event.data,
                 isUser: false,
@@ -181,11 +179,7 @@ class MonetShellState extends State<MonetShell> {
             setState(() {
               _chatStreaming = false;
               _isRunning = false;
-              if (streamedContent.isNotEmpty) {
-                _chatMessages.add(
-                  ChatMessage(content: streamedContent, isUser: false),
-                );
-              }
+              _streamingMessageIndex = null;
               _applyPatternData(event.metadata);
             });
         }
@@ -434,7 +428,7 @@ class MonetShellState extends State<MonetShell> {
           key: const ValueKey('chat'),
           messages: _chatMessages,
           suggestions: _chatSuggestions,
-          isStreaming: _chatStreaming,
+          isStreaming: _chatStreaming && _streamingMessageIndex == null,
           onSend: _submitIntent,
           onSuggestionTap: _submitIntent,
           onApprovalDecision: _handleChatApprovalDecision,

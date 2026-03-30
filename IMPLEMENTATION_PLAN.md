@@ -233,6 +233,7 @@ Debian VM boots directly into Monet.
 - **Tinder batch approval UX:** Cards are currently populated from `done` event outputs, not from streaming `approval_request` events. For true batch approval UX, cards should be created incrementally as `approval_request` events arrive during streaming.
 - **Session ID from backend:** Fixed - the backend now includes `session_id` in routing event metadata.
 - **Done event now carries outputs:** Fixed - `stream_sync` now collects text outputs and includes them in the `done` event metadata along with agent name, ui_pattern, and session_id. This enables pattern population from streaming responses.
+- **Real-time token streaming fixed:** Previously tokens were buffered in a local `streamedContent` string and only rendered on the `done` event. Now tokens stream into the UI on each event via mutable `ChatMessage` updates.
 
 ### Implementation Notes (2026-03-30) - Batch 2
 
@@ -249,7 +250,12 @@ Debian VM boots directly into Monet.
 - **PlanningAgent per-session state fixed:** Node state is now scoped per session via `_sessions` dict keyed by session_id. Runner calls `set_session()` before executing tools. Concurrent planning sessions are isolated.
 - **Error handling implemented:** Runner catches `AuthenticationError`, `RateLimitError`, `APIConnectionError`, `APITimeoutError`, and general `APIError` from Anthropic SDK. Tool execution errors are caught with OAuth detection (401/403/unauthorized). Stream and sync paths both handle errors gracefully.
 - **Flutter error cards implemented:** Chat pattern renders error cards with error icon, message, and retry button (for retryable errors). AgentClient catches network/connection errors and emits synthetic error+done events.
-- **Test count:** 174 total (129 Python + 45 Flutter), all passing.
+- **Test count:** 176 total (129 Python + 47 Flutter), all passing.
+
+### Implementation Notes (2026-03-30) - Batch 4
+
+- **Real-time token streaming fixed:** Tokens now render in the chat UI as they arrive instead of buffering until the `done` event. `ChatMessage.content` is now mutable. `MonetShellState` tracks `_streamingMessageIndex` - on first token, creates a new assistant message; on subsequent tokens, appends to it in-place with `setState()`. Typing indicator (bouncing dots) only shows before the first token arrives, then disappears as the streaming message takes over. Chat scroll now triggers continuously during streaming.
+- **Test count:** 176 total (129 Python + 47 Flutter), all passing.
 
 ---
 

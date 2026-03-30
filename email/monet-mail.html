@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MONET</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0a12;color:#fff;font-family:'Space Grotesk',sans-serif;-webkit-font-smoothing:antialiased}
+canvas{display:block;position:fixed;inset:0}
+#world{z-index:1}
+#fx{z-index:3;pointer-events:none}
+
+/* HUD - top */
+.hud{position:fixed;z-index:10;pointer-events:none}
+.hud-top{top:24px;left:0;right:0;display:flex;justify-content:center;gap:40px}
+.hud-item{display:flex;flex-direction:column;align-items:center;gap:2px}
+.hud-val{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+.hud-lbl{font-size:9px;text-transform:uppercase;letter-spacing:0.2em;color:rgba(255,255,255,0.25)}
+
+/* Combo */
+.combo-text{position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);z-index:20;pointer-events:none;font-size:100px;font-weight:700;opacity:0;letter-spacing:-0.04em}
+.combo-text.pop{animation:comboPop 0.7s cubic-bezier(0.16,1,0.3,1) forwards}
+@keyframes comboPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.3);filter:blur(16px)}35%{opacity:1;transform:translate(-50%,-50%) scale(1.15);filter:blur(0)}100%{opacity:0;transform:translate(-50%,-55%) scale(1);filter:blur(6px)}}
+
+/* Level up flash */
+.lvl-flash{position:fixed;inset:0;z-index:25;pointer-events:none;background:#fff;opacity:0}
+.lvl-flash.go{animation:lFlash 0.5s ease forwards}
+@keyframes lFlash{0%{opacity:0.7}100%{opacity:0}}
+.lvl-text{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:26;pointer-events:none;font-family:'Instrument Serif',serif;font-size:72px;font-style:italic;opacity:0}
+.lvl-text.go{animation:lText 1.4s cubic-bezier(0.16,1,0.3,1) forwards}
+@keyframes lText{0%{opacity:0;transform:translate(-50%,-50%) scale(0.5);filter:blur(16px)}15%{opacity:1;transform:translate(-50%,-50%) scale(1);filter:blur(0)}65%{opacity:1}100%{opacity:0;transform:translate(-50%,-55%);filter:blur(8px)}}
+
+/* Email detail panel - slides up when clicking a creature */
+.detail{position:fixed;bottom:0;left:50%;transform:translateX(-50%);z-index:15;width:min(560px,90vw);background:rgba(12,12,20,0.92);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.08);border-bottom:none;border-radius:20px 20px 0 0;padding:28px 32px 24px;pointer-events:auto;transition:transform 0.4s cubic-bezier(0.16,1,0.3,1),opacity 0.3s ease;transform:translateX(-50%) translateY(100%);opacity:0}
+.detail.open{transform:translateX(-50%) translateY(0);opacity:1}
+.detail-from{font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:6px;letter-spacing:0.02em}
+.detail-subject{font-family:'Instrument Serif',serif;font-size:24px;line-height:1.3;margin-bottom:14px;letter-spacing:-0.01em;color:rgba(255,255,255,0.9)}
+.detail-body{font-size:14px;line-height:1.7;color:rgba(255,255,255,0.4);max-height:160px;overflow-y:auto;margin-bottom:20px;mask-image:linear-gradient(#000 70%,transparent);-webkit-mask-image:linear-gradient(#000 70%,transparent)}
+.detail-body::-webkit-scrollbar{width:3px}
+.detail-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+.detail-actions{display:flex;gap:10px;flex-wrap:wrap}
+.detail-btn{padding:10px 22px;border-radius:100px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7);font-size:13px;font-weight:500;letter-spacing:0.03em;cursor:pointer;transition:all 0.2s ease;display:flex;align-items:center;gap:6px}
+.detail-btn:hover{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.18);color:#fff;transform:translateY(-1px)}
+.detail-btn kbd{font-size:10px;opacity:0.4;font-family:inherit}
+.detail-btn.green{border-color:rgba(100,255,160,0.2);color:rgba(100,255,160,0.8)}
+.detail-btn.green:hover{background:rgba(100,255,160,0.08);border-color:rgba(100,255,160,0.3);color:rgba(100,255,160,1)}
+.detail-btn.red{border-color:rgba(255,100,120,0.2);color:rgba(255,100,120,0.8)}
+.detail-btn.red:hover{background:rgba(255,100,120,0.08);border-color:rgba(255,100,120,0.3)}
+.detail-btn.gold{border-color:rgba(255,215,100,0.2);color:rgba(255,215,100,0.8)}
+.detail-btn.gold:hover{background:rgba(255,215,100,0.08);border-color:rgba(255,215,100,0.3)}
+.detail-close{position:absolute;top:12px;right:16px;width:28px;height:28px;border-radius:50%;border:none;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.4);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s}
+.detail-close:hover{background:rgba(255,255,255,0.12);color:#fff}
+
+/* Streak bar */
+.streak-bar{position:fixed;bottom:0;left:0;right:0;height:3px;z-index:30;pointer-events:none}
+.streak-fill{height:100%;width:0%;transition:width 0.3s ease}
+
+/* Start screen */
+.start{position:fixed;inset:0;z-index:100;background:rgba(10,10,18,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.8s ease}
+.start.gone{opacity:0;pointer-events:none}
+.start h1{font-family:'Instrument Serif',serif;font-size:clamp(56px,12vw,120px);font-style:italic;letter-spacing:-0.04em;background:linear-gradient(180deg,rgba(255,255,255,0.95),rgba(255,255,255,0.3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.start p{font-size:13px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.2);margin-bottom:36px}
+.start .count{font-size:14px;color:rgba(255,255,255,0.35);margin-bottom:28px;font-variant-numeric:tabular-nums}
+.start button{padding:16px 52px;border-radius:100px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7);font-size:14px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;transition:all 0.3s ease;backdrop-filter:blur(12px)}
+.start button:hover{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.2);transform:scale(1.03)}
+
+/* Inbox Zero */
+.zero{position:fixed;inset:0;z-index:100;background:#0a0a12;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 1s ease}
+.zero.vis{opacity:1;pointer-events:auto}
+.zero h1{font-family:'Instrument Serif',serif;font-size:clamp(40px,9vw,80px);font-style:italic;background:linear-gradient(180deg,rgba(255,255,255,0.95),rgba(255,255,255,0.3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.zero p{font-size:14px;color:rgba(255,255,255,0.25);margin-bottom:40px}
+.zero-stats{display:flex;gap:48px}
+.zero-s{text-align:center}
+.zero-sv{font-size:32px;font-weight:700;margin-bottom:4px;font-variant-numeric:tabular-nums}
+.zero-sl{font-size:9px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.2)}
+
+/* Tooltip on hover */
+.tooltip{position:fixed;z-index:12;pointer-events:none;padding:6px 14px;border-radius:10px;background:rgba(12,12,20,0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.06);font-size:12px;color:rgba(255,255,255,0.7);white-space:nowrap;opacity:0;transition:opacity 0.15s;transform:translateY(-8px)}
+.tooltip.vis{opacity:1}
+.tooltip-sub{font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px}
+</style>
+</head>
+<body>
+
+<canvas id="world"></canvas>
+<canvas id="fx"></canvas>
+
+<!-- HUD -->
+<div class="hud hud-top">
+  <div class="hud-item"><div class="hud-val" id="hHandled">0</div><div class="hud-lbl">Handled</div></div>
+  <div class="hud-item"><div class="hud-val" id="hLevel">1</div><div class="hud-lbl">Level</div></div>
+  <div class="hud-item"><div class="hud-val" id="hStreak">0</div><div class="hud-lbl">Streak</div></div>
+</div>
+
+<div class="combo-text" id="comboText"></div>
+<div class="lvl-flash" id="lvlFlash"></div>
+<div class="lvl-text" id="lvlText"></div>
+<div class="streak-bar"><div class="streak-fill" id="streakFill"></div></div>
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip"><div id="tooltipName"></div><div class="tooltip-sub" id="tooltipSub"></div></div>
+
+<!-- Detail panel -->
+<div class="detail" id="detail">
+  <button class="detail-close" id="detailClose">x</button>
+  <div class="detail-from" id="detFrom"></div>
+  <div class="detail-subject" id="detSubject"></div>
+  <div class="detail-body" id="detBody"></div>
+  <div class="detail-actions">
+    <button class="detail-btn green" onclick="act('reply')">Reply <kbd>R</kbd></button>
+    <button class="detail-btn red" onclick="act('archive')">Archive <kbd>A</kbd></button>
+    <button class="detail-btn gold" onclick="act('star')">Star <kbd>F</kbd></button>
+    <button class="detail-btn" onclick="act('snooze')">Snooze <kbd>S</kbd></button>
+    <button class="detail-btn" onclick="act('delete')">Delete <kbd>D</kbd></button>
+  </div>
+</div>
+
+<!-- Start -->
+<div class="start" id="startScreen">
+  <h1>Monet</h1>
+  <p>Your inbox is alive</p>
+  <div class="count" id="startCount">Loading...</div>
+  <button id="startBtn">Begin</button>
+</div>
+
+<!-- Zero -->
+<div class="zero" id="zeroScreen">
+  <h1>Inbox Zero</h1>
+  <p>Every last one. Beautifully done.</p>
+  <div class="zero-stats">
+    <div class="zero-s"><div class="zero-sv" id="z0">0</div><div class="zero-sl">Handled</div></div>
+    <div class="zero-s"><div class="zero-sv" id="z1">0:00</div><div class="zero-sl">Time</div></div>
+    <div class="zero-s"><div class="zero-sv" id="z2">0</div><div class="zero-sl">Best Streak</div></div>
+    <div class="zero-s"><div class="zero-sv" id="z3">1</div><div class="zero-sl">Level</div></div>
+  </div>
+</div>
+
+<script>
+// ============ CANVAS SETUP ============
+const wC = document.getElementById('world');
+const wX = wC.getContext('2d');
+const fC = document.getElementById('fx');
+const fX = fC.getContext('2d');
+let W, H;
+
+function resize() {
+  W = wC.width = fC.width = window.innerWidth;
+  H = wC.height = fC.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ============ STATE ============
+let emails = [];
+let creatures = [];
+let handled = new Set();
+let selected = -1; // index of selected creature
+let streak = 0, bestStreak = 0;
+let xp = 0, level = 1, xpNeeded = 60;
+let startTime = 0, lastAction = 0;
+let started = false;
+let mouseX = W/2, mouseY = H/2;
+let hoveredIdx = -1;
+const MAX_VISIBLE = 12; // only this many creatures on screen at once
+let nextSpawnIdx = 0; // next email index to spawn
+
+// ============ COLORS ============
+const palette = [
+  '#7c5cfc','#5c8afc','#5cfca8','#fc5c78','#fcd85c',
+  '#fc985c','#c17767','#5cc8fc','#a8fc5c','#fc5cb8',
+  '#8b7355','#6b8f71','#4a6fa5','#5f7d8e','#c85cfc',
+];
+function hashClr(s) { let h=0; for(let i=0;i<s.length;i++) h=s.charCodeAt(i)+((h<<5)-h); return palette[Math.abs(h)%palette.length]; }
+function extractName(f) { const m=f.match(/^"?([^"<]+)"?\s*</); return m?m[1].trim():f.split('@')[0]; }
+function initials(n) { const p=n.replace(/<[^>]+>/g,'').replace(/"/g,'').trim().split(/\s+/); return p.length>=2?(p[0][0]+p[1][0]).toUpperCase():(p[0]||'??').substring(0,2).toUpperCase(); }
+function relTime(d) { try{const ms=Date.now()-new Date(d).getTime();if(ms<3600000)return Math.max(1,Math.floor(ms/60000))+'m';if(ms<86400000)return Math.floor(ms/3600000)+'h';if(ms<604800000)return Math.floor(ms/86400000)+'d';return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch{return'';} }
+
+// ============ CREATURE CLASS ============
+// Each email becomes a little floating creature - a soft blob with eyes that wanders around
+class Creature {
+  constructor(email, index) {
+    this.email = email;
+    this.index = index;
+    this.name = extractName(email.from);
+    this.color = hashClr(this.name);
+    this.ini = initials(this.name);
+
+    // Size based on importance/unread - big and characterful
+    this.baseR = 44 + (email.isImportant ? 16 : 0) + (email.isUnread ? 8 : 0);
+    this.r = this.baseR;
+
+    // Position - spread across screen
+    this.x = 100 + Math.random() * (W - 200);
+    this.y = 120 + Math.random() * (H - 280);
+
+    // Velocity - gentle wandering
+    this.vx = (Math.random() - 0.5) * 0.8;
+    this.vy = (Math.random() - 0.5) * 0.8;
+
+    // Wobble / breathing
+    this.phase = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = 0.01 + Math.random() * 0.01;
+    this.wobbleAmp = 0.08 + Math.random() * 0.04;
+
+    // Eyes
+    this.eyeDir = 0; // angle eyes are looking
+    this.blinkTimer = 100 + Math.random() * 200;
+    this.blinking = false;
+    this.blinkFrame = 0;
+
+    // State
+    this.alive = true;
+    this.dying = false;
+    this.deathTimer = 0;
+    this.deathDir = { x: 0, y: 0 };
+
+    // Hover / selection
+    this.hoverScale = 0;
+    this.selectScale = 0;
+
+    // Trail
+    this.trail = [];
+
+    // Personality: some are bouncier, some calmer
+    this.energy = 0.3 + Math.random() * 0.7;
+    this.wanderAngle = Math.random() * Math.PI * 2;
+    this.wanderSpeed = 0.02 + Math.random() * 0.02;
+  }
+
+  update(dt, mx, my) {
+    if (this.dying) {
+      this.deathTimer += dt;
+      this.x += this.deathDir.x * dt * 0.5;
+      this.y += this.deathDir.y * dt * 0.5;
+      this.r = this.baseR * Math.max(0, 1 - this.deathTimer / 600);
+      if (this.deathTimer > 600) this.alive = false;
+      return;
+    }
+
+    // Wander
+    this.wanderAngle += (Math.random() - 0.5) * this.wanderSpeed * dt;
+    this.vx += Math.cos(this.wanderAngle) * this.energy * 0.01 * dt;
+    this.vy += Math.sin(this.wanderAngle) * this.energy * 0.01 * dt;
+
+    // Damping
+    this.vx *= 0.995;
+    this.vy *= 0.995;
+
+    // Soft repel from mouse (if not selected)
+    if (selected !== this.index) {
+      const dx = this.x - mx;
+      const dy = this.y - my;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 150 && dist > 1) {
+        const force = (150 - dist) * 0.003;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+
+    // Attract to center gently
+    const cx = W / 2, cy = H / 2;
+    this.vx += (cx - this.x) * 0.00004;
+    this.vy += (cy - this.y) * 0.00004;
+
+    // Repel from other creatures
+    for (const other of creatures) {
+      if (other === this || !other.alive || other.dying) continue;
+      const dx = this.x - other.x;
+      const dy = this.y - other.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = this.r + other.r + 10;
+      if (dist < minDist && dist > 0.1) {
+        const force = (minDist - dist) * 0.02;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+
+    // Move
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Boundary bounce
+    const pad = 60;
+    if (this.x < pad) { this.x = pad; this.vx *= -0.5; }
+    if (this.x > W - pad) { this.x = W - pad; this.vx *= -0.5; }
+    if (this.y < 90) { this.y = 90; this.vy *= -0.5; }
+    if (this.y > H - 90) { this.y = H - 90; this.vy *= -0.5; }
+
+    // Wobble
+    this.phase += this.wobbleSpeed * dt;
+
+    // Eyes follow mouse
+    const edx = mx - this.x;
+    const edy = my - this.y;
+    this.eyeDir = Math.atan2(edy, edx);
+
+    // Blink
+    this.blinkTimer -= dt;
+    if (this.blinkTimer <= 0 && !this.blinking) {
+      this.blinking = true;
+      this.blinkFrame = 0;
+    }
+    if (this.blinking) {
+      this.blinkFrame += dt;
+      if (this.blinkFrame > 150) {
+        this.blinking = false;
+        this.blinkTimer = 150 + Math.random() * 400;
+      }
+    }
+
+    // Hover/select animation
+    const isHov = hoveredIdx === this.index;
+    const isSel = selected === this.index;
+    this.hoverScale += ((isHov ? 1 : 0) - this.hoverScale) * 0.1;
+    this.selectScale += ((isSel ? 1 : 0) - this.selectScale) * 0.1;
+
+    // Trail
+    if (Math.random() < 0.15) {
+      this.trail.push({ x: this.x, y: this.y, life: 1 });
+    }
+    this.trail = this.trail.filter(t => { t.life -= 0.008; return t.life > 0; });
+  }
+
+  draw(ctx) {
+    if (!this.alive) return;
+
+    const wobble = Math.sin(this.phase) * this.wobbleAmp;
+    const scale = 1 + wobble + this.hoverScale * 0.15 + this.selectScale * 0.1;
+    const r = this.r * scale;
+
+    const alpha = this.dying ? Math.max(0, 1 - this.deathTimer / 600) : 1;
+
+    // Trail
+    for (const t of this.trail) {
+      ctx.globalAlpha = t.life * 0.08 * alpha;
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r * 0.3 * t.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = alpha;
+
+    // Glow
+    if (this.hoverScale > 0.01 || this.selectScale > 0.01) {
+      const glowR = r * (1.5 + this.selectScale * 0.5);
+      const glow = ctx.createRadialGradient(this.x, this.y, r * 0.5, this.x, this.y, glowR);
+      glow.addColorStop(0, this.color + '20');
+      glow.addColorStop(1, 'transparent');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Body - soft blob shape
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    const points = 60;
+    for (let i = 0; i < points; i++) {
+      const a = (Math.PI * 2 * i) / points;
+      const blobR = r * (1 + Math.sin(a * 3 + this.phase * 2) * 0.04 + Math.sin(a * 5 + this.phase * 3) * 0.02);
+      const px = this.x + Math.cos(a) * blobR;
+      const py = this.y + Math.sin(a) * blobR;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Inner highlight
+    const hl = ctx.createRadialGradient(this.x - r * 0.25, this.y - r * 0.3, 0, this.x, this.y, r);
+    hl.addColorStop(0, 'rgba(255,255,255,0.18)');
+    hl.addColorStop(1, 'transparent');
+    ctx.fillStyle = hl;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyes
+    const eyeOffX = Math.cos(this.eyeDir) * r * 0.15;
+    const eyeOffY = Math.sin(this.eyeDir) * r * 0.15;
+    const eyeSpacing = r * 0.28;
+    const eyeR = r * 0.16;
+    const pupilR = eyeR * 0.55;
+
+    const blinkSqueeze = this.blinking ? Math.max(0.1, 1 - Math.sin(this.blinkFrame / 150 * Math.PI) * 0.9) : 1;
+
+    for (const side of [-1, 1]) {
+      const ex = this.x + side * eyeSpacing + eyeOffX * 0.3;
+      const ey = this.y - r * 0.1 + eyeOffY * 0.3;
+
+      // White
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.ellipse(ex, ey, eyeR, eyeR * blinkSqueeze, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Pupil
+      if (blinkSqueeze > 0.3) {
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(ex + eyeOffX * 0.4, ey + eyeOffY * 0.4, pupilR, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Shine
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.beginPath();
+        ctx.arc(ex + eyeOffX * 0.2 + pupilR * 0.3, ey + eyeOffY * 0.2 - pupilR * 0.3, pupilR * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Mouth - small happy curve
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(this.x + eyeOffX * 0.2, this.y + r * 0.25, r * 0.15, 0.1, Math.PI - 0.1);
+    ctx.stroke();
+
+    // Initials below (subtle)
+    if (this.hoverScale > 0.3 || this.selectScale > 0.3) {
+      ctx.globalAlpha = alpha * Math.max(this.hoverScale, this.selectScale) * 0.8;
+      ctx.fillStyle = '#fff';
+      ctx.font = `600 ${Math.floor(r * 0.3)}px 'Space Grotesk', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(this.name, this.x, this.y + r + 8);
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  hitTest(mx, my) {
+    const dx = mx - this.x;
+    const dy = my - this.y;
+    return Math.sqrt(dx * dx + dy * dy) < this.r * 1.2;
+  }
+
+  die(dirX, dirY) {
+    this.dying = true;
+    this.deathTimer = 0;
+    this.deathDir = { x: dirX * 0.5, y: dirY * 0.5 };
+  }
+}
+
+// ============ PARTICLES ============
+let particles = [];
+class P {
+  constructor(x,y,c,vx,vy,sz){this.x=x;this.y=y;this.c=c;this.vx=vx;this.vy=vy;this.life=1;this.decay=0.01+Math.random()*0.015;this.sz=sz||2+Math.random()*4}
+  update(){this.x+=this.vx;this.y+=this.vy;this.vy+=0.06;this.vx*=0.99;this.life-=this.decay;return this.life>0}
+  draw(ctx){ctx.globalAlpha=this.life*0.6;ctx.fillStyle=this.c;ctx.beginPath();ctx.arc(this.x,this.y,this.sz*this.life,0,Math.PI*2);ctx.fill()}
+}
+function emit(x,y,c,n,s){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2;const sp=(s||5)*(0.4+Math.random());particles.push(new P(x,y,c,Math.cos(a)*sp,Math.sin(a)*sp-1))}}
+function emitDir(x,y,c,n,dx,dy){for(let i=0;i<n;i++){particles.push(new P(x,y,c,dx*(2+Math.random()*4)+(Math.random()-0.5)*2,dy*(2+Math.random()*4)+(Math.random()-0.5)*2))}}
+
+// ============ SOUND ============
+const AC = new (window.AudioContext || window.webkitAudioContext)();
+function snd(type){
+  if(AC.state==='suspended')AC.resume();
+  const t=AC.currentTime;const g=AC.createGain();g.connect(AC.destination);
+  if(type==='pop'){const o=AC.createOscillator();o.type='sine';o.frequency.setValueAtTime(500+Math.random()*200,t);o.frequency.exponentialRampToValueAtTime(150,t+0.15);g.gain.setValueAtTime(0.06,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.15);o.connect(g);o.start(t);o.stop(t+0.15)}
+  else if(type==='combo'){const base=400+streak*40;const o=AC.createOscillator();o.type='sine';o.frequency.setValueAtTime(base,t);o.frequency.exponentialRampToValueAtTime(base*1.5,t+0.2);g.gain.setValueAtTime(0.07,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.25);o.connect(g);o.start(t);o.stop(t+0.25)}
+  else if(type==='level'){[1,1.25,1.5,2].forEach((m,i)=>{const o=AC.createOscillator();const g2=AC.createGain();o.type='sine';o.frequency.value=440*m;g2.gain.setValueAtTime(0,t+i*0.1);g2.gain.linearRampToValueAtTime(0.05,t+i*0.1+0.04);g2.gain.exponentialRampToValueAtTime(0.001,t+1);o.connect(g2);g2.connect(AC.destination);o.start(t+i*0.1);o.stop(t+1)})}
+  else if(type==='zero'){[1,1.25,1.5,1.75,2,2.5].forEach((m,i)=>{const o=AC.createOscillator();const g2=AC.createGain();o.type='sine';o.frequency.value=330*m;g2.gain.setValueAtTime(0,t+i*0.15);g2.gain.linearRampToValueAtTime(0.06,t+i*0.15+0.05);g2.gain.exponentialRampToValueAtTime(0.001,t+2);o.connect(g2);g2.connect(AC.destination);o.start(t+i*0.15);o.stop(t+2)})}
+  else if(type==='click'){const o=AC.createOscillator();o.type='sine';o.frequency.setValueAtTime(800,t);g.gain.setValueAtTime(0.03,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.05);o.connect(g);o.start(t);o.stop(t+0.05)}
+}
+
+// ============ GAME LOGIC ============
+function act(action) {
+  if (selected < 0 || selected >= creatures.length) return;
+  const c = creatures[selected];
+  if (!c || !c.alive || c.dying) return;
+  if (handled.has(c.index)) return;
+
+  handled.add(c.index);
+
+  // Death animation direction
+  const dirs = {
+    archive: [-3, 0], reply: [3, 0], star: [0, -3],
+    snooze: [0, 3], delete: [-2, -2]
+  };
+  const [dx, dy] = dirs[action] || [0, -2];
+  c.die(dx, dy);
+
+  // Particles from creature
+  emit(c.x, c.y, c.color, 30, 6);
+  emit(c.x, c.y, '#fff', 10, 4);
+
+  // Speed / streak
+  const now = Date.now();
+  const dt = now - lastAction;
+  lastAction = now;
+  if (dt < 6000) { streak++; if (streak > bestStreak) bestStreak = streak; }
+  else streak = 0;
+
+  // XP
+  let xpGain = 10;
+  if (dt < 1500) xpGain = 30;
+  else if (dt < 3000) xpGain = 20;
+  else if (dt < 6000) xpGain = 15;
+  if (streak >= 15) xpGain *= 3;
+  else if (streak >= 10) xpGain *= 2.5;
+  else if (streak >= 5) xpGain *= 1.5;
+
+  xp += Math.floor(xpGain);
+  while (xp >= xpNeeded) {
+    xp -= xpNeeded;
+    level++;
+    xpNeeded = Math.floor(xpNeeded * 1.3);
+    doLevelUp();
+  }
+
+  // Combo display
+  if (streak >= 3) {
+    const ct = document.getElementById('comboText');
+    ct.textContent = streak + 'x';
+    if (streak >= 15) ct.style.color = 'rgba(255,100,120,0.9)';
+    else if (streak >= 10) ct.style.color = 'rgba(255,200,60,0.9)';
+    else if (streak >= 5) ct.style.color = 'rgba(100,255,160,0.8)';
+    else ct.style.color = 'rgba(255,255,255,0.5)';
+    ct.className = 'combo-text';
+    void ct.offsetWidth;
+    ct.className = 'combo-text pop';
+    snd('combo');
+  } else {
+    snd('pop');
+  }
+
+  // HUD
+  document.getElementById('hHandled').textContent = handled.size;
+  document.getElementById('hStreak').textContent = streak;
+  document.getElementById('hLevel').textContent = level;
+
+  // Streak bar
+  const sf = document.getElementById('streakFill');
+  sf.style.width = Math.min(streak / 20, 1) * 100 + '%';
+  if (streak >= 15) sf.style.background = 'linear-gradient(90deg, #fc5c78, #fcd85c)';
+  else if (streak >= 10) sf.style.background = '#fcd85c';
+  else if (streak >= 5) sf.style.background = '#5cfca8';
+  else sf.style.background = 'rgba(255,255,255,0.12)';
+
+  // Close detail
+  closeDetail();
+  selected = -1;
+
+  // Spawn replacements after death animation, then check zero
+  setTimeout(() => {
+    spawnBatch();
+    // Check inbox zero - all emails handled and no more to spawn
+    if (handled.size >= emails.length) showZero();
+  }, 700);
+}
+
+function doLevelUp() {
+  snd('level');
+  const f = document.getElementById('lvlFlash');
+  f.className = 'lvl-flash'; void f.offsetWidth; f.className = 'lvl-flash go';
+  const t = document.getElementById('lvlText');
+  t.textContent = 'Level ' + level;
+  t.className = 'lvl-text'; void t.offsetWidth; t.className = 'lvl-text go';
+  emit(W/2, H/2, '#fff', 40, 7);
+}
+
+function showZero() {
+  const el = Math.floor((Date.now() - startTime) / 1000);
+  document.getElementById('z0').textContent = handled.size;
+  document.getElementById('z1').textContent = Math.floor(el/60) + ':' + String(el%60).padStart(2,'0');
+  document.getElementById('z2').textContent = bestStreak;
+  document.getElementById('z3').textContent = level;
+  document.getElementById('zeroScreen').classList.add('vis');
+  snd('zero');
+  for (let i = 0; i < 8; i++) setTimeout(() => {
+    emit(W*0.2+Math.random()*W*0.6, H*0.3+Math.random()*H*0.4, `hsl(${Math.random()*360},70%,65%)`, 25, 6);
+  }, i * 200);
+}
+
+// ============ DETAIL PANEL ============
+function openDetail(idx) {
+  const e = emails[idx];
+  document.getElementById('detFrom').textContent = extractName(e.from) + ' - ' + relTime(e.date);
+  document.getElementById('detSubject').textContent = e.subject || '(no subject)';
+  document.getElementById('detBody').textContent = e.body || e.snippet || '';
+  document.getElementById('detail').classList.add('open');
+}
+function closeDetail() { document.getElementById('detail').classList.remove('open'); }
+document.getElementById('detailClose').addEventListener('click', () => { closeDetail(); selected = -1; });
+
+// ============ MOUSE ============
+wC.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+
+  // Hover detection
+  hoveredIdx = -1;
+  for (let i = creatures.length - 1; i >= 0; i--) {
+    const c = creatures[i];
+    if (c.alive && !c.dying && !handled.has(c.index) && c.hitTest(mouseX, mouseY)) {
+      hoveredIdx = c.index;
+      break;
+    }
+  }
+
+  // Tooltip
+  const tt = document.getElementById('tooltip');
+  if (hoveredIdx >= 0 && selected < 0) {
+    const e = emails[hoveredIdx];
+    document.getElementById('tooltipName').textContent = extractName(e.from);
+    document.getElementById('tooltipSub').textContent = (e.subject || '').substring(0, 50);
+    tt.style.left = (mouseX + 16) + 'px';
+    tt.style.top = (mouseY - 40) + 'px';
+    tt.classList.add('vis');
+    wC.style.cursor = 'pointer';
+  } else {
+    tt.classList.remove('vis');
+    wC.style.cursor = 'default';
+  }
+});
+
+wC.addEventListener('click', e => {
+  if (!started) return;
+
+  // Find clicked creature
+  for (let i = creatures.length - 1; i >= 0; i--) {
+    const c = creatures[i];
+    if (c.alive && !c.dying && !handled.has(c.index) && c.hitTest(e.clientX, e.clientY)) {
+      if (selected === c.index) {
+        // Deselect
+        selected = -1;
+        closeDetail();
+      } else {
+        selected = c.index;
+        openDetail(c.index);
+        snd('click');
+      }
+      return;
+    }
+  }
+
+  // Clicked empty space - deselect
+  if (selected >= 0) {
+    selected = -1;
+    closeDetail();
+  }
+});
+
+// ============ KEYBOARD ============
+document.addEventListener('keydown', e => {
+  if (!started) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); beginGame(); } return; }
+  if (e.key === 'Escape') { selected = -1; closeDetail(); return; }
+  if (selected >= 0) {
+    switch (e.key.toLowerCase()) {
+      case 'a': act('archive'); break;
+      case 'r': act('reply'); break;
+      case 'f': act('star'); break;
+      case 's': act('snooze'); break;
+      case 'd': act('delete'); break;
+    }
+  }
+});
+
+// ============ MAIN LOOP ============
+let lastFrame = 0;
+
+function loop(ts) {
+  const dt = Math.min(ts - lastFrame, 50);
+  lastFrame = ts;
+
+  // Clear
+  wX.fillStyle = '#0a0a12';
+  wX.fillRect(0, 0, W, H);
+
+  // Subtle ambient bg
+  const time = ts * 0.0003;
+  for (let i = 0; i < 3; i++) {
+    const ox = W * 0.3 + Math.sin(time + i * 2) * W * 0.2;
+    const oy = H * 0.4 + Math.cos(time * 0.7 + i * 3) * H * 0.2;
+    const gr = wX.createRadialGradient(ox, oy, 0, ox, oy, 300);
+    gr.addColorStop(0, `hsla(${(time * 30 + i * 120) % 360}, 50%, 40%, 0.025)`);
+    gr.addColorStop(1, 'transparent');
+    wX.fillStyle = gr;
+    wX.fillRect(0, 0, W, H);
+  }
+
+  if (started) {
+    // Update creatures
+    for (const c of creatures) {
+      if (c.alive && !handled.has(c.index)) c.update(dt, mouseX, mouseY);
+    }
+
+    // Draw creatures (unselected first, selected last)
+    for (const c of creatures) {
+      if (c.alive && !handled.has(c.index) && c.index !== selected) c.draw(wX);
+    }
+    // Selected on top
+    if (selected >= 0) {
+      const sc = creatures.find(c => c.index === selected);
+      if (sc && sc.alive) sc.draw(wX);
+    }
+  }
+
+  // FX particles
+  fX.clearRect(0, 0, W, H);
+  particles = particles.filter(p => { p.draw(fX); return p.update(); });
+  fX.globalAlpha = 1;
+
+  requestAnimationFrame(loop);
+}
+
+// ============ LOAD & START ============
+async function loadEmails() {
+  try {
+    const res = await fetch('inbox.json');
+    const data = await res.json();
+    emails = data.emails || [];
+    document.getElementById('startCount').textContent = emails.length + ' emails waiting';
+  } catch {
+    document.getElementById('startCount').textContent = 'Failed to load inbox.json';
+  }
+}
+
+function beginGame() {
+  if (!emails.length) return;
+  started = true;
+  startTime = Date.now();
+  lastAction = Date.now();
+  document.getElementById('startScreen').classList.add('gone');
+
+  // Spawn initial batch
+  spawnBatch();
+}
+
+function spawnBatch() {
+  // Count alive creatures on screen
+  const aliveCount = creatures.filter(c => c.alive && !c.dying && !handled.has(c.index)).length;
+  const toSpawn = Math.min(MAX_VISIBLE - aliveCount, emails.length - nextSpawnIdx);
+
+  for (let i = 0; i < toSpawn; i++) {
+    const ei = nextSpawnIdx++;
+    const c = new Creature(emails[ei], ei);
+    // Fly in from random edge with stagger
+    const edge = Math.floor(Math.random() * 3); // 0=top, 1=left, 2=right
+    if (edge === 0) {
+      c.x = 150 + Math.random() * (W - 300);
+      c.y = -80 - i * 60;
+      c.vy = 1.5 + Math.random() * 1.5;
+    } else if (edge === 1) {
+      c.x = -80 - i * 60;
+      c.y = 150 + Math.random() * (H - 300);
+      c.vx = 1.5 + Math.random() * 1.5;
+    } else {
+      c.x = W + 80 + i * 60;
+      c.y = 150 + Math.random() * (H - 300);
+      c.vx = -(1.5 + Math.random() * 1.5);
+    }
+    creatures.push(c);
+  }
+}
+
+document.getElementById('startBtn').addEventListener('click', beginGame);
+
+loadEmails();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
