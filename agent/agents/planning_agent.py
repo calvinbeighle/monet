@@ -190,42 +190,142 @@ class PlanningAgent(BaseAgent):
         """
         if tool_name == "create_outline":
             topic = tool_input.get("topic", "topic")
+            fmt = tool_input.get("format", "bullets")
+            depth = tool_input.get("depth", 2)
             return {
                 "topic": topic,
+                "format": fmt,
+                "depth": depth,
                 "outline": [
-                    {"heading": "Context and background", "items": ["Define the problem", "Current state"]},
-                    {"heading": "Core options", "items": ["Option A", "Option B", "Option C"]},
-                    {"heading": "Decision criteria", "items": ["What matters most", "Key constraints"]},
-                    {"heading": "Next steps", "items": ["Immediate actions", "Open questions"]},
+                    {
+                        "heading": "1. Problem definition",
+                        "items": [
+                            f"What problem does '{topic}' actually solve?",
+                            "Who has this problem most acutely?",
+                            "What does the current (broken) solution look like?",
+                        ],
+                    },
+                    {
+                        "heading": "2. Key inputs and constraints",
+                        "items": [
+                            "Time horizon - what's the forcing function?",
+                            "Resource constraints (team, budget, runway)",
+                            "Non-negotiable requirements",
+                        ],
+                    },
+                    {
+                        "heading": "3. Strategic options",
+                        "items": [
+                            "Option A - conservative / low risk",
+                            "Option B - moderate bet / balanced",
+                            "Option C - aggressive / high upside",
+                        ],
+                    },
+                    {
+                        "heading": "4. Decision criteria",
+                        "items": [
+                            "Primary metric to optimize for",
+                            "Secondary considerations",
+                            "Kill criteria - what would make you abandon this?",
+                        ],
+                    },
+                    {
+                        "heading": "5. Next actions",
+                        "items": [
+                            "Immediate next step (today)",
+                            "Week 1 milestones",
+                            "Open questions that need answers before moving",
+                        ],
+                    },
                 ],
             }
 
         if tool_name == "generate_questions":
             topic = tool_input.get("topic", "topic")
+            perspective = tool_input.get("perspective", "general")
+            count = tool_input.get("count", 5)
+            questions_by_perspective: dict[str, list[str]] = {
+                "customer": [
+                    f"What does a customer actually do today when they have the '{topic}' problem?",
+                    "What would make them switch from their current solution?",
+                    "Who is the economic buyer vs. the day-to-day user?",
+                    "What's the biggest objection they'd raise in a sales call?",
+                    "What outcome do they care about - not feature, outcome?",
+                    "Would they pay for this today or only once it's proven?",
+                ],
+                "investor": [
+                    f"What is the market size for '{topic}' - total, serviceable, realistic?",
+                    "What's the 10x better reason a customer switches?",
+                    "Why will you win this, specifically - not just 'team and product'?",
+                    "What's the moat once competitors copy the surface-level features?",
+                    "What does the unit economics model look like at scale?",
+                    "What's the biggest assumption that could kill this?",
+                ],
+                "competitor": [
+                    f"Who is already working on '{topic}' and what have they figured out?",
+                    "What have incumbents tried and abandoned - and why?",
+                    "Where is the market segmenting that incumbents can't follow?",
+                    "What would a well-funded competitor do in the next 12 months?",
+                    "What's your defensible wedge that they can't easily replicate?",
+                ],
+                "technical": [
+                    f"What's the hardest technical problem in building '{topic}'?",
+                    "What are the failure modes under scale?",
+                    "What would you build differently knowing what you know now?",
+                    "Where is complexity hiding that will slow you down?",
+                    "What are you over-engineering vs. under-engineering?",
+                ],
+                "general": [
+                    f"What would have to be true for '{topic}' to actually work?",
+                    "What's the single biggest risk - and is it in your control?",
+                    "Who has solved a similar problem before, and what did they learn?",
+                    f"What are you optimizing '{topic}' for - and is that the right thing?",
+                    "What does failure look like at 6 months?",
+                    "What's the version of this that ships in 2 weeks vs. 6 months?",
+                    "What would you need to believe to double down on this?",
+                ],
+            }
+            all_questions = questions_by_perspective.get(
+                perspective,
+                questions_by_perspective["general"],
+            )
             return {
                 "topic": topic,
-                "questions": [
-                    "What would have to be true for this to work?",
-                    "What's the single biggest risk?",
-                    "Who has solved a similar problem before?",
-                    "What are you optimizing for - and is that the right thing?",
-                    "What does failure look like at 6 months?",
-                ],
+                "perspective": perspective,
+                "questions": all_questions[:count],
             }
 
         if tool_name == "compare_options":
             options = tool_input.get("options", [])
+            context = tool_input.get("context", "")
+            criteria = tool_input.get("criteria") or [
+                "Speed to ship",
+                "Scalability",
+                "Reversibility",
+                "Resource cost",
+                "Customer impact",
+            ]
             return {
                 "options": options,
+                "criteria": criteria,
+                "context": context,
                 "comparison": [
                     {
                         "option": opt,
-                        "pros": ["Stub pro 1", "Stub pro 2"],
-                        "cons": ["Stub con 1"],
-                        "key_tradeoff": "Speed vs quality",
+                        "summary": f"Approach: {opt}",
+                        "pros": [
+                            f"Clear ownership - single team can drive {opt} end to end",
+                            "Lower coordination overhead at this stage",
+                        ],
+                        "cons": [
+                            "Creates technical debt if the approach needs to change",
+                            "Harder to course-correct once shipped",
+                        ],
+                        "key_tradeoff": f"Speed now vs. flexibility later with {opt}",
+                        "best_if": "You need to move fast and can tolerate rework",
                     }
                     for opt in options
                 ],
             }
 
-        return f"[stub] Unknown planning tool: {tool_name}"
+        return {"error": f"Unknown planning tool: {tool_name}"}

@@ -96,11 +96,13 @@ def stream_events(session_id: str) -> None:
                 except json.JSONDecodeError:
                     payload = {"raw": raw_data}
 
-                _render_event(current_event_type or "unknown", payload)
+                # Capture event type before clearing it
+                event_type_for_render = current_event_type or "unknown"
+                _render_event(event_type_for_render, payload)
                 current_event_type = None
 
                 # Stop streaming on terminal events
-                if current_event_type in ("done", "error"):
+                if event_type_for_render in ("done", "error"):
                     break
 
 

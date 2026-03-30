@@ -43,6 +43,9 @@ from models import (
 # OpenRouter chat/completions endpoint path
 _CHAT_COMPLETIONS_PATH = "/chat/completions"
 
+# Timeout in seconds for OpenRouter API calls before emitting a timeout error
+_OPENROUTER_TIMEOUT_SECS = 30
+
 
 class BaseAgent(ABC):
     """
@@ -151,10 +154,20 @@ class BaseAgent(ABC):
                         response_text += chunk["text"]
                         await self._emit(EventType.TEXT, text=chunk["text"])
 
-            except Exception as exc:
+            except httpx.TimeoutException:
+                err_msg = (
+                    f"OpenRouter did not respond within {_OPENROUTER_TIMEOUT_SECS}s. "
+                    "Check your API key and network connection."
+                )
                 self._session.status = SessionStatus.ERROR
-                self._session.error = str(exc)
-                await self._emit(EventType.ERROR, error=str(exc))
+                self._session.error = err_msg
+                await self._emit(EventType.ERROR, error=err_msg)
+                return
+            except Exception as exc:
+                err_msg = str(exc) or f"Unexpected error: {type(exc).__name__}"
+                self._session.status = SessionStatus.ERROR
+                self._session.error = err_msg
+                await self._emit(EventType.ERROR, error=err_msg)
                 return
 
             # Build the assistant turn to append to message history
@@ -238,11 +251,19 @@ class BaseAgent(ABC):
           data: {"choices":[{"delta":{"content":"Hello"}}]}
           data: [DONE]
 
+        Raises a TimeoutError if the first token is not received within
+        _OPENROUTER_TIMEOUT_SECS seconds.
+
         Args:
             messages: The full conversation history in OpenAI message format.
 
         Yields:
             dict with "type": "text" and "text" key containing the delta.
+
+        Raises:
+            TimeoutError: If OpenRouter does not respond within the timeout.
+            httpx.HTTPStatusError: If OpenRouter returns a non-2xx status.
+            RuntimeError: If OpenRouter returns an error payload in the response body.
         """
         payload: dict[str, Any] = {
             "model": self._cfg.model,
@@ -257,11 +278,32 @@ class BaseAgent(ABC):
         url = self._build_url()
         headers = self._build_headers()
 
-        async with httpx.AsyncClient(timeout=60) as client:
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=_OPENROUTER_TIMEOUT_SECS,
+            write=10.0,
+            pool=5.0,
+        )
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
                 "POST", url, headers=headers, json=payload
             ) as response:
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    try:
+                        err_data = json.loads(body)
+                        err_msg = (
+                            err_data.get("error", {}).get("message")
+                            or err_data.get("message")
+                            or body.decode("utf-8", errors="replace")
+                        )
+                    except (json.JSONDecodeError, AttributeError):
+                        err_msg = body.decode("utf-8", errors="replace")
+                    raise RuntimeError(
+                        f"OpenRouter returned HTTP {response.status_code}: {err_msg}"
+                    )
+
                 async for line in response.aiter_lines():
                     if not line.startswith("data: "):
                         continue
@@ -272,6 +314,15 @@ class BaseAgent(ABC):
                         data = json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
+
+                    # Surface API-level errors embedded in the SSE stream
+                    if "error" in data:
+                        err = data["error"]
+                        err_msg = (
+                            err.get("message") if isinstance(err, dict) else str(err)
+                        )
+                        raise RuntimeError(f"OpenRouter stream error: {err_msg}")
+
                     choices = data.get("choices", [])
                     if not choices:
                         continue
@@ -308,6 +359,10 @@ class BaseAgent(ABC):
 
         Yields:
             dict with "type": "text" or "type": "tool_use" and relevant fields.
+
+        Raises:
+            TimeoutError: If OpenRouter does not respond within the timeout.
+            RuntimeError: If OpenRouter returns an error response or error payload.
         """
         payload: dict[str, Any] = {
             "model": self._cfg.model,
@@ -323,10 +378,38 @@ class BaseAgent(ABC):
         url = self._build_url()
         headers = self._build_headers()
 
-        async with httpx.AsyncClient(timeout=60) as client:
+        timeout = httpx.Timeout(
+            connect=10.0,
+            read=_OPENROUTER_TIMEOUT_SECS,
+            write=10.0,
+            pool=5.0,
+        )
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+
+        # Surface HTTP-level errors with the response body included in the message
+        if response.status_code >= 400:
+            try:
+                err_data = response.json()
+                err_msg = (
+                    err_data.get("error", {}).get("message")
+                    or err_data.get("message")
+                    or response.text
+                )
+            except (json.JSONDecodeError, AttributeError):
+                err_msg = response.text or f"HTTP {response.status_code}"
+            raise RuntimeError(
+                f"OpenRouter returned HTTP {response.status_code}: {err_msg}"
+            )
+
+        data = response.json()
+
+        # Surface API-level errors in a successful HTTP response body
+        if "error" in data:
+            err = data["error"]
+            err_msg = err.get("message") if isinstance(err, dict) else str(err)
+            raise RuntimeError(f"OpenRouter API error: {err_msg}")
 
         choices = data.get("choices", [])
         if not choices:
@@ -424,7 +507,18 @@ class BaseAgent(ABC):
                 return None
 
         # Execute the tool (stub - subclasses override _execute_tool)
-        result = await self._execute_tool(tool_name, tool_input)
+        # Wrap in try/except so a single tool failure does not crash the whole run
+        try:
+            result = await self._execute_tool(tool_name, tool_input)
+        except Exception as exc:
+            err_msg = str(exc) or f"Tool {tool_name} failed with an unknown error"
+            await self._emit(
+                EventType.TOOL_RESULT,
+                tool_name=tool_name,
+                tool_result={"error": err_msg},
+            )
+            return {"error": err_msg}
+
         await self._emit(EventType.TOOL_RESULT, tool_name=tool_name, tool_result=result)
         return result
 

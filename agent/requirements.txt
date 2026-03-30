@@ -5,3 +5,7 @@ pydantic>=2.9.0
 python-dotenv>=1.0.0
 sqlite-utils>=3.37.0
 httpx>=0.27.0
+# Composio integration SDK - optional at runtime.
+# Only used when COMPOSIO_API_KEY is set (live mode).
+# Install with: pip install composio-core
+composio-core>=0.6.0

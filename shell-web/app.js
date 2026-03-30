@@ -10,6 +10,10 @@
  * - Agent monitor panel
  * - Session history
  * - Whiteboard: draggable nodes, pan/zoom, SVG connections
+ * - Friendly tool name mapping
+ * - Tinder card queue with per-item approve/reject
+ * - Diff parsing with syntax highlighting
+ * - Whiteboard node parsing from agent text
  *
  * Backend: http://localhost:8420
  *   POST /intent { text } -> { session_id, agent, ui_pattern }
@@ -34,6 +38,43 @@ var SSE_EVENT_TYPES = [
   "done", "error", "approval_required", "approval_resolved"
 ];
 
+/**
+ * Friendly display labels for known tool names.
+ * Fall back to the raw tool name if not listed here.
+ */
+var TOOL_LABELS = {
+  gmail_list_messages:           "Reading your inbox",
+  gmail_read_message:            "Reading email",
+  gmail_draft_reply:             "Drafting reply",
+  gmail_send_email:              "Sending email",
+  gmail_search_messages:         "Searching email",
+  gmail_get_message:             "Reading email",
+  github_list_pull_requests:     "Fetching pull requests",
+  github_get_pull_request:       "Reading PR details",
+  github_create_review:          "Writing review",
+  github_merge_pull_request:     "Merging PR",
+  github_list_repos:             "Listing repos",
+  github_get_file:               "Reading file",
+  github_create_comment:         "Posting comment",
+  create_outline:                "Creating outline",
+  generate_questions:            "Generating questions",
+  compare_options:               "Comparing options",
+  search_web:                    "Searching the web",
+  read_file:                     "Reading file",
+  write_file:                    "Writing file",
+  run_command:                   "Running command",
+};
+
+/**
+ * Return a friendly label for a tool name.
+ *
+ * @param {string} name - Raw tool name from the backend
+ * @returns {string}
+ */
+function toolLabel(name) {
+  return TOOL_LABELS[name] || name || "Tool";
+}
+
 /* =========================================================
    State
    ========================================================= */
@@ -43,28 +84,36 @@ var state = {
   isStreaming:          false,
   currentEventSource:   null,
   currentSessionId:     null,
-  currentAgentMsgEl:    null,  /* active streaming message bubble in chat */
-  thinkingEl:           null,  /* thinking indicator row in chat */
-  sessions:             [],    /* history: [{ id, agent, pattern, intent, messages, status, start }] */
-  pendingApproval:      null,  /* { action_id, session_id } */
+  currentAgentMsgEl:    null,   /* active streaming message bubble in chat */
+  thinkingEl:           null,   /* thinking indicator row in chat */
+  sessions:             [],     /* [{ id, agent, pattern, intent, messages, status, start }] */
+  pendingApproval:      null,   /* { action_id, session_id } */
+
   /* Whiteboard state */
   wb: {
-    nodes:          [],    /* [{ id, x, y, el, title, body }] */
-    connections:    [],    /* [{ from, to }] */
-    panX:           0,
-    panY:           0,
-    scale:          1,
-    draggingNode:   null,  /* { node, startX, startY, origX, origY } */
-    isPanning:      false,
-    panStart:       null,
+    nodes:        [],     /* [{ id, x, y, el, title, body }] */
+    connections:  [],     /* [{ from, to }] */
+    panX:         0,
+    panY:         0,
+    scale:        1,
+    draggingNode: null,
+    isPanning:    false,
+    panStart:     null,
   },
+
   /* Tinder queue */
   tinder: {
-    queue:    [],          /* pending card data */
-    current:  null,
-    index:    0,
-    total:    0,
+    queue:   [],    /* [{ title, body, action_id }] */
+    current: null,
+    index:   0,
+    total:   0,
   },
+
+  /* Internal accumulators */
+  _tinderBuffer:    "",
+  _wbBuffer:        "",
+  _diffBuffer:      "",
+  _diffMode:        "both",   /* "original" | "proposed" | "both" */
 };
 
 /* =========================================================
@@ -74,41 +123,41 @@ var state = {
 var $ = function(id) { return document.getElementById(id); };
 
 var dom = {
-  connDot:           $("conn-dot"),
-  connLabel:         $("conn-label"),
-  agentPills:        $("agent-pills"),
-  newSessionBtn:     $("new-session-btn"),
-  mainContent:       $("main-content"),
-  intentInput:       $("intent-input"),
-  intentSend:        $("intent-send"),
+  connDot:          $("conn-dot"),
+  connLabel:        $("conn-label"),
+  agentPills:       $("agent-pills"),
+  newSessionBtn:    $("new-session-btn"),
+  mainContent:      $("main-content"),
+  intentInput:      $("intent-input"),
+  intentSend:       $("intent-send"),
   /* Chat */
-  chatMessages:      $("chat-messages"),
+  chatMessages:     $("chat-messages"),
   /* Tinder */
-  tinderCounter:     $("tinder-counter"),
-  tinderCard:        $("tinder-card"),
-  tinderCardTitle:   $("tinder-card-title"),
-  tinderCardBody:    $("tinder-card-body"),
-  tinderApprove:     $("tinder-approve"),
-  tinderReject:      $("tinder-reject"),
+  tinderCounter:    $("tinder-counter"),
+  tinderCard:       $("tinder-card"),
+  tinderCardTitle:  $("tinder-card-title"),
+  tinderCardBody:   $("tinder-card-body"),
+  tinderApprove:    $("tinder-approve"),
+  tinderReject:     $("tinder-reject"),
   /* Diff */
-  diffOriginal:      $("diff-original"),
-  diffProposed:      $("diff-proposed"),
-  diffApproveAll:    $("diff-approve-all"),
-  diffRejectAll:     $("diff-reject-all"),
+  diffOriginal:     $("diff-original"),
+  diffProposed:     $("diff-proposed"),
+  diffApproveAll:   $("diff-approve-all"),
+  diffRejectAll:    $("diff-reject-all"),
   /* Whiteboard */
-  wbCanvas:          $("whiteboard-canvas"),
-  wbNodes:           $("whiteboard-nodes"),
-  wbConnections:     $("whiteboard-connections"),
+  wbCanvas:         $("whiteboard-canvas"),
+  wbNodes:          $("whiteboard-nodes"),
+  wbConnections:    $("whiteboard-connections"),
   /* Approval */
-  approvalOverlay:   $("approval-overlay"),
-  approvalToolName:  $("approval-tool-name"),
-  approvalDesc:      $("approval-description"),
-  approvalApprove:   $("approval-approve-btn"),
-  approvalReject:    $("approval-reject-btn"),
+  approvalOverlay:  $("approval-overlay"),
+  approvalToolName: $("approval-tool-name"),
+  approvalDesc:     $("approval-description"),
+  approvalApprove:  $("approval-approve-btn"),
+  approvalReject:   $("approval-reject-btn"),
   /* Monitor */
-  monitorPanel:      $("monitor-panel"),
-  monitorList:       $("monitor-list"),
-  monitorClose:      $("monitor-close"),
+  monitorPanel:     $("monitor-panel"),
+  monitorList:      $("monitor-list"),
+  monitorClose:     $("monitor-close"),
 };
 
 /* =========================================================
@@ -117,7 +166,7 @@ var dom = {
 
 /**
  * Show the specified UI pattern view, hiding all others.
- * Also updates state.currentPattern.
+ * Adds a brief CSS fade-in animation on the new view.
  *
  * @param {string} pattern - "welcome" | "chat" | "tinder" | "diff" | "whiteboard"
  */
@@ -170,13 +219,13 @@ function setConnected(connected) {
    ========================================================= */
 
 /**
- * Create a new session record and push it to the history.
+ * Create a new session record and push it to history.
  *
  * @param {string} sessionId
  * @param {string} agent
  * @param {string} pattern
  * @param {string} intent
- * @returns {object} The new session object
+ * @returns {object}
  */
 function createSession(sessionId, agent, pattern, intent) {
   var session = {
@@ -197,7 +246,7 @@ function createSession(sessionId, agent, pattern, intent) {
 }
 
 /**
- * Get the current session by ID, or null.
+ * Return the session object for the current session ID, or null.
  *
  * @returns {object|null}
  */
@@ -225,7 +274,7 @@ function finalizeSession(status) {
 }
 
 /**
- * Reset to the welcome screen, closing any open stream.
+ * Reset to the welcome screen, closing any open stream and clearing all buffers.
  */
 function resetToWelcome() {
   closeStream();
@@ -235,11 +284,16 @@ function resetToWelcome() {
   state.tinder.current = null;
   state.tinder.index = 0;
   state.tinder.total = 0;
+  state._tinderBuffer = "";
+  state._wbBuffer = "";
+  state._diffBuffer = "";
   /* Clear diff */
   dom.diffOriginal.innerHTML = "";
   dom.diffProposed.innerHTML = "";
   /* Clear whiteboard */
   resetWhiteboard();
+  /* Clear chat */
+  dom.chatMessages.innerHTML = "";
   showPattern("welcome");
 }
 
@@ -249,23 +303,43 @@ function resetToWelcome() {
 
 /**
  * Re-render the agent status pills in the top bar.
- * Only shows sessions from the last 30 seconds that are running,
- * plus any currently active session.
+ * Shows running sessions and recently completed ones.
  */
 function refreshAgentPills() {
   dom.agentPills.innerHTML = "";
   var now = Date.now();
   state.sessions.forEach(function(s) {
     var age = (now - s.start) / 1000;
-    if (s.status === "running" || (s.id === state.currentSessionId && age < 8)) {
+    /* Show pill while running or for 8 seconds after completion */
+    if (s.status === "running" || age < 8) {
       var pill = document.createElement("div");
       pill.className = "agent-pill";
+      pill.title = "Click to view session";
+      pill.style.cursor = "pointer";
+
       var dot = document.createElement("span");
       dot.className = "agent-pill-dot " + s.status;
+
+      /* Show checkmark or X icon inline for done/error */
+      var statusIcon = "";
+      if (s.status === "done") statusIcon = " \u2713";
+      else if (s.status === "error") statusIcon = " \u2717";
+
       var label = document.createElement("span");
-      label.textContent = s.agent + " - " + s.status;
+      label.textContent = s.agent + statusIcon;
+
       pill.appendChild(dot);
       pill.appendChild(label);
+
+      /* Clicking the pill activates that session */
+      (function(session) {
+        pill.addEventListener("click", function() {
+          state.currentSessionId = session.id;
+          refreshMonitorList();
+          refreshAgentPills();
+        });
+      })(s);
+
       dom.agentPills.appendChild(pill);
     }
   });
@@ -288,7 +362,6 @@ function refreshMonitorList() {
     return;
   }
 
-  /* Show newest first */
   var sorted = state.sessions.slice().reverse();
   sorted.forEach(function(s) {
     var item = document.createElement("div");
@@ -323,6 +396,17 @@ function refreshMonitorList() {
 
     item.appendChild(header);
     item.appendChild(preview);
+
+    /* Clicking an item in the monitor navigates to that session's pattern */
+    (function(session) {
+      item.addEventListener("click", function() {
+        state.currentSessionId = session.id;
+        refreshMonitorList();
+        refreshAgentPills();
+        dom.monitorPanel.classList.add("hidden");
+      });
+    })(s);
+
     dom.monitorList.appendChild(item);
   });
 }
@@ -375,16 +459,13 @@ function renderMessageContent(el, text) {
   el.innerHTML = "";
   if (!text) return;
 
-  /* Split into lines first */
   var lines = text.split("\n");
   lines.forEach(function(line, idx) {
-    /* Check for bullet */
     var isBullet = /^(\s*[-*])\s+/.test(line);
     if (isBullet) {
       var li = document.createElement("li");
       li.style.marginLeft = "4px";
       applyInlineMarkdown(li, line.replace(/^(\s*[-*])\s+/, ""));
-      /* Wrap in ul if previous sibling is not ul */
       var last = el.lastChild;
       if (!last || last.tagName !== "UL") {
         var ul = document.createElement("ul");
@@ -398,7 +479,6 @@ function renderMessageContent(el, text) {
       applyInlineMarkdown(span, line);
       el.appendChild(span);
     }
-    /* Line break between non-last lines */
     if (idx < lines.length - 1) {
       el.appendChild(document.createElement("br"));
     }
@@ -406,14 +486,13 @@ function renderMessageContent(el, text) {
 }
 
 /**
- * Apply inline markdown (**bold**) to an element by setting its innerHTML.
- * Only processes bold markers to avoid XSS through agent text.
+ * Apply inline markdown (**bold**) to an element.
+ * Escapes HTML first to avoid XSS.
  *
  * @param {HTMLElement} el
  * @param {string} text
  */
 function applyInlineMarkdown(el, text) {
-  /* Escape HTML first, then re-introduce bold */
   var escaped = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -422,14 +501,14 @@ function applyInlineMarkdown(el, text) {
   el.innerHTML = bolded;
 }
 
-/** Scroll chat to the very bottom. */
+/** Scroll the chat messages container to the bottom. */
 function scrollChat() {
   dom.chatMessages.scrollTop = dom.chatMessages.scrollHeight;
 }
 
 /**
- * Show or update the animated thinking indicator in chat.
- * Creates it on first call, no-ops if already showing.
+ * Show the animated thinking indicator in chat (three bouncing dots).
+ * Creates it on first call; no-op if already visible.
  */
 function showThinking() {
   if (state.thinkingEl) return;
@@ -457,7 +536,7 @@ function hideThinking() {
 
 /**
  * Append a text chunk to the current streaming agent message bubble.
- * Creates a new bubble if none exists. Adds the blinking cursor class.
+ * Creates a new bubble if none exists.
  *
  * @param {string} chunk
  */
@@ -467,20 +546,16 @@ function appendToAgentMessage(chunk) {
     state.currentAgentMsgEl = appendChatMessage("agent", "");
     state.currentAgentMsgEl.classList.add("streaming");
   }
-  /* Accumulate raw text on the element for re-rendering */
   state.currentAgentMsgEl._rawText = (state.currentAgentMsgEl._rawText || "") + chunk;
   renderMessageContent(state.currentAgentMsgEl, state.currentAgentMsgEl._rawText);
   state.currentAgentMsgEl.classList.add("streaming");
 
-  /* Track in session */
   var session = currentSession();
-  if (session) {
-    session.lastText = state.currentAgentMsgEl._rawText;
-  }
+  if (session) session.lastText = state.currentAgentMsgEl._rawText;
   scrollChat();
 }
 
-/** Finalize the current streaming bubble (remove cursor class). */
+/** Finalize the current streaming bubble by removing the cursor class. */
 function finalizeAgentMessage() {
   if (state.currentAgentMsgEl) {
     state.currentAgentMsgEl.classList.remove("streaming");
@@ -489,12 +564,13 @@ function finalizeAgentMessage() {
 }
 
 /**
- * Append a tool call badge to the chat messages.
+ * Append a friendly tool call badge to the chat messages.
+ * Displays a human-readable label instead of the raw tool name.
  *
- * @param {string} toolName
+ * @param {string} rawToolName - The raw tool name from the backend
  * @param {object} toolInput
  */
-function appendToolCallBadge(toolName, toolInput) {
+function appendToolCallBadge(rawToolName, toolInput) {
   hideThinking();
   finalizeAgentMessage();
 
@@ -504,7 +580,7 @@ function appendToolCallBadge(toolName, toolInput) {
   var badge = document.createElement("div");
   badge.className = "tool-badge";
 
-  /* Gear icon */
+  /* Spinner icon */
   badge.innerHTML =
     '<svg class="tool-badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
     '<circle cx="12" cy="12" r="3"/>' +
@@ -512,7 +588,7 @@ function appendToolCallBadge(toolName, toolInput) {
     '</svg>';
 
   var label = document.createElement("span");
-  label.textContent = toolName;
+  label.textContent = toolLabel(rawToolName);
   badge.appendChild(label);
 
   row.appendChild(badge);
@@ -521,22 +597,95 @@ function appendToolCallBadge(toolName, toolInput) {
 }
 
 /**
- * Append a tool result indicator to the chat messages.
+ * Append a tool result summary badge to the chat messages.
+ * Shows a short human-readable summary rather than raw JSON.
  *
- * @param {string} toolName
- * @param {*} result
+ * @param {string} rawToolName - The raw tool name from the backend
+ * @param {*} result - The tool result value
  */
-function appendToolResultBadge(toolName, result) {
+function appendToolResultBadge(rawToolName, result) {
   var row = document.createElement("div");
   row.className = "tool-result-row";
 
   var badge = document.createElement("div");
   badge.className = "tool-result-badge";
-  badge.textContent = "\u2713 " + toolName + " returned";
+
+  /* Build a brief summary from the result */
+  var summary = buildToolResultSummary(rawToolName, result);
+  badge.textContent = "\u2713 " + summary;
 
   row.appendChild(badge);
   dom.chatMessages.appendChild(row);
   scrollChat();
+}
+
+/**
+ * Build a short human-readable summary string for a tool result.
+ * Falls back to generic messages when the result shape is unknown.
+ *
+ * @param {string} toolName
+ * @param {*} result
+ * @returns {string}
+ */
+function buildToolResultSummary(toolName, result) {
+  var friendly = toolLabel(toolName);
+
+  if (!result) return friendly + " complete";
+
+  /* Arrays (e.g. list of messages or PRs) */
+  if (Array.isArray(result)) {
+    return friendly + " - found " + result.length + " item" + (result.length === 1 ? "" : "s");
+  }
+
+  /* Objects - try to extract a useful field */
+  if (typeof result === "object") {
+    if (result.count != null)   return friendly + " - " + result.count + " results";
+    if (result.id)              return friendly + " done (id: " + result.id + ")";
+    if (result.subject)         return friendly + ": " + result.subject;
+    if (result.title)           return friendly + ": " + result.title;
+    if (result.message)         return friendly + ": " + result.message;
+    if (result.status)          return friendly + " - " + result.status;
+    return friendly + " complete";
+  }
+
+  /* String result - truncate */
+  if (typeof result === "string") {
+    var trimmed = result.trim().slice(0, 80);
+    return friendly + " - " + (trimmed || "complete");
+  }
+
+  return friendly + " complete";
+}
+
+/**
+ * Show an error message inside the active pattern view.
+ * Uses a red-tinted status card in chat, or a simple tinder card for other patterns.
+ *
+ * @param {string} msg
+ */
+function showErrorInPattern(msg) {
+  if (state.currentPattern === "chat") {
+    var row = document.createElement("div");
+    row.className = "status-row";
+    var msgEl = document.createElement("div");
+    msgEl.className = "status-msg error";
+    msgEl.textContent = "Error: " + msg;
+    row.appendChild(msgEl);
+    dom.chatMessages.appendChild(row);
+    scrollChat();
+  } else if (state.currentPattern === "tinder") {
+    dom.tinderCardTitle.textContent = "Error";
+    dom.tinderCardBody.textContent = msg;
+    dom.tinderCard.style.borderColor = "var(--error)";
+    dom.tinderCounter.textContent = "Something went wrong";
+  } else if (state.currentPattern === "diff") {
+    var errLine = document.createElement("div");
+    errLine.style.cssText = "padding:16px;color:var(--error);font-size:13px;";
+    errLine.textContent = "Error: " + msg;
+    dom.diffProposed.appendChild(errLine);
+  } else if (state.currentPattern === "whiteboard") {
+    addWhiteboardNode({ title: "Error", body: msg });
+  }
 }
 
 /* =========================================================
@@ -544,10 +693,105 @@ function appendToolResultBadge(toolName, result) {
    ========================================================= */
 
 /**
+ * Parse an agent text/tool_result blob and extract email or item cards.
+ * Attempts JSON parsing first, then falls back to heuristic line parsing.
+ *
+ * @param {string|object} raw - Agent text or parsed object
+ * @returns {Array<{title: string, body: string, action_id?: string}>}
+ */
+function extractTinderCards(raw) {
+  var cards = [];
+
+  /* If raw is already an array (e.g. from a tool_result with a list) */
+  if (Array.isArray(raw)) {
+    raw.forEach(function(item) {
+      if (item && typeof item === "object") {
+        cards.push({
+          title:     item.subject || item.title || item.name || item.sender || "Item",
+          body:      item.snippet || item.body || item.description || item.content || JSON.stringify(item, null, 2),
+          action_id: item.id || item.action_id || null,
+        });
+      }
+    });
+    return cards;
+  }
+
+  /* If raw is a single object */
+  if (raw && typeof raw === "object") {
+    /* Could be a messages wrapper { messages: [...] } */
+    var items = raw.messages || raw.emails || raw.items || raw.results || raw.pull_requests || null;
+    if (Array.isArray(items)) return extractTinderCards(items);
+
+    cards.push({
+      title:     raw.subject || raw.title || raw.name || raw.sender || "Item",
+      body:      raw.snippet || raw.body || raw.description || raw.content || JSON.stringify(raw, null, 2),
+      action_id: raw.id || raw.action_id || null,
+    });
+    return cards;
+  }
+
+  /* String - try JSON first */
+  if (typeof raw === "string") {
+    var str = raw.trim();
+
+    /* Try full JSON parse */
+    try {
+      var parsed = JSON.parse(str);
+      return extractTinderCards(parsed);
+    } catch (e) {
+      /* Not valid JSON */
+    }
+
+    /* Try line-by-line JSON objects */
+    var lines = str.split("\n");
+    var foundJson = false;
+    lines.forEach(function(line) {
+      line = line.trim();
+      if (!line) return;
+      try {
+        var obj = JSON.parse(line);
+        var c = extractTinderCards(obj);
+        c.forEach(function(card) { cards.push(card); });
+        foundJson = true;
+      } catch (e) {
+        /* Skip */
+      }
+    });
+    if (foundJson) return cards;
+
+    /* Heuristic: look for numbered items like "1. Subject - Snippet" */
+    var numbered = str.match(/\d+\.\s+(.+)/g);
+    if (numbered && numbered.length > 1) {
+      numbered.forEach(function(m) {
+        var clean = m.replace(/^\d+\.\s+/, "").trim();
+        var dashIdx = clean.indexOf(" - ");
+        if (dashIdx > -1) {
+          cards.push({ title: clean.slice(0, dashIdx), body: clean.slice(dashIdx + 3) });
+        } else {
+          cards.push({ title: clean, body: "" });
+        }
+      });
+      return cards;
+    }
+
+    /* Last resort: whole text as one card */
+    if (str.length > 0) {
+      var lines2 = str.split("\n").filter(function(l) { return l.trim(); });
+      cards.push({
+        title: lines2[0] ? lines2[0].slice(0, 80) : "Item",
+        body:  lines2.slice(1).join("\n").trim() || str,
+      });
+    }
+  }
+
+  return cards;
+}
+
+/**
  * Enqueue a new card item for the tinder pattern.
  * If no card is currently shown, show it immediately.
  *
- * @param {object} data - { title, body } or raw text
+ * @param {{title: string, body: string, action_id?: string}} data
  */
 function enqueueTinderCard(data) {
   state.tinder.queue.push(data);
@@ -559,11 +803,18 @@ function enqueueTinderCard(data) {
 
 /**
  * Dequeue and display the next card in the tinder queue.
+ * Shows "All done!" with a check mark when the queue is exhausted.
  */
 function showNextTinderCard() {
+  /* Remove any lingering animation classes */
+  dom.tinderCard.classList.remove("exit-left", "exit-right");
+  dom.tinderCard.style.borderColor = "";
+
   if (state.tinder.queue.length === 0) {
     state.tinder.current = null;
-    dom.tinderCounter.textContent = "All done";
+    dom.tinderCardTitle.textContent = "All done!";
+    dom.tinderCardBody.textContent = "You've reviewed all items.";
+    dom.tinderCounter.textContent = "\u2713 " + state.tinder.index + " reviewed";
     return;
   }
 
@@ -576,14 +827,10 @@ function showNextTinderCard() {
 
   var total = state.tinder.total || "?";
   dom.tinderCounter.textContent = state.tinder.index + " of " + total;
-
-  /* Reset any exit animation classes */
-  dom.tinderCard.classList.remove("exit-left", "exit-right");
 }
 
 /**
- * Animate the tinder card out and show the next one.
- * Called by approve/reject button handlers.
+ * Animate the tinder card out and then show the next one.
  *
  * @param {"left"|"right"} direction
  * @param {string} sessionId
@@ -591,6 +838,8 @@ function showNextTinderCard() {
  * @param {boolean} approved
  */
 function dismissTinderCard(direction, sessionId, actionId, approved) {
+  if (!state.tinder.current) return;
+
   dom.tinderCard.classList.add(direction === "right" ? "exit-right" : "exit-left");
 
   if (actionId && sessionId) {
@@ -610,35 +859,86 @@ function dismissTinderCard(direction, sessionId, actionId, approved) {
    ========================================================= */
 
 /**
- * Parse raw text into diff lines and render them into both panels.
- * Expects unified diff format, or plain text in proposed panel.
+ * Syntax-highlight a line of code/text using simple regex rules.
+ * Returns an HTML string with spans for comments, strings, and keywords.
  *
- * @param {string} text - raw diff or text chunk
+ * @param {string} line - Plain text line
+ * @returns {string} HTML string
+ */
+function syntaxHighlightLine(line) {
+  /* Escape HTML first */
+  var esc = line
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  /* Single-line comments (// or #) */
+  esc = esc.replace(/(\/\/.*|#.*)$/, '<span style="color:var(--text-muted);font-style:italic;">$1</span>');
+
+  /* Strings (double and single quoted, simple) */
+  esc = esc.replace(/(&quot;[^&]*&quot;|&#039;[^&]*&#039;|"[^"]*"|'[^']*')/g,
+    '<span style="color:#86efac;">$1</span>');
+
+  /* Keywords */
+  var keywords = /\b(function|var|let|const|return|if|else|for|while|class|import|export|from|default|async|await|try|catch|throw|new|typeof|instanceof)\b/g;
+  esc = esc.replace(keywords, '<span style="color:#c4b5fd;">$1</span>');
+
+  return esc;
+}
+
+/**
+ * Parse raw text into diff content and render it into both panels.
+ * Supports unified diff format and plain "before/after" text blocks.
+ * If the text is not a diff, place it in the proposed panel as-is.
+ *
+ * @param {string} text - raw diff or plain text
  */
 function appendDiffContent(text) {
-  /* Try to detect unified diff format */
   var lines = text.split("\n");
-  lines.forEach(function(line, idx) {
-    if (line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@")) {
-      /* Skip diff header lines from display */
-      return;
-    }
-    var lineNum = idx + 1;
-    if (line.startsWith("+")) {
-      appendDiffLine(dom.diffProposed, line.slice(1), lineNum, "added");
-    } else if (line.startsWith("-")) {
-      appendDiffLine(dom.diffOriginal, line.slice(1), lineNum, "removed");
-    } else {
-      /* Context line - show in both */
-      appendDiffLine(dom.diffOriginal, line.startsWith(" ") ? line.slice(1) : line, lineNum, "");
-      appendDiffLine(dom.diffProposed, line.startsWith(" ") ? line.slice(1) : line, lineNum, "");
-    }
+  var hasUnifiedMarkers = lines.some(function(l) {
+    return l.startsWith("---") || l.startsWith("+++") || l.startsWith("@@");
   });
+
+  if (hasUnifiedMarkers) {
+    /* Unified diff mode */
+    lines.forEach(function(line, idx) {
+      if (line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@")) return;
+      var lineNum = idx + 1;
+      if (line.startsWith("+")) {
+        appendDiffLine(dom.diffProposed, line.slice(1), lineNum, "added");
+      } else if (line.startsWith("-")) {
+        appendDiffLine(dom.diffOriginal, line.slice(1), lineNum, "removed");
+      } else {
+        var content = line.startsWith(" ") ? line.slice(1) : line;
+        appendDiffLine(dom.diffOriginal, content, lineNum, "");
+        appendDiffLine(dom.diffProposed, content, lineNum, "");
+      }
+    });
+  } else {
+    /* Check for "original/proposed" section markers in the text */
+    var origMarker = /^#+\s*(original|before|current)/i;
+    var propMarker = /^#+\s*(proposed|after|new|updated)/i;
+    var currentTarget = dom.diffProposed;  /* Default - put everything in proposed */
+    var lineNum = 1;
+
+    lines.forEach(function(line) {
+      if (origMarker.test(line)) {
+        currentTarget = dom.diffOriginal;
+        return;
+      }
+      if (propMarker.test(line)) {
+        currentTarget = dom.diffProposed;
+        return;
+      }
+      appendDiffLine(currentTarget, line, lineNum++, "");
+    });
+  }
+
   syncDiffScroll();
 }
 
 /**
- * Append a single line to a diff panel body.
+ * Append a single syntax-highlighted line to a diff panel.
  *
  * @param {HTMLElement} panel
  * @param {string} content
@@ -655,14 +955,14 @@ function appendDiffLine(panel, content, lineNum, type) {
 
   var text = document.createElement("span");
   text.className = "diff-line-content";
-  text.textContent = content;
+  text.innerHTML = syntaxHighlightLine(content);
 
   row.appendChild(num);
   row.appendChild(text);
   panel.appendChild(row);
 }
 
-/** Sync scroll position of both diff panels. */
+/** Sync scroll positions of both diff panels proportionally. */
 function syncDiffScroll() {
   var orig = dom.diffOriginal;
   var prop = dom.diffProposed;
@@ -675,9 +975,7 @@ function syncDiffScroll() {
    Whiteboard pattern
    ========================================================= */
 
-/**
- * Reset whiteboard to an empty state.
- */
+/** Reset whiteboard to an empty state. */
 function resetWhiteboard() {
   state.wb.nodes = [];
   state.wb.connections = [];
@@ -691,9 +989,7 @@ function resetWhiteboard() {
   applyWbTransform();
 }
 
-/**
- * Apply the current pan/scale transform to the whiteboard node container.
- */
+/** Apply the current pan/scale transform to the whiteboard node container. */
 function applyWbTransform() {
   dom.wbNodes.style.transform =
     "translate(" + state.wb.panX + "px," + state.wb.panY + "px) scale(" + state.wb.scale + ")";
@@ -702,43 +998,46 @@ function applyWbTransform() {
 }
 
 /**
- * Add a node to the whiteboard at the given position, or auto-position it.
+ * Add a node to the whiteboard at the given position or auto-position it.
+ * Nodes appear with a scale-up animation defined in CSS.
  *
- * @param {object} opts - { title, body, x, y }
+ * @param {{title?: string, body?: string, x?: number, y?: number}} opts
  * @returns {object} The node record
  */
 function addWhiteboardNode(opts) {
   var id = "wbn-" + Date.now() + "-" + Math.random().toString(36).slice(2);
   var count = state.wb.nodes.length;
 
-  /* Auto-layout: arrange in a flowing grid */
+  /* Auto-layout: flowing grid with 3 columns */
   var cols = 3;
-  var col = count % cols;
-  var row = Math.floor(count / cols);
-  var x = opts.x != null ? opts.x : 60 + col * 360;
-  var y = opts.y != null ? opts.y : 60 + row * 200;
+  var col  = count % cols;
+  var row  = Math.floor(count / cols);
+  var x    = opts.x != null ? opts.x : 60 + col * 360;
+  var y    = opts.y != null ? opts.y : 60 + row * 200;
 
   var el = document.createElement("div");
   el.className = "wb-node";
   el.style.left = x + "px";
   el.style.top  = y + "px";
 
-  var titleEl = document.createElement("div");
-  titleEl.className = "wb-node-title";
-  titleEl.textContent = opts.title || "";
+  if (opts.title) {
+    var titleEl = document.createElement("div");
+    titleEl.className = "wb-node-title";
+    titleEl.textContent = opts.title;
+    el.appendChild(titleEl);
+  }
 
   var bodyEl = document.createElement("div");
   bodyEl.className = "wb-node-body";
   bodyEl.textContent = opts.body || "";
-
-  if (opts.title) el.appendChild(titleEl);
   el.appendChild(bodyEl);
+
   dom.wbNodes.appendChild(el);
 
   var node = { id: id, x: x, y: y, el: el };
   state.wb.nodes.push(node);
 
-  /* Connect to previous node if any */
+  /* Connect to previous node */
   if (state.wb.nodes.length > 1) {
     var prev = state.wb.nodes[state.wb.nodes.length - 2];
     state.wb.connections.push({ from: prev.id, to: id });
@@ -752,25 +1051,22 @@ function addWhiteboardNode(opts) {
 /**
  * Set up drag-to-move behavior on a whiteboard node.
  *
- * @param {object} node - The node record with .el, .x, .y
+ * @param {object} node - Node record with .el, .x, .y
  */
 function setupNodeDrag(node) {
-  var el = node.el;
-  el.addEventListener("mousedown", function(e) {
+  node.el.addEventListener("mousedown", function(e) {
     e.stopPropagation();
     state.wb.draggingNode = {
-      node: node,
+      node:   node,
       startX: e.clientX,
       startY: e.clientY,
-      origX: node.x,
-      origY: node.y,
+      origX:  node.x,
+      origY:  node.y,
     };
   });
 }
 
-/**
- * Redraw all SVG connection lines between whiteboard nodes.
- */
+/** Redraw all SVG bezier connection lines between whiteboard nodes. */
 function redrawConnections() {
   dom.wbConnections.innerHTML = "";
   state.wb.connections.forEach(function(conn) {
@@ -780,22 +1076,105 @@ function redrawConnections() {
 
     var fw = fromNode.el.offsetWidth  || 180;
     var fh = fromNode.el.offsetHeight || 80;
-    var tw = toNode.el.offsetWidth    || 180;
 
-    /* Center-right of from to center-left of to */
     var x1 = fromNode.x + fw + state.wb.panX;
     var y1 = fromNode.y + fh / 2 + state.wb.panY;
     var x2 = toNode.x + state.wb.panX;
     var y2 = toNode.y + fh / 2 + state.wb.panY;
 
-    /* Cubic bezier */
     var cx = (x1 + x2) / 2;
     var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", "M " + x1 + " " + y1 + " C " + cx + " " + y1 + " " + cx + " " + y2 + " " + x2 + " " + y2);
+    path.setAttribute("d",
+      "M " + x1 + " " + y1 +
+      " C " + cx + " " + y1 +
+      " " + cx + " " + y2 +
+      " " + x2 + " " + y2
+    );
     path.setAttribute("stroke", "rgba(255,255,255,0.08)");
     path.setAttribute("stroke-width", "1.5");
     path.setAttribute("fill", "none");
     dom.wbConnections.appendChild(path);
+  });
+}
+
+/**
+ * Attempt to parse JSON node objects from the whiteboard text buffer.
+ * Expects lines like: {"title":"...", "body":"..."} or plain text bullets.
+ */
+function tryParseWbBuffer() {
+  var buf = (state._wbBuffer || "").trim();
+  if (!buf) return;
+
+  /* Try full JSON array first */
+  try {
+    var arr = JSON.parse(buf);
+    if (Array.isArray(arr)) {
+      arr.forEach(function(obj) {
+        addWhiteboardNode({
+          title: obj.title || obj.name || "",
+          body:  obj.body  || obj.description || obj.content || obj.text || "",
+        });
+      });
+      state._wbBuffer = "";
+      return;
+    }
+  } catch (e) { /* Not a JSON array */ }
+
+  /* Try line-by-line JSON */
+  var lines = buf.split("\n");
+  var remaining = "";
+  lines.forEach(function(line) {
+    line = line.trim();
+    if (!line) return;
+    try {
+      var obj = JSON.parse(line);
+      addWhiteboardNode({
+        title: obj.title || obj.name || "",
+        body:  obj.body  || obj.description || obj.content || obj.text || "",
+      });
+    } catch (e) {
+      remaining += line + "\n";
+    }
+  });
+  state._wbBuffer = remaining;
+}
+
+/**
+ * Parse a plain-text whiteboard response into discrete nodes.
+ * Splits on blank lines, numbered items, or heading lines.
+ *
+ * @param {string} text
+ */
+function parseWbText(text) {
+  if (!text || !text.trim()) return;
+
+  /* Try JSON first */
+  try {
+    var parsed = JSON.parse(text.trim());
+    var items = Array.isArray(parsed) ? parsed : [parsed];
+    items.forEach(function(obj) {
+      addWhiteboardNode({
+        title: obj.title || obj.name || "",
+        body:  obj.body  || obj.description || obj.content || obj.text || "",
+      });
+    });
+    return;
+  } catch (e) { /* Not JSON */ }
+
+  /* Split on blank lines to get paragraphs/sections */
+  var sections = text.trim().split(/\n\s*\n/);
+  sections.forEach(function(section) {
+    section = section.trim();
+    if (!section) return;
+    var lines = section.split("\n").map(function(l) { return l.trim(); }).filter(Boolean);
+    /* First line is the title if it looks like a heading (short, or ends with :) */
+    var title = "";
+    var body  = section;
+    if (lines.length > 1 && (lines[0].length < 60 || lines[0].endsWith(":"))) {
+      title = lines[0].replace(/:$/, "");
+      body  = lines.slice(1).join("\n");
+    }
+    addWhiteboardNode({ title: title, body: body });
   });
 }
 
@@ -813,45 +1192,49 @@ function appendStreamText(chunk) {
     case "chat":
       appendToAgentMessage(chunk);
       break;
+
     case "tinder":
-      /* In tinder mode, accumulate text and add as a card when done */
+      /* Accumulate into buffer; cards are built from tool_result events */
       state._tinderBuffer = (state._tinderBuffer || "") + chunk;
-      /* Show buffered text in current card body while streaming */
-      renderMessageContent(dom.tinderCardBody, state._tinderBuffer);
+      /* Show partial content in the card body while streaming */
+      if (!state.tinder.current) {
+        dom.tinderCardTitle.textContent = "Loading...";
+        renderMessageContent(dom.tinderCardBody, state._tinderBuffer);
+      }
       break;
+
     case "diff":
+      state._diffBuffer = (state._diffBuffer || "") + chunk;
+      /* Append incrementally */
       appendDiffContent(chunk);
       break;
+
     case "whiteboard":
-      /* Accumulate and parse nodes from JSON-ish text */
       state._wbBuffer = (state._wbBuffer || "") + chunk;
       tryParseWbBuffer();
       break;
+
     default:
       break;
   }
 }
 
 /**
- * Attempt to parse a JSON node object from the whiteboard text buffer.
- * Expects lines like: {"title":"...", "body":"..."}
+ * Handle a tool_result event for the tinder pattern by extracting cards.
+ * This is the primary source of cards - each email or PR becomes a card.
+ *
+ * @param {string} toolName
+ * @param {*} result
  */
-function tryParseWbBuffer() {
-  var buf = state._wbBuffer || "";
-  var lines = buf.split("\n");
-  var remaining = "";
-  lines.forEach(function(line) {
-    line = line.trim();
-    if (!line) return;
-    try {
-      var obj = JSON.parse(line);
-      addWhiteboardNode({ title: obj.title || "", body: obj.body || obj.content || obj.text || "" });
-    } catch (e) {
-      /* Not valid JSON yet - keep as remaining */
-      remaining += line + "\n";
-    }
-  });
-  state._wbBuffer = remaining;
+function handleTinderToolResult(toolName, result) {
+  var cards = extractTinderCards(result);
+  if (cards.length > 0) {
+    /* Clear any streaming buffer since we now have real cards */
+    state._tinderBuffer = "";
+    dom.tinderCardTitle.textContent = "";
+    dom.tinderCardBody.innerHTML = "";
+    cards.forEach(function(card) { enqueueTinderCard(card); });
+  }
 }
 
 /**
@@ -862,6 +1245,7 @@ function tryParseWbBuffer() {
 function clearPatternContent(pattern) {
   state._tinderBuffer = "";
   state._wbBuffer = "";
+  state._diffBuffer = "";
   state.currentAgentMsgEl = null;
   state.thinkingEl = null;
 
@@ -878,6 +1262,7 @@ function clearPatternContent(pattern) {
       dom.tinderCardBody.innerHTML = "";
       dom.tinderCounter.textContent = "";
       dom.tinderCard.classList.remove("exit-left", "exit-right");
+      dom.tinderCard.style.borderColor = "";
       break;
     case "diff":
       dom.diffOriginal.innerHTML = "";
@@ -910,7 +1295,8 @@ function closeStream() {
 
 /**
  * Open an SSE connection to the agent stream for the given session.
- * Attaches listeners for all named event types.
+ * Uses addEventListener for each named event type (NOT onmessage) so
+ * named events from the server are correctly dispatched.
  *
  * @param {string} sessionId
  */
@@ -924,6 +1310,11 @@ function connectStream(sessionId) {
   var es = new EventSource(url);
   state.currentEventSource = es;
 
+  /**
+   * Parse and dispatch one SSE event payload.
+   *
+   * @param {MessageEvent} evt
+   */
   function parseAndHandle(evt) {
     var data;
     try {
@@ -932,13 +1323,11 @@ function connectStream(sessionId) {
       console.warn("SSE parse error:", err, evt.data);
       return;
     }
-    /* Inject the SSE event name as event_type if backend doesn't set it */
     if (!data.event_type) data.event_type = evt.type;
     handleAgentEvent(data);
   }
 
-  /* IMPORTANT: onmessage only fires for unnamed events.
-     Named events require addEventListener per type. */
+  /* onmessage only fires for unnamed events; named events need explicit listeners */
   es.onmessage = parseAndHandle;
   SSE_EVENT_TYPES.forEach(function(t) {
     es.addEventListener(t, parseAndHandle);
@@ -948,16 +1337,7 @@ function connectStream(sessionId) {
     if (state.isStreaming) {
       finalizeAgentMessage();
       hideThinking();
-      if (state.currentPattern === "chat") {
-        var row = document.createElement("div");
-        row.className = "status-row";
-        var msg = document.createElement("div");
-        msg.className = "status-msg error";
-        msg.textContent = "Connection lost";
-        row.appendChild(msg);
-        dom.chatMessages.appendChild(row);
-        scrollChat();
-      }
+      showErrorInPattern("Connection lost. Please try again.");
       finalizeSession("error");
       closeStream();
     }
@@ -997,6 +1377,12 @@ function handleAgentEvent(data) {
           data.tool_name || data.name || "tool",
           data.tool_result || data.result || {}
         );
+      } else if (state.currentPattern === "tinder") {
+        /* Tool results are the primary source of cards in tinder mode */
+        handleTinderToolResult(
+          data.tool_name || data.name || "tool",
+          data.tool_result || data.result || {}
+        );
       }
       break;
 
@@ -1022,7 +1408,6 @@ function handleAgentEvent(data) {
       break;
 
     default:
-      /* Unknown event type - log and ignore */
       console.log("Unknown SSE event:", type, data);
       break;
   }
@@ -1036,16 +1421,32 @@ function handleDone() {
   hideThinking();
   hideApprovalModal();
 
-  /* Finalize tinder buffer if any */
-  if (state.currentPattern === "tinder" && state._tinderBuffer) {
-    state.tinder.total = 1;
-    showNextTinderCard();
+  /* Finalize tinder: if buffer has content and no cards were enqueued, parse it */
+  if (state.currentPattern === "tinder") {
+    if (state._tinderBuffer && state.tinder.queue.length === 0 && !state.tinder.current) {
+      var cards = extractTinderCards(state._tinderBuffer);
+      if (cards.length > 0) {
+        state.tinder.total = cards.length;
+        cards.forEach(function(c) { enqueueTinderCard(c); });
+      } else {
+        dom.tinderCardTitle.textContent = "Done";
+        dom.tinderCardBody.textContent = state._tinderBuffer.trim() || "Agent completed.";
+        dom.tinderCounter.textContent = "Complete";
+      }
+    } else if (state.tinder.queue.length === 0 && !state.tinder.current) {
+      dom.tinderCounter.textContent = "No items found";
+    }
     state._tinderBuffer = "";
   }
 
-  /* Finalize whiteboard buffer */
-  if (state.currentPattern === "whiteboard" && state._wbBuffer && state._wbBuffer.trim()) {
-    addWhiteboardNode({ body: state._wbBuffer.trim() });
+  /* Finalize whiteboard: flush any remaining buffer as a plain-text node */
+  if (state.currentPattern === "whiteboard") {
+    var remaining = (state._wbBuffer || "").trim();
+    if (remaining && state.wb.nodes.length === 0) {
+      parseWbText(remaining);
+    } else if (remaining) {
+      addWhiteboardNode({ body: remaining });
+    }
     state._wbBuffer = "";
   }
 
@@ -1062,18 +1463,7 @@ function handleError(msg) {
   finalizeAgentMessage();
   hideThinking();
   hideApprovalModal();
-
-  if (state.currentPattern === "chat") {
-    var row = document.createElement("div");
-    row.className = "status-row";
-    var msgEl = document.createElement("div");
-    msgEl.className = "status-msg error";
-    msgEl.textContent = "Error: " + msg;
-    row.appendChild(msgEl);
-    dom.chatMessages.appendChild(row);
-    scrollChat();
-  }
-
+  showErrorInPattern(msg);
   finalizeSession("error");
   closeStream();
 }
@@ -1086,13 +1476,13 @@ function handleError(msg) {
  * Show the approval modal for a pending agent action.
  *
  * @param {string} actionId
- * @param {string} toolName
+ * @param {string} rawToolName
  * @param {string} description
  * @param {string} sessionId
  */
-function showApprovalModal(actionId, toolName, description, sessionId) {
+function showApprovalModal(actionId, rawToolName, description, sessionId) {
   state.pendingApproval = { action_id: actionId, session_id: sessionId };
-  dom.approvalToolName.textContent = toolName;
+  dom.approvalToolName.textContent = rawToolName;
   dom.approvalDesc.textContent = description;
   dom.approvalOverlay.classList.remove("hidden");
 }
@@ -1144,7 +1534,7 @@ function submitIntent() {
     .then(function(body) {
       var pattern   = body.ui_pattern || "chat";
       var sessionId = body.session_id;
-      var agent     = body.agent     || "Agent";
+      var agent     = body.agent || "Agent";
 
       clearPatternContent(pattern);
       showPattern(pattern);
@@ -1156,9 +1546,8 @@ function submitIntent() {
         showThinking();
       }
 
-      if (pattern === "tinder") {
-        /* Pre-set total from any hint in the response */
-        state.tinder.total = body.total || 0;
+      if (pattern === "tinder" && body.total) {
+        state.tinder.total = body.total;
       }
 
       connectStream(sessionId);
@@ -1181,7 +1570,7 @@ function submitIntent() {
 }
 
 /* =========================================================
-   Whiteboard mouse/touch events (pan + node drag)
+   Whiteboard mouse events (pan + node drag)
    ========================================================= */
 
 dom.wbCanvas.addEventListener("mousedown", function(e) {
@@ -1255,7 +1644,7 @@ dom.intentInput.addEventListener("keydown", function(e) {
   }
 });
 
-/* New session */
+/* New session - clear view and return to welcome */
 dom.newSessionBtn.addEventListener("click", function() {
   resetToWelcome();
 });
@@ -1271,7 +1660,7 @@ document.querySelectorAll(".chip").forEach(function(chip) {
   });
 });
 
-/* Tinder buttons */
+/* Tinder approve / reject */
 dom.tinderApprove.addEventListener("click", function() {
   var card = state.tinder.current;
   dismissTinderCard("right", state.currentSessionId, card && card.action_id, true);
@@ -1282,7 +1671,7 @@ dom.tinderReject.addEventListener("click", function() {
   dismissTinderCard("left", state.currentSessionId, card && card.action_id, false);
 });
 
-/* Diff action bar */
+/* Diff approve / reject all */
 dom.diffApproveAll.addEventListener("click", function() {
   if (state.currentSessionId) {
     fetch(BACKEND + "/approve/" + encodeURIComponent(state.currentSessionId) + "/all", { method: "POST" })
@@ -1303,18 +1692,18 @@ dom.diffRejectAll.addEventListener("click", function() {
 dom.approvalApprove.addEventListener("click", function() { resolveApproval(true); });
 dom.approvalReject.addEventListener("click",  function() { resolveApproval(false); });
 
-/* Monitor panel */
+/* Monitor panel toggle */
 dom.monitorClose.addEventListener("click", function() {
   dom.monitorPanel.classList.add("hidden");
 });
 
-/* Click agent pills area to toggle monitor */
+/* Clicking agent pills area opens/closes the monitor */
 dom.agentPills.addEventListener("click", function() {
   refreshMonitorList();
   dom.monitorPanel.classList.toggle("hidden");
 });
 
-/* Also clicking conn-status area could show monitor */
+/* Clicking connection status also opens monitor */
 document.getElementById("conn-status").addEventListener("click", function() {
   refreshMonitorList();
   dom.monitorPanel.classList.toggle("hidden");

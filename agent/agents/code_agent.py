@@ -12,6 +12,7 @@ UI pattern: DIFF (side-by-side diff viewer)
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from models import AgentType
@@ -297,58 +298,169 @@ class CodeAgent(BaseAgent):
             Any: Simulated tool result.
         """
         if tool_name == "list_prs":
-            repo = tool_input.get("repo", "unknown/repo")
+            repo = tool_input.get("repo", "acme/backend")
             return {
                 "repo": repo,
+                "open_count": 3,
                 "prs": [
                     {
-                        "number": 42,
-                        "title": "feat: add streaming support to agent layer",
-                        "author": "dev@team.com",
-                        "branch": "feature/streaming",
+                        "number": 47,
+                        "title": "feat: resumable SSE streams for agent sessions",
+                        "author": "maya-dev",
+                        "branch": "feature/resumable-streams",
+                        "base": "main",
                         "status": "open",
-                        "reviews": "1 approval needed",
-                        "additions": 312,
-                        "deletions": 45,
+                        "review_status": "review_required",
+                        "checks": "passing",
+                        "additions": 412,
+                        "deletions": 58,
+                        "files_changed": 6,
+                        "created_at": "2026-03-28T14:00:00Z",
+                        "description": (
+                            "Implements resumable SSE streams so clients can reconnect "
+                            "mid-session without losing events. Adds a cursor-based replay "
+                            "mechanism in the event store."
+                        ),
                     },
                     {
-                        "number": 41,
-                        "title": "fix: correct session state race condition",
-                        "author": "eng@team.com",
-                        "branch": "fix/session-race",
+                        "number": 46,
+                        "title": "fix: session status race condition under concurrent approvals",
+                        "author": "tom-eng",
+                        "branch": "fix/approval-race",
+                        "base": "main",
                         "status": "open",
-                        "reviews": "changes requested",
-                        "additions": 18,
-                        "deletions": 7,
+                        "review_status": "changes_requested",
+                        "checks": "passing",
+                        "additions": 34,
+                        "deletions": 12,
+                        "files_changed": 2,
+                        "created_at": "2026-03-27T18:30:00Z",
+                        "description": (
+                            "Fixes a race where two simultaneous approval requests for the "
+                            "same action_id could both set approved=True and release the gate twice."
+                        ),
+                    },
+                    {
+                        "number": 44,
+                        "title": "chore: upgrade httpx to 0.28 and pin pydantic to 2.7",
+                        "author": "bot-dependabot",
+                        "branch": "deps/httpx-0.28",
+                        "base": "main",
+                        "status": "open",
+                        "review_status": "review_required",
+                        "checks": "failing",
+                        "additions": 8,
+                        "deletions": 8,
+                        "files_changed": 2,
+                        "created_at": "2026-03-26T09:00:00Z",
+                        "description": "Automated dependency update. CI is red - breaking change in httpx timeout API.",
                     },
                 ],
             }
 
         if tool_name == "read_diff":
-            pr_number = tool_input.get("pr_number", 0)
-            return {
-                "pr_number": pr_number,
-                "diff": (
+            pr_number = tool_input.get("pr_number", 47)
+            repo = tool_input.get("repo", "acme/backend")
+            diffs: dict[int, str] = {
+                47: (
+                    "diff --git a/agent/main.py b/agent/main.py\n"
+                    "index a3f2c01..b7d9e44 100644\n"
                     "--- a/agent/main.py\n"
                     "+++ b/agent/main.py\n"
-                    "@@ -1,5 +1,10 @@\n"
-                    " # stub diff - connect GitHub API for real diffs\n"
-                    "+async def stream_events(session_id: str):\n"
-                    "+    # new streaming implementation\n"
-                    "+    pass\n"
+                    "@@ -191,6 +191,8 @@ async def stream_events(session_id: str) -> EventSourceResponse:\n"
+                    "     async def event_generator() -> AsyncIterator[dict[str, str]]:\n"
+                    '         \"\"\"Yield SSE events until the session reaches a terminal state.\"\"\"\n'
+                    "         session, _ = _sessions[session_id]\n"
+                    "-        cursor = 0  # index of next event to yield\n"
+                    "+        # Accept Last-Event-ID header for reconnect cursor\n"
+                    "+        last_id = request.headers.get('last-event-id', '0')\n"
+                    "+        cursor = int(last_id) if last_id.isdigit() else 0\n"
+                    "\n"
+                    "         while True:\n"
+                    "             events = session.events\n"
+                    "diff --git a/agent/models.py b/agent/models.py\n"
+                    "--- a/agent/models.py\n"
+                    "+++ b/agent/models.py\n"
+                    "@@ -180,6 +180,10 @@ class SessionState(BaseModel):\n"
+                    "     def add_event(self, event: AgentEvent) -> None:\n"
+                    '         \"\"\"Append an event and update the session timestamp.\"\"\"\n'
+                    "         self.events.append(event)\n"
+                    "         self.updated_at = datetime.utcnow()\n"
+                    "+\n"
+                    "+    def events_from(self, cursor: int) -> list[AgentEvent]:\n"
+                    '+        \"\"\"Return all events at or after the given sequence cursor.\"\"\"\n'
+                    "         return self.events[cursor:]\n"
                 ),
+                46: (
+                    "diff --git a/agent/agents/base.py b/agent/agents/base.py\n"
+                    "--- a/agent/agents/base.py\n"
+                    "+++ b/agent/agents/base.py\n"
+                    "@@ -390,7 +390,12 @@ class BaseAgent(ABC):\n"
+                    "         gate = asyncio.Event()\n"
+                    "         self._approval_events[action_id] = gate\n"
+                    "\n"
+                    "-        await gate.wait()\n"
+                    "-        del self._approval_events[action_id]\n"
+                    "+        # Use a lock to prevent double-release under concurrent approvals\n"
+                    "+        async with self._approval_lock:\n"
+                    "+            if action_id in self._approval_events:\n"
+                    "+                await gate.wait()\n"
+                    "+                del self._approval_events[action_id]\n"
+                    "+            # else: already resolved by a concurrent caller, skip\n"
+                ),
+            }
+            default_diff = (
+                f"diff --git a/README.md b/README.md\n"
+                f"--- a/README.md\n"
+                f"+++ b/README.md\n"
+                f"@@ -1,1 +1,1 @@\n"
+                f"-Old content\n"
+                f"+New content for PR #{pr_number}\n"
+            )
+            return {
+                "repo": repo,
+                "pr_number": pr_number,
+                "diff": diffs.get(pr_number, default_diff),
             }
 
         if tool_name == "post_review":
-            return {"status": "posted", "message": "Review comment posted (stub)."}
+            pr_number = tool_input.get("pr_number", 0)
+            event = tool_input.get("event", "COMMENT")
+            return {
+                "status": "posted",
+                "pr_number": pr_number,
+                "review_id": f"review_{uuid.uuid4().hex[:8]}",
+                "event": event,
+                "message": f"Review posted on PR #{pr_number}.",
+            }
 
         if tool_name == "approve_pr":
-            return {"status": "approved", "message": "PR approved (stub)."}
+            pr_number = tool_input.get("pr_number", 0)
+            return {
+                "status": "approved",
+                "pr_number": pr_number,
+                "review_id": f"review_{uuid.uuid4().hex[:8]}",
+                "message": f"PR #{pr_number} approved.",
+            }
 
         if tool_name == "merge_pr":
-            return {"status": "merged", "message": "PR merged (stub)."}
+            pr_number = tool_input.get("pr_number", 0)
+            method = tool_input.get("merge_method", "squash")
+            return {
+                "status": "merged",
+                "pr_number": pr_number,
+                "merge_method": method,
+                "sha": uuid.uuid4().hex[:40],
+                "message": f"PR #{pr_number} merged via {method}.",
+            }
 
         if tool_name == "push_commit":
-            return {"status": "pushed", "message": "Commit pushed (stub)."}
+            branch = tool_input.get("branch", "main")
+            return {
+                "status": "pushed",
+                "branch": branch,
+                "sha": uuid.uuid4().hex[:40],
+                "message": f"Commit pushed to {branch}.",
+            }
 
-        return f"[stub] Unknown tool: {tool_name}"
+        return {"error": f"Unknown tool: {tool_name}"}

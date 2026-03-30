@@ -67,8 +67,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     cfg = get_config()
     print(f"Monet agent backend starting up")
-    print(f"  Model    : {cfg.model}")
-    print(f"  Base URL : {cfg.openrouter_base_url}")
+    print(f"  Model        : {cfg.model}")
+    print(f"  Base URL     : {cfg.openrouter_base_url}")
+    print(f"  Integrations : {'stub mode (set COMPOSIO_API_KEY to enable real integrations)' if cfg.stub_mode else 'live mode (Composio connected)'}")
     yield
     print("Monet agent backend shutting down")
 

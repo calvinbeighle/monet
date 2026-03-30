@@ -24,6 +24,9 @@ class Config:
     host: str
     port: int
     debug: bool
+    # Composio integration - optional. When absent the system runs in stub mode.
+    composio_api_key: str
+    stub_mode: bool
 
 
 def load_config() -> Config:
@@ -43,6 +46,8 @@ def load_config() -> Config:
             "Set it in your .env file or shell environment."
         )
 
+    composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
+
     return Config(
         openrouter_api_key=api_key,
         openrouter_base_url=os.getenv(
@@ -52,6 +57,9 @@ def load_config() -> Config:
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),
         debug=os.getenv("DEBUG", "false").lower() == "true",
+        # Composio is optional - absent key means stub mode is active.
+        composio_api_key=composio_api_key,
+        stub_mode=not composio_api_key,
     )
 
 
