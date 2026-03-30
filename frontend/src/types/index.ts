@@ -1,8 +1,13 @@
 /**
  * types/index.ts
- * Shared TypeScript type definitions for the Monet application.
+ * Shared TypeScript type definitions and shared constants for the Monet application.
  * All data structures for agents, connections, decisions, and activity events.
  */
+
+/** Base URL for the Monet backend. Override via VITE_BACKEND_URL env var. */
+export const BACKEND_URL: string =
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_BACKEND_URL) ||
+  'http://localhost:8000';
 
 /** Represents an AI agent managed by Monet */
 export interface Agent {

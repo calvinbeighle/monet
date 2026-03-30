@@ -501,6 +501,141 @@ async def connect_service(service: str) -> dict[str, str]:
     }
 
 
+# --- Email Triage ---
+
+def _extract_emails(raw: Any) -> list[dict[str, Any]]:
+    """
+    Extracts slim, normalised email records from a raw Composio GMAIL_FETCH_EMAILS response.
+
+    Handles both the nested {'data': {'messages': [...]}} shape that Composio returns
+    and bare list responses. Caps at 5 emails.
+
+    Args:
+        raw: Raw response from composio.execute_tool("GMAIL_FETCH_EMAILS", ...).
+
+    Returns:
+        List of dicts with id, sender, subject, body, timestamp, to keys.
+    """
+    if isinstance(raw, dict) and "data" in raw:
+        raw = raw["data"]
+
+    messages: list[Any] = []
+    if isinstance(raw, dict) and "messages" in raw:
+        messages = raw["messages"]
+    elif isinstance(raw, list):
+        messages = raw
+
+    result = []
+    for m in messages[:5]:
+        body = (
+            m.get("messageText")
+            or m.get("body")
+            or m.get("preview")
+            or m.get("snippet")
+            or ""
+        )
+        result.append({
+            "id": m.get("messageId") or m.get("id") or "",
+            "sender": m.get("sender") or m.get("from") or "",
+            "subject": m.get("subject") or "(no subject)",
+            "body": body[:600],
+            "timestamp": m.get("messageTimestamp") or m.get("date") or "",
+            "to": m.get("to") or "",
+        })
+    return result
+
+
+@app.post("/triage-inbox")
+async def triage_inbox() -> dict[str, Any]:
+    """
+    Fetches the 5 most recent emails via Composio Gmail and drafts a reply for each.
+
+    Calls tools directly (no agent loop) for speed. Uses Claude Haiku to generate
+    brief, professional draft replies. Falls back to stub data when Composio is
+    not connected.
+
+    Returns:
+        Dict with 'cards' list and 'count' integer. Each card has: id, sender,
+        subject, body, draft, timestamp.
+    """
+    import anthropic
+
+    composio = ComposioClient()
+    raw = await composio.execute_tool("GMAIL_FETCH_EMAILS", {"max_results": 5})
+    emails = _extract_emails(raw)
+
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+    cards = []
+    for email in emails:
+        prompt = (
+            "Draft a brief, professional reply to this email. "
+            "Write only the reply body text - no greeting like 'Dear X', no sign-off. "
+            "2-4 sentences max.\n\n"
+            f"From: {email['sender']}\n"
+            f"Subject: {email['subject']}\n"
+            f"Body: {email['body'][:500]}"
+        )
+        resp = client.messages.create(
+            model=config.HAIKU_MODEL,
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        draft = resp.content[0].text.strip()
+
+        cards.append({
+            "id": email["id"],
+            "sender": email["sender"],
+            "subject": email["subject"],
+            "body": email["body"],
+            "draft": draft,
+            "timestamp": email["timestamp"],
+            "to": email["to"],
+        })
+
+    logger.info("Triage inbox: produced %d cards.", len(cards))
+    return {"cards": cards, "count": len(cards)}
+
+
+@app.post("/send-reply")
+async def send_reply(data: dict) -> dict[str, Any]:
+    """
+    Sends or skips an email reply via Composio Gmail.
+
+    When action is 'send', calls GMAIL_SEND_EMAIL with the provided reply text.
+    When action is 'skip', returns immediately without sending.
+
+    Args:
+        data: Dict with keys: action ('send' | 'skip'), email_id, reply_text,
+              to (recipient address), subject.
+
+    Returns:
+        Dict with 'status' ('sent' | 'skipped') and optional 'result'.
+    """
+    action = data.get("action")
+    email_id = data.get("email_id", "")
+    reply_text = data.get("reply_text", "")
+    recipient = data.get("to", "")
+    subject = data.get("subject", "")
+
+    if action == "send" and reply_text:
+        composio = ComposioClient()
+        result = await composio.execute_tool(
+            "GMAIL_SEND_EMAIL",
+            {
+                "to": recipient,
+                "subject": subject,
+                "body": reply_text,
+                "reply_to_id": email_id,
+            },
+        )
+        logger.info("Sent reply for email '%s' to '%s'.", email_id, recipient)
+        return {"status": "sent", "result": result}
+
+    logger.info("Skipped email '%s'.", email_id)
+    return {"status": "skipped"}
+
+
 # --- History ---
 
 @app.get("/history")

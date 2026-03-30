@@ -1,9 +1,20 @@
 """
 agents/base.py - Abstract base class for all Monet background agents.
 
-Provides shared infrastructure for calling OpenRouter (streaming and non-streaming),
-tool execution dispatch, and event emission. Concrete agents extend this class
-and override `model`, `tools`, and `_execute_tool`.
+Provides shared infrastructure for calling the Anthropic SDK (streaming and
+non-streaming), running the agentic tool-use loop, and emitting AgentEvents.
+
+Concrete agents extend this class and override `model`, `tools`,
+and `_execute_tool`. All tool definitions must use Anthropic format
+(input_schema, not parameters).
+
+Agentic loop contract:
+  - Send messages with tools to the model
+  - If stop_reason == "tool_use", extract tool blocks, execute each, send
+    tool_result blocks back, repeat
+  - Loop until stop_reason == "end_turn" or max_rounds is reached
+  - Tool results are added as {"type": "tool_result", "tool_use_id": id, ...}
+    inside a user message (Anthropic format)
 """
 
 from __future__ import annotations
@@ -12,10 +23,14 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Optional
 
-import httpx
+import anthropic
 
 import config
 from models import AgentEvent, EventType, Suggestion
+
+
+# Shared Anthropic client - initialized once at module load
+_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
 
 class BaseAgent(ABC):
@@ -23,9 +38,9 @@ class BaseAgent(ABC):
     Abstract base agent. Subclasses must implement `run` and `_execute_tool`.
 
     Provides:
-    - `_chat_stream` for SSE-based streaming text generation
-    - `_chat` for non-streaming tool call invocations
-    - `_emit` helper for building AgentEvent objects
+    - `_chat_with_tools` - agentic loop that iterates tool calls until end_turn
+    - `_chat_stream` - streaming conversational response (no tools)
+    - `_emit` helper for constructing AgentEvent objects
     """
 
     # --- Abstract Properties ---
@@ -39,13 +54,15 @@ class BaseAgent(ABC):
     @property
     @abstractmethod
     def model(self) -> str:
-        """OpenRouter model identifier to use for this agent."""
+        """Anthropic model identifier to use for this agent."""
         ...
 
     @property
     def tools(self) -> list[dict[str, Any]]:
         """
-        OpenAI-format tool definitions to pass to the model.
+        Anthropic-format tool definitions to pass to the model.
+
+        Each tool must have: name, description, input_schema.
         Override in subclasses to declare available tools.
         """
         return []
@@ -72,54 +89,14 @@ class BaseAgent(ABC):
 
         Args:
             tool_name: The name of the tool to execute.
-            tool_input: The arguments for the tool.
+            tool_input: The arguments for the tool (already parsed from JSON).
 
         Returns:
-            Slim result data safe to pass back to the model.
+            Slim result data safe to pass back to the model as a string.
         """
         ...
 
-    # --- OpenRouter Helpers ---
-
-    async def _chat(
-        self,
-        messages: list[dict[str, Any]],
-        max_tokens: int = 1024,
-    ) -> dict[str, Any]:
-        """
-        Non-streaming OpenRouter completion for tool call handling.
-
-        Handles one round of model inference and returns the raw response dict.
-        Does NOT auto-execute tool calls - the caller must loop if needed.
-
-        Args:
-            messages: The conversation history in OpenAI chat format.
-            max_tokens: Maximum tokens for the completion.
-
-        Returns:
-            The parsed JSON response from OpenRouter.
-
-        Raises:
-            httpx.HTTPStatusError: If the OpenRouter request fails.
-        """
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-        }
-
-        if self.tools:
-            payload["tools"] = self.tools
-            payload["tool_choice"] = "auto"
-
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                config.OPENROUTER_BASE_URL,
-                headers=_build_headers(),
-                json=payload,
-            )
-            response.raise_for_status()
-            return response.json()
+    # --- Anthropic SDK Helpers ---
 
     async def _chat_with_tools(
         self,
@@ -128,35 +105,63 @@ class BaseAgent(ABC):
         max_rounds: int = 5,
     ) -> AsyncGenerator[AgentEvent, None]:
         """
-        Agentic loop that iterates tool calls until the model produces a final answer.
+        Agentic loop that drives tool calls until the model reaches end_turn.
 
-        Emits AgentEvents for tool_call, tool_result, and final text. Stops when
-        the model produces a non-tool-call message or max_rounds is reached.
+        Extracts system messages from the message list if present, then iterates:
+          1. Call the model with current history and tools
+          2. If stop_reason == "tool_use": execute each tool_use block,
+             append assistant message + tool_result user message, repeat
+          3. If stop_reason == "end_turn": yield the final text, stop
+
+        Emits tool_call, tool_result, and text AgentEvents throughout.
 
         Args:
-            messages: Initial conversation history.
-            session_id: Session ID to tag events with.
-            max_rounds: Maximum tool call rounds before stopping.
+            messages: Initial conversation history. May include a system message
+                      as the first entry with role="system".
+            session_id: Session ID to tag all emitted events with.
+            max_rounds: Maximum tool-call rounds before forcing a stop.
 
         Yields:
-            AgentEvent objects for each step of the loop.
+            AgentEvent objects for each step of the agentic loop.
         """
-        history = list(messages)
+        # Extract system prompt if provided as a system-role message
+        system_prompt: Optional[str] = None
+        history: list[dict[str, Any]] = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_prompt = msg.get("content", "")
+            else:
+                history.append(msg)
+
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": 1024,
+            "messages": history,
+        }
+        if system_prompt:
+            kwargs["system"] = system_prompt
+        if self.tools:
+            kwargs["tools"] = self.tools
 
         for _ in range(max_rounds):
-            response = await self._chat(history)
-            choice = response["choices"][0]
-            message = choice["message"]
-            finish_reason = choice.get("finish_reason", "stop")
+            response = _client.messages.create(**kwargs)
 
-            # Tool call round
-            if finish_reason == "tool_calls" or message.get("tool_calls"):
-                history.append(message)
-                for tool_call in message.get("tool_calls", []):
-                    fn = tool_call["function"]
-                    tool_name = fn["name"]
-                    tool_input = json.loads(fn.get("arguments", "{}"))
-                    tool_call_id = tool_call["id"]
+            # Check if this round has tool_use blocks
+            tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
+
+            if response.stop_reason == "tool_use" and tool_use_blocks:
+                # Add the assistant's full response to history
+                history.append({
+                    "role": "assistant",
+                    "content": _content_blocks_to_list(response.content),
+                })
+
+                # Execute each tool and collect results
+                tool_results: list[dict[str, Any]] = []
+                for block in tool_use_blocks:
+                    tool_name = block.name
+                    tool_input = block.input
+                    tool_use_id = block.id
 
                     yield self._emit(
                         session_id,
@@ -174,16 +179,29 @@ class BaseAgent(ABC):
                         tool_result=result,
                     )
 
-                    history.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "content": json.dumps(result),
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": json.dumps(result) if not isinstance(result, str) else result,
                     })
+
+                # Append tool results as a user message (Anthropic format)
+                history.append({
+                    "role": "user",
+                    "content": tool_results,
+                })
+
+                # Update kwargs with new history for next round
+                kwargs["messages"] = history
                 continue
 
-            # Final text response
-            content = message.get("content") or ""
-            yield self._emit(session_id, EventType.text, text=content)
+            # end_turn - yield all text content blocks and exit
+            text_parts = [
+                b.text for b in response.content
+                if hasattr(b, "text") and b.text
+            ]
+            final_text = "".join(text_parts)
+            yield self._emit(session_id, EventType.text, text=final_text)
             break
 
     async def _chat_stream(
@@ -192,49 +210,40 @@ class BaseAgent(ABC):
         session_id: str,
     ) -> AsyncGenerator[AgentEvent, None]:
         """
-        Streaming OpenRouter completion that yields text AgentEvents token by token.
+        Streaming Anthropic completion that yields text AgentEvents token by token.
 
         Used for conversational responses where the model does NOT need tool calls.
         For tool-calling agents, use `_chat_with_tools` instead.
 
+        Uses `client.messages.stream()` context manager for SSE streaming.
+
         Args:
-            messages: Conversation history in OpenAI chat format.
-            session_id: Session ID to tag events with.
+            messages: Conversation history. May include a system-role entry first.
+            session_id: Session ID to tag emitted events with.
 
         Yields:
-            AgentEvent with event_type='text' for each streamed chunk.
-
-        Raises:
-            httpx.HTTPStatusError: If the OpenRouter request fails.
+            AgentEvent with event_type='text' for each streamed text delta.
         """
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": True,
-        }
+        system_prompt: Optional[str] = None
+        history: list[dict[str, Any]] = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_prompt = msg.get("content", "")
+            else:
+                history.append(msg)
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            async with client.stream(
-                "POST",
-                config.OPENROUTER_BASE_URL,
-                headers=_build_headers(),
-                json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    raw = line[len("data: "):]
-                    if raw.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
-                    delta = chunk["choices"][0].get("delta", {})
-                    token = delta.get("content")
-                    if token:
-                        yield self._emit(session_id, EventType.text, text=token)
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": 1024,
+            "messages": history,
+        }
+        if system_prompt:
+            kwargs["system"] = system_prompt
+
+        with _client.messages.stream(**kwargs) as stream:
+            for text_delta in stream.text_stream:
+                if text_delta:
+                    yield self._emit(session_id, EventType.text, text=text_delta)
 
     # --- Event Helper ---
 
@@ -277,16 +286,28 @@ class BaseAgent(ABC):
 
 # --- Internal Helpers ---
 
-def _build_headers() -> dict[str, str]:
+def _content_blocks_to_list(content_blocks: list[Any]) -> list[dict[str, Any]]:
     """
-    Builds the HTTP headers required for OpenRouter API requests.
+    Converts Anthropic SDK content block objects to serializable dicts.
+
+    Used when appending an assistant message back into the conversation history.
+    Handles both text blocks and tool_use blocks.
+
+    Args:
+        content_blocks: List of Anthropic SDK ContentBlock objects.
 
     Returns:
-        Dict with Authorization and content-type headers.
+        List of plain dicts suitable for the messages API.
     """
-    return {
-        "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://monet.app",
-        "X-Title": "Monet",
-    }
+    result: list[dict[str, Any]] = []
+    for block in content_blocks:
+        if block.type == "text":
+            result.append({"type": "text", "text": block.text})
+        elif block.type == "tool_use":
+            result.append({
+                "type": "tool_use",
+                "id": block.id,
+                "name": block.name,
+                "input": block.input,
+            })
+    return result

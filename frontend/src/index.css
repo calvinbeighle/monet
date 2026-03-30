@@ -150,13 +150,6 @@ body {
   background: var(--border-strong);
 }
 
-/* Shimmer animation for running agent card left border */
-@keyframes shimmer-y {
-  0% { background-position: 0% 0%; }
-  50% { background-position: 0% 100%; }
-  100% { background-position: 0% 0%; }
-}
-
 /* Progress bar foreground color override */
 [data-slot="progress-indicator"] {
   background: var(--progress-foreground, var(--accent)) !important;

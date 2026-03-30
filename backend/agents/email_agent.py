@@ -1,11 +1,13 @@
 """
 email_agent.py - Email triage background agent for Monet.
 
-Uses Gemini Flash (via OpenRouter) to scan the inbox and identify emails
-that need action. Produces Suggestion objects for each actionable email.
+Uses Claude Haiku (cheap, fast) via the Anthropic SDK to scan the inbox
+and identify emails that need action. Produces Suggestion objects for each
+actionable email.
 
-Tool results are stripped to slim payloads (subject, sender, preview) to
-avoid passing full HTML email bodies to the model.
+Tool definitions use Anthropic format (input_schema, not parameters).
+Tool results are stripped to slim payloads (subject, sender, preview only)
+to avoid passing full HTML email bodies to the model context.
 """
 
 from __future__ import annotations
@@ -32,6 +34,9 @@ class EmailAgent(BaseAgent):
 
     Runs on a schedule, fetches recent emails via Composio/Gmail,
     and produces Suggestion objects for emails needing a reply or action.
+
+    Uses claude-haiku-4-5 (cheap, fast) since email triage runs frequently
+    and does not require deep reasoning.
     """
 
     def __init__(self, composio: ComposioClient) -> None:
@@ -54,82 +59,74 @@ class EmailAgent(BaseAgent):
     @property
     def tools(self) -> list[dict[str, Any]]:
         """
-        OpenAI-format tool definitions for Gmail operations.
+        Anthropic-format tool definitions for Gmail operations.
+
+        Uses input_schema (Anthropic format) instead of OpenAI-style parameters.
 
         Returns:
             List of tool spec dicts for list_emails, read_email, and draft_email.
         """
         return [
             {
-                "type": "function",
-                "function": {
-                    "name": "list_emails",
-                    "description": (
-                        "List recent unread emails from Gmail. "
-                        f"Returns at most {MAX_EMAILS} emails."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "max_results": {
-                                "type": "integer",
-                                "description": f"Number of emails to fetch (max {MAX_EMAILS}).",
-                                "default": MAX_EMAILS,
-                            },
-                            "query": {
-                                "type": "string",
-                                "description": "Gmail search query string (e.g. 'is:unread').",
-                                "default": "is:unread",
-                            },
+                "name": "list_emails",
+                "description": (
+                    "List recent unread emails from Gmail. "
+                    f"Returns at most {MAX_EMAILS} emails with slim payloads "
+                    "(subject, sender, preview only - no full bodies)."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "max_results": {
+                            "type": "integer",
+                            "description": f"Number of emails to fetch (max {MAX_EMAILS}).",
                         },
-                        "required": [],
+                        "query": {
+                            "type": "string",
+                            "description": "Gmail search query string (e.g. 'is:unread').",
+                        },
                     },
+                    "required": [],
                 },
             },
             {
-                "type": "function",
-                "function": {
-                    "name": "read_email",
-                    "description": "Read the content of a specific email by ID.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "email_id": {
-                                "type": "string",
-                                "description": "The Gmail message ID.",
-                            },
+                "name": "read_email",
+                "description": "Read the content of a specific email by ID.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "email_id": {
+                            "type": "string",
+                            "description": "The Gmail message ID.",
                         },
-                        "required": ["email_id"],
                     },
+                    "required": ["email_id"],
                 },
             },
             {
-                "type": "function",
-                "function": {
-                    "name": "draft_email",
-                    "description": "Create a draft reply to an email.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "to": {
-                                "type": "string",
-                                "description": "Recipient email address.",
-                            },
-                            "subject": {
-                                "type": "string",
-                                "description": "Email subject line.",
-                            },
-                            "body": {
-                                "type": "string",
-                                "description": "Email body text.",
-                            },
-                            "thread_id": {
-                                "type": "string",
-                                "description": "Optional Gmail thread ID to reply in.",
-                            },
+                "name": "draft_email",
+                "description": "Create a draft reply to an email.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "to": {
+                            "type": "string",
+                            "description": "Recipient email address.",
                         },
-                        "required": ["to", "subject", "body"],
+                        "subject": {
+                            "type": "string",
+                            "description": "Email subject line.",
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "Email body text.",
+                        },
+                        "thread_id": {
+                            "type": "string",
+                            "description": "Optional Gmail thread ID to reply in.",
+                        },
                     },
+                    "required": ["to", "subject", "body"],
                 },
             },
         ]
@@ -160,7 +157,8 @@ class EmailAgent(BaseAgent):
         """
         Routes tool calls to the Composio Gmail integration.
 
-        Strips results to slim payloads before returning to the model.
+        Strips results to slim payloads before returning to the model to
+        avoid flooding the context window with full email bodies.
 
         Args:
             tool_name: One of 'list_emails', 'read_email', 'draft_email'.

@@ -58,7 +58,7 @@ function App() {
   const { isLoading } = useAppStore();
 
   return (
-    <div className="w-full h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
+    <div className="w-full h-full overflow-hidden bg-zinc-950">
       <ActiveViewRenderer />
 
       {/* Loading overlay - only shown when actually waiting for something */}
@@ -70,8 +70,7 @@ function App() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-50 flex items-center justify-center"
-            style={{ background: 'rgba(9,9,11,0.75)', backdropFilter: 'blur(8px)' }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-xl"
           >
             <AiLoader text="monet" size={160} />
           </motion.div>

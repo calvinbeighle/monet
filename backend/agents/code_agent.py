@@ -1,10 +1,11 @@
 """
 code_agent.py - Code review background agent for Monet.
 
-Uses Claude Sonnet (via OpenRouter) to scan open GitHub pull requests
-and identify PRs that need review. Produces Suggestion objects for each
-actionable PR.
+Uses Claude Sonnet (smart) via the Anthropic SDK to scan open GitHub pull
+requests and identify PRs that need review. Produces Suggestion objects for
+each actionable PR.
 
+Tool definitions use Anthropic format (input_schema, not parameters).
 Tool results are stripped to slim payloads to avoid passing full diffs
 to the model context unnecessarily.
 """
@@ -33,6 +34,9 @@ class CodeAgent(BaseAgent):
 
     Runs on a schedule, fetches open PRs via Composio/GitHub,
     and produces Suggestion objects for PRs needing review.
+
+    Uses claude-sonnet-4-6 since code review requires deeper reasoning
+    than email triage.
     """
 
     def __init__(self, composio: ComposioClient) -> None:
@@ -55,87 +59,78 @@ class CodeAgent(BaseAgent):
     @property
     def tools(self) -> list[dict[str, Any]]:
         """
-        OpenAI-format tool definitions for GitHub PR operations.
+        Anthropic-format tool definitions for GitHub PR operations.
+
+        Uses input_schema (Anthropic format) instead of OpenAI-style parameters.
 
         Returns:
             List of tool spec dicts for list_prs, get_pr, and create_review.
         """
         return [
             {
-                "type": "function",
-                "function": {
-                    "name": "list_prs",
-                    "description": (
-                        "List open pull requests from GitHub. "
-                        f"Returns at most {MAX_PRS} PRs."
-                    ),
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "state": {
-                                "type": "string",
-                                "description": "PR state filter: 'open', 'closed', or 'all'.",
-                                "default": "open",
-                            },
-                            "max_results": {
-                                "type": "integer",
-                                "description": f"Number of PRs to fetch (max {MAX_PRS}).",
-                                "default": MAX_PRS,
-                            },
+                "name": "list_prs",
+                "description": (
+                    "List open pull requests from GitHub. "
+                    f"Returns at most {MAX_PRS} PRs with slim payloads "
+                    "(number, title, author, description - no full diffs)."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "state": {
+                            "type": "string",
+                            "description": "PR state filter: 'open', 'closed', or 'all'.",
                         },
-                        "required": [],
+                        "max_results": {
+                            "type": "integer",
+                            "description": f"Number of PRs to fetch (max {MAX_PRS}).",
+                        },
                     },
+                    "required": [],
                 },
             },
             {
-                "type": "function",
-                "function": {
-                    "name": "get_pr",
-                    "description": "Get details and diff for a specific pull request.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "pr_number": {
-                                "type": "integer",
-                                "description": "The GitHub pull request number.",
-                            },
-                            "repo": {
-                                "type": "string",
-                                "description": "The repository in 'owner/repo' format.",
-                            },
+                "name": "get_pr",
+                "description": "Get details and diff preview for a specific pull request.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "pr_number": {
+                            "type": "integer",
+                            "description": "The GitHub pull request number.",
                         },
-                        "required": ["pr_number"],
+                        "repo": {
+                            "type": "string",
+                            "description": "The repository in 'owner/repo' format.",
+                        },
                     },
+                    "required": ["pr_number"],
                 },
             },
             {
-                "type": "function",
-                "function": {
-                    "name": "create_review",
-                    "description": "Submit a review comment on a pull request.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "pr_number": {
-                                "type": "integer",
-                                "description": "The GitHub pull request number.",
-                            },
-                            "repo": {
-                                "type": "string",
-                                "description": "The repository in 'owner/repo' format.",
-                            },
-                            "body": {
-                                "type": "string",
-                                "description": "The review comment body.",
-                            },
-                            "event": {
-                                "type": "string",
-                                "description": "Review action: 'APPROVE', 'REQUEST_CHANGES', or 'COMMENT'.",
-                                "default": "COMMENT",
-                            },
+                "name": "create_review",
+                "description": "Submit a review comment on a pull request.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "pr_number": {
+                            "type": "integer",
+                            "description": "The GitHub pull request number.",
                         },
-                        "required": ["pr_number", "body"],
+                        "repo": {
+                            "type": "string",
+                            "description": "The repository in 'owner/repo' format.",
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "The review comment body.",
+                        },
+                        "event": {
+                            "type": "string",
+                            "description": "Review action: 'APPROVE', 'REQUEST_CHANGES', or 'COMMENT'.",
+                        },
                     },
+                    "required": ["pr_number", "body"],
                 },
             },
         ]
@@ -166,7 +161,8 @@ class CodeAgent(BaseAgent):
         """
         Routes tool calls to the Composio GitHub integration.
 
-        Strips results to slim payloads before returning to the model.
+        Strips results to slim payloads before returning to the model to
+        avoid flooding the context window with full diffs.
 
         Args:
             tool_name: One of 'list_prs', 'get_pr', 'create_review'.

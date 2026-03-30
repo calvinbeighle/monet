@@ -2,42 +2,17 @@
  * components/AgentCard.tsx
  * Visual card representing a single AI agent on the home screen.
  * Shows agent name, progress bar (if running), current step label,
- * and a decision count badge. Cards with pending decisions glow violet
- * and are clickable to open the relevant decision view.
+ * and a decision count badge. Cards with pending decisions have a violet
+ * ring and are clickable to open the relevant decision view.
+ *
+ * Fixed width: 240px. Uses Tailwind classes, no inline CSS vars.
  */
 import { motion } from 'framer-motion';
-import { Card } from '@/components/ui/card';
 import { useAppStore } from '@/stores/appStore';
 import type { Agent } from '@/types';
 
 interface AgentCardProps {
   agent: Agent;
-}
-
-/**
- * Returns the card border/glow style based on agent state.
- * Running agents get a violet left border, decision agents get a violet glow.
- * Error agents get a red border. Idle agents use the default border.
- */
-function getCardStyle(agent: Agent): React.CSSProperties {
-  if (agent.status === 'error') {
-    return {
-      borderColor: 'rgba(239, 68, 68, 0.5)',
-      boxShadow: '0 0 12px rgba(239, 68, 68, 0.2)',
-    };
-  }
-  if (agent.decisionCount && agent.decisionCount > 0) {
-    return {
-      borderColor: 'rgba(139, 92, 246, 0.5)',
-      boxShadow: '0 0 20px rgba(139, 92, 246, 0.3)',
-    };
-  }
-  if (agent.status === 'running') {
-    return {
-      borderColor: 'rgba(139, 92, 246, 0.3)',
-    };
-  }
-  return {};
 }
 
 /**
@@ -47,29 +22,23 @@ function getCardStyle(agent: Agent): React.CSSProperties {
  */
 function StatusLabel({ agent }: { agent: Agent }) {
   if (agent.status === 'error') {
-    return <span className="text-xs" style={{ color: 'var(--error)' }}>error</span>;
+    return <span className="text-[12px] text-red-500">error</span>;
   }
   if (agent.status === 'running' && agent.currentStep) {
-    return (
-      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        {agent.currentStep}
-      </span>
-    );
+    return <span className="text-[12px] text-zinc-500">{agent.currentStep}</span>;
   }
   if (agent.status === 'idle' && agent.lastRun) {
-    return (
-      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        Done - {agent.lastRun}
-      </span>
-    );
+    return <span className="text-[12px] text-zinc-500">Done - {agent.lastRun}</span>;
   }
-  return <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Idle</span>;
+  return <span className="text-[12px] text-zinc-500">Idle</span>;
 }
 
 /**
- * AgentCard renders a single agent as a shadcn Card.
+ * AgentCard renders a single agent as a fixed-width (240px) card.
+ * Running cards get a 2px solid violet left border.
+ * Decision cards get a subtle violet ring and shadow.
+ * Idle cards without decisions are dimmed to opacity-50.
  * Clicking a card with pending decisions opens the relevant decision view.
- * Cards without decisions are non-interactive (styled as muted).
  */
 export function AgentCard({ agent }: AgentCardProps) {
   const { setActiveView } = useAppStore();
@@ -83,73 +52,53 @@ export function AgentCard({ agent }: AgentCardProps) {
     setActiveView(view);
   }
 
+  /* Build className string based on agent state */
+  const baseClasses =
+    'relative overflow-hidden bg-zinc-900 border border-zinc-800 rounded-xl transition-all duration-200';
+
+  const stateClasses = (() => {
+    if (agent.status === 'idle' && !hasDecisions) return 'opacity-50';
+    if (hasDecisions) return 'ring-1 ring-violet-500/30 shadow-[0_0_16px_rgba(139,92,246,0.12)] hover:border-zinc-700';
+    if (agent.status === 'running') return 'border-l-2 border-l-violet-500 hover:border-zinc-700';
+    return '';
+  })();
+
+  const cursorClass = isClickable ? 'cursor-pointer' : 'cursor-default';
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className="w-full"
-      style={{ minWidth: '180px', maxWidth: '220px' }}
+      style={{ width: '240px', flexShrink: 0 }}
     >
-      <Card
+      <div
         onClick={handleClick}
-        className="relative p-4 transition-all duration-200 overflow-hidden"
-        style={{
-          background: 'var(--surface)',
-          border: `1px solid ${agent.status === 'idle' && !hasDecisions ? 'var(--border)' : 'transparent'}`,
-          cursor: isClickable ? 'pointer' : 'default',
-          opacity: agent.status === 'idle' && !hasDecisions ? 0.65 : 1,
-          ...getCardStyle(agent),
-        }}
+        className={`${baseClasses} ${stateClasses} ${cursorClass}`}
+        style={{ padding: '20px' }}
       >
-        {/* Running agent - animated shimmer on the left edge */}
-        {agent.status === 'running' && (
-          <div
-            className="absolute left-0 top-0 bottom-0 w-[3px]"
-            style={{
-              background: 'linear-gradient(180deg, #8b5cf6 0%, #a78bfa 50%, #8b5cf6 100%)',
-              backgroundSize: '100% 200%',
-              animation: 'shimmer-y 2s ease-in-out infinite',
-            }}
-          />
+        {/* Decision badge - absolute top-right */}
+        {hasDecisions && (
+          <motion.div
+            animate={{ scale: [1, 1.12, 1] }}
+            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+            className="absolute -top-1.5 -right-1.5 flex items-center justify-center rounded-full bg-red-500 text-white font-semibold"
+            style={{ width: '16px', height: '16px', fontSize: '10px' }}
+          >
+            {agent.decisionCount}
+          </motion.div>
         )}
 
-        {/* Header row: agent name + decision badge */}
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <span
-            className="text-sm font-medium leading-tight"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            {agent.name}
-          </span>
-
-          {hasDecisions && (
-            <motion.div
-              animate={{ scale: [1, 1.15, 1] }}
-              transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-              className="flex items-center justify-center rounded-full text-white font-semibold shrink-0"
-              style={{
-                background: '#ef4444',
-                fontSize: '10px',
-                minWidth: '18px',
-                height: '18px',
-                padding: '0 4px',
-              }}
-            >
-              {agent.decisionCount}
-            </motion.div>
-          )}
-        </div>
+        {/* Agent name */}
+        <span className="block text-[14px] font-medium text-zinc-100 leading-tight">
+          {agent.name}
+        </span>
 
         {/* Progress bar - only for running agents */}
         {agent.status === 'running' && agent.progress !== undefined && (
-          <div
-            className="mb-2 w-full rounded-full overflow-hidden"
-            style={{ height: '4px', background: 'var(--surface-elevated)' }}
-          >
+          <div className="w-full rounded-full overflow-hidden bg-zinc-800 mt-3" style={{ height: '3px' }}>
             <motion.div
-              className="h-full rounded-full"
-              style={{ background: 'var(--accent)' }}
+              className="h-full rounded-full bg-violet-500"
               initial={{ width: 0 }}
               animate={{ width: `${agent.progress}%` }}
               transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -158,20 +107,17 @@ export function AgentCard({ agent }: AgentCardProps) {
         )}
 
         {/* Status label */}
-        <StatusLabel agent={agent} />
+        <div className="mt-1.5">
+          <StatusLabel agent={agent} />
+        </div>
 
-        {/* Decisions hint text */}
+        {/* Decisions hint */}
         {hasDecisions && (
-          <div className="mt-2">
-            <span
-              className="text-xs font-medium"
-              style={{ color: 'var(--accent)' }}
-            >
-              {agent.decisionCount} need review
-            </span>
-          </div>
+          <p className="text-[12px] text-violet-400 font-medium" style={{ marginTop: '10px' }}>
+            {agent.decisionCount} need review
+          </p>
         )}
-      </Card>
+      </div>
     </motion.div>
   );
 }

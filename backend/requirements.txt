@@ -1,7 +1,8 @@
 fastapi>=0.100.0
 uvicorn[standard]
-httpx
+anthropic
 sse-starlette
 pydantic>=2.0
 python-dotenv
+httpx
 composio-core>=0.6.0

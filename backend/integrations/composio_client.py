@@ -29,6 +29,81 @@ STUB_OAUTH_URLS: dict[str, str] = {
 # --- Stub Tool Responses ---
 
 STUB_TOOL_RESPONSES: dict[str, Any] = {
+    "GMAIL_FETCH_EMAILS": {
+        "data": {
+            "messages": [
+                {
+                    "messageId": "stub-msg-001",
+                    "sender": "partner@horizonvc.com",
+                    "subject": "Q2 board meeting - need metrics by Friday",
+                    "messageText": (
+                        "Hi, the Q2 board meeting is this Friday at 2 PM. "
+                        "We need the following before then: ARR growth, churn rate, NPS score, "
+                        "and burn rate for the quarter. Please send by Thursday EOD so we have "
+                        "time to review. Let me know if you have any questions. Thanks."
+                    ),
+                    "messageTimestamp": "2026-03-28T09:14:00Z",
+                    "to": "founder@monet.ai",
+                },
+                {
+                    "messageId": "stub-msg-002",
+                    "sender": "cto@prospect.io",
+                    "subject": "Follow up: product demo last week",
+                    "messageText": (
+                        "Hey, really enjoyed the demo on Tuesday. Our team had a few "
+                        "technical questions before we move forward: 1) What is your data "
+                        "retention policy? 2) Do you support SSO? 3) Can we get a sandbox "
+                        "environment to test? We are hoping to make a decision by end of month."
+                    ),
+                    "messageTimestamp": "2026-03-27T16:45:00Z",
+                    "to": "founder@monet.ai",
+                },
+                {
+                    "messageId": "stub-msg-003",
+                    "sender": "legal@cloudvendor.com",
+                    "subject": "Contract renewal - action required within 14 days",
+                    "messageText": (
+                        "Your current service agreement expires on April 12th. "
+                        "We have prepared a renewal with updated terms including the new "
+                        "enterprise SLA we discussed. Please review the attached PDF and sign "
+                        "via DocuSign. If you wish to negotiate terms, please reply by April 5th."
+                    ),
+                    "messageTimestamp": "2026-03-27T11:20:00Z",
+                    "to": "founder@monet.ai",
+                },
+                {
+                    "messageId": "stub-msg-004",
+                    "sender": "press@techcrunch.com",
+                    "subject": "Interview request - AI tools for founders",
+                    "messageText": (
+                        "Hi, I am writing a piece on AI-powered productivity tools for "
+                        "early stage founders. I came across Monet and would love a 20 minute "
+                        "chat this week if you are available. Happy to work around your schedule. "
+                        "The article targets publication in late April."
+                    ),
+                    "messageTimestamp": "2026-03-26T14:00:00Z",
+                    "to": "founder@monet.ai",
+                },
+                {
+                    "messageId": "stub-msg-005",
+                    "sender": "team@linear.app",
+                    "subject": "Your sprint cycle ends tomorrow",
+                    "messageText": (
+                        "This is a reminder that your current sprint cycle ends tomorrow. "
+                        "You have 3 issues marked In Progress and 2 in Review. "
+                        "Consider moving incomplete items to the backlog or next cycle. "
+                        "Your team velocity this sprint was 34 points."
+                    ),
+                    "messageTimestamp": "2026-03-26T09:00:00Z",
+                    "to": "founder@monet.ai",
+                },
+            ]
+        }
+    },
+    "GMAIL_SEND_EMAIL": {
+        "status": "sent",
+        "message": "Email sent successfully (stub mode).",
+    },
     "GMAIL_LIST_MESSAGES": [
         {
             "id": "stub-001",
