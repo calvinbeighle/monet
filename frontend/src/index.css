@@ -3,8 +3,8 @@
  * Global styles for Monet. Imports Tailwind v4 and defines CSS custom properties
  * for the dark color palette used throughout the app.
  */
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+@import "tailwindcss";
 
 :root {
   --bg: #09090b;
