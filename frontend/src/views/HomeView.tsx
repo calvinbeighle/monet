@@ -369,36 +369,7 @@ export function HomeView() {
               )}
             </AnimatePresence>
 
-            {/* Suggestion rows below command bar - only when no chat messages */}
-            <AnimatePresence>
-              {agentsWithDecisions.length > 0 && !hasChatMessages && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2, delay: 0.1 }}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    marginTop: '8px',
-                    width: '580px',
-                    flexShrink: 0,
-                  }}
-                >
-                  {agentsWithDecisions.map((agent, idx) => (
-                    <div key={agent.id}>
-                      {idx > 0 && (
-                        <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.04)' }} />
-                      )}
-                      <SuggestionRow
-                        agent={agent}
-                        onClick={() => setOverlayView((agent.decisionView as 'tinder' | 'diff' | 'whiteboard') ?? 'tinder')}
-                      />
-                    </div>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* Suggestion rows removed - agent cards handle interactions directly */}
           </motion.div>
         ) : (
           /* ------------------------------------------------------------------ */

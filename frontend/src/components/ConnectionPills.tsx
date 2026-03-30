@@ -157,50 +157,69 @@ export function ConnectionPills({ connections, onConnect, connectingIds }: Conne
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 6 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
       style={{
         display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '10px',
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: '16px',
+        marginTop: '12px',
       }}
     >
-      {/* Section label - 11px uppercase, very subtle */}
-      <span
-        style={{
-          fontSize: '11px',
-          fontWeight: 500,
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          color: 'rgba(161,161,170,0.35)',
-        }}
-      >
-        Connect your tools
-      </span>
+      {/* Just tiny colored logos - no text, no borders, no label */}
+      {TOOLS.map((tool) => {
+        const conn = connectionMap.get(tool.id);
+        const isConnected = conn?.connected ?? false;
+        const isConnecting = connectingIds.has(tool.id);
+        const { Icon } = tool;
 
-      {/* Pill row */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'row',
-          flexWrap: 'wrap',
-          justifyContent: 'center',
-          gap: '8px',
-        }}
-      >
-        {TOOLS.map((tool) => (
-          <ConnectionPill
+        return (
+          <motion.button
             key={tool.id}
-            tool={tool}
-            connection={connectionMap.get(tool.id)}
-            onConnect={onConnect}
-            isConnecting={connectingIds.has(tool.id)}
-          />
-        ))}
-      </div>
+            onClick={() => !isConnected && !isConnecting && onConnect(tool.id)}
+            disabled={isConnected || isConnecting}
+            whileHover={!isConnected ? { scale: 1.15 } : {}}
+            whileTap={!isConnected ? { scale: 0.95 } : {}}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '28px',
+              height: '28px',
+              borderRadius: '6px',
+              background: 'transparent',
+              border: 'none',
+              cursor: isConnected || isConnecting ? 'default' : 'pointer',
+              position: 'relative',
+              opacity: isConnected ? 0.3 : 0.6,
+              transition: 'opacity 0.15s ease',
+            }}
+            onMouseEnter={(e) => { if (!isConnected) (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = isConnected ? '0.3' : '0.6'; }}
+          >
+            <Icon size={16} strokeWidth={1.5} style={{ color: isConnected ? 'rgba(255,255,255,0.4)' : tool.color }} />
+            {isConnected && (
+              <span style={{
+                position: 'absolute', bottom: '-2px', right: '-2px',
+                width: '5px', height: '5px', borderRadius: '50%', background: '#22c55e',
+              }} />
+            )}
+            {isConnecting && (
+              <motion.span
+                animate={{ opacity: [0.3, 1, 0.3] }}
+                transition={{ duration: 1, repeat: Infinity }}
+                style={{
+                  position: 'absolute', bottom: '-2px', right: '-2px',
+                  width: '5px', height: '5px', borderRadius: '50%', background: '#8b5cf6',
+                }}
+              />
+            )}
+          </motion.button>
+        );
+      })}
     </motion.div>
   );
 }
