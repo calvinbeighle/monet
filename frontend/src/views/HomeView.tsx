@@ -28,6 +28,7 @@ import { AgentOrbitWithSuspense } from '@/components/AgentOrbit';
 import { CommandBar } from '@/components/CommandBar';
 import { AgentCard } from '@/components/AgentCard';
 import { ConnectionPills } from '@/components/ConnectionPills';
+import { ActivityTimeline } from '@/components/ActivityTimeline';
 import { useAppStore } from '@/stores/appStore';
 import type { Agent } from '@/types';
 import type { InlineChatMessage } from '@/stores/appStore';
@@ -263,113 +264,141 @@ export function HomeView() {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              justifyContent: hasChatMessages ? 'flex-start' : 'center',
               width: '100%',
               height: '100%',
-              paddingTop: hasChatMessages ? '32px' : '0',
-              overflow: 'hidden',
+              overflow: hasChatMessages ? 'hidden' : 'auto',
             }}
           >
-            {/* Agent cards row */}
+            {/* ---- Upper fixed group: cards + command bar + pills ---- */}
             <div
               style={{
                 display: 'flex',
-                flexDirection: 'row',
-                gap: '16px',
-                justifyContent: 'center',
-                flexWrap: 'wrap',
-                padding: '0 32px',
-                marginBottom: hasChatMessages ? '24px' : '40px',
+                flexDirection: 'column',
+                alignItems: 'center',
+                width: '100%',
                 flexShrink: 0,
+                paddingTop: hasChatMessages ? '32px' : '10vh',
               }}
             >
-              {agents.map((agent) => (
-                <AgentCard key={agent.id} agent={agent} />
-              ))}
+              {/* Agent cards row */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'row',
+                  gap: '16px',
+                  justifyContent: 'center',
+                  flexWrap: 'wrap',
+                  padding: '0 32px',
+                  marginBottom: hasChatMessages ? '24px' : '40px',
+                }}
+              >
+                {agents.map((agent) => (
+                  <AgentCard key={agent.id} agent={agent} />
+                ))}
+              </div>
+
+              {/* Inline chat messages - scrollable area between cards and command bar */}
+              <AnimatePresence>
+                {hasChatMessages && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{
+                      flex: 1,
+                      width: '580px',
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      paddingBottom: '8px',
+                      maxHeight: 'calc(100vh - 320px)',
+                    }}
+                  >
+                    {inlineChatMessages.map((msg) => (
+                      <InlineChatMessageRow key={msg.id} message={msg} />
+                    ))}
+                    <div ref={chatEndRef} />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Command bar inline below cards (or below chat) */}
+              <div style={{ marginTop: hasChatMessages ? '8px' : '0' }}>
+                <CommandBar position="center" />
+              </div>
+
+              {/* Connection pills - under the search bar like DIA */}
+              <AnimatePresence>
+                {hasDisconnectedTools && !hasChatMessages && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{ marginTop: '12px' }}
+                  >
+                    <ConnectionPills
+                      connections={connections}
+                      onConnect={connectService}
+                      connectingIds={connectingIds}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Clear chat button - shown when there are messages */}
+              <AnimatePresence>
+                {hasChatMessages && (
+                  <motion.button
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={clearInlineChat}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      marginTop: '10px',
+                      fontSize: '12px',
+                      color: 'rgba(161,161,170,0.4)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '4px 8px',
+                      borderRadius: '6px',
+                      transition: 'color 0.1s ease',
+                    }}
+                    whileHover={{ color: 'rgba(161,161,170,0.8)' } as any}
+                  >
+                    <X size={11} strokeWidth={1.5} />
+                    clear
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </div>
 
-            {/* Inline chat messages - scrollable area between cards and command bar */}
+            {/* ---- Activity timeline - visible only when not chatting ---- */}
             <AnimatePresence>
-              {hasChatMessages && (
+              {!hasChatMessages && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
+                  transition={{ duration: 0.25, delay: 0.15 }}
                   style={{
-                    flex: 1,
-                    width: '580px',
-                    overflowY: 'auto',
                     display: 'flex',
-                    flexDirection: 'column',
-                    paddingBottom: '8px',
+                    justifyContent: 'center',
+                    width: '100%',
+                    paddingLeft: '16px',
+                    paddingRight: '16px',
                   }}
                 >
-                  {inlineChatMessages.map((msg) => (
-                    <InlineChatMessageRow key={msg.id} message={msg} />
-                  ))}
-                  <div ref={chatEndRef} />
+                  <ActivityTimeline />
                 </motion.div>
               )}
             </AnimatePresence>
-
-            {/* Command bar inline below cards (or below chat) */}
-            <div style={{ flexShrink: 0, marginTop: hasChatMessages ? '8px' : '0' }}>
-              <CommandBar position="center" />
-            </div>
-
-            {/* Connection pills - under the search bar like DIA */}
-            <AnimatePresence>
-              {hasDisconnectedTools && !hasChatMessages && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  style={{ marginTop: '12px', flexShrink: 0 }}
-                >
-                  <ConnectionPills
-                    connections={connections}
-                    onConnect={connectService}
-                    connectingIds={connectingIds}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Clear chat button - shown when there are messages */}
-            <AnimatePresence>
-              {hasChatMessages && (
-                <motion.button
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  transition={{ duration: 0.15 }}
-                  onClick={clearInlineChat}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    marginTop: '10px',
-                    fontSize: '12px',
-                    color: 'rgba(161,161,170,0.4)',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    transition: 'color 0.1s ease',
-                    flexShrink: 0,
-                  }}
-                  whileHover={{ color: 'rgba(161,161,170,0.8)' } as any}
-                >
-                  <X size={11} strokeWidth={1.5} />
-                  clear
-                </motion.button>
-              )}
-            </AnimatePresence>
-
-            {/* Suggestion rows removed - agent cards handle interactions directly */}
           </motion.div>
         ) : (
           /* ------------------------------------------------------------------ */

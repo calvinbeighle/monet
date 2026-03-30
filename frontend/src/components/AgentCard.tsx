@@ -165,6 +165,26 @@ export function AgentCard({ agent }: AgentCardProps) {
           </div>
         )}
 
+        {/* Last action summary - shown when agent has a summary and is not actively displaying a badge */}
+        {agent.summary && !hasDecisions && (
+          <span
+            style={{
+              fontSize: '11px',
+              color: 'rgba(255,255,255,0.25)',
+              textAlign: 'center',
+              lineHeight: 1.4,
+              marginTop: '2px',
+              letterSpacing: '0em',
+              maxWidth: '200px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {agent.summary}
+          </span>
+        )}
+
         {/* Decision badge - violet, compact */}
         {hasDecisions && (
           <motion.div
