@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete - 204 passing tests (153 Python + 51 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete - 211 passing tests (156 Python + 55 Flutter).**
 
 ---
 
@@ -155,10 +155,10 @@ Full flows: intent -> agent -> UI -> approve -> execute.
 
 ### Task 16: Planning Flow
 
-- [ ] "Plan the next sprint" -> Whiteboard UI
-- [ ] Agent generates task nodes on canvas
-- [ ] User rearranges, connects, prioritizes
-- [ ] Tap node -> expand into subtasks
+- [x] "Plan the next sprint" -> Whiteboard UI
+- [x] Agent generates task nodes on canvas
+- [x] User rearranges, connects, prioritizes
+- [x] Tap node -> expand into subtasks
 
 ### Task 17: Cross-Pattern Flow
 
@@ -263,6 +263,14 @@ Debian VM boots directly into Monet.
 - **Onboarding UI implemented:** `shell/lib/ui/onboarding.dart` with automatic first-boot detection. Shows create account form when no users exist, login form when users exist. Falls back to login with error message when backend is unreachable.
 - **MonetApp now gates on auth:** Shell is only shown after successful authentication. OnboardingScreen renders first, calls /api/auth/status to decide between create-account and login flows.
 - **Test count:** 204 total (153 Python + 51 Flutter), all passing.
+
+### Implementation Notes (2026-03-30) - Batch 6
+
+- **Planning flow wired end-to-end:** Intent "plan the next sprint" now routes to PlanningAgent -> Whiteboard UI. Backend emits `whiteboard_update` events after each planning tool call (create_node, connect_nodes, etc.) so the whiteboard renders nodes incrementally during streaming. The `done` event's `outputs` field now contains the full node state from `PlanningAgent._nodes` instead of just text content.
+- **WhiteboardNode priority support:** Flutter `WhiteboardNode` now includes a `priority` field. Nodes render with a color-coded priority dot and border: red for high, purple for medium, green for low.
+- **Node tap expands into subtasks:** Tapping a whiteboard node sends a follow-up intent "Break down '{title}' into subtasks" to the agent, which creates child nodes.
+- **Node drag positions update correctly:** `onNodeMoved` callback is now wired in MonetShell so connection lines redraw after drag.
+- **Test count:** 211 total (156 Python + 55 Flutter), all passing.
 
 ---
 
