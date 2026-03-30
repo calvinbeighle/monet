@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -147,6 +148,63 @@ async def health_check() -> dict[str, Any]:
         "version": "0.1.0",
         "stub_mode": _composio.is_stub,
     }
+
+
+# --- Chat ---
+
+@app.post("/chat")
+async def chat(data: dict) -> EventSourceResponse:
+    """
+    Streams a Claude response for a general chat message.
+
+    Uses Claude Haiku for speed and low cost. Returns an SSE stream with
+    named 'text' events as tokens arrive and a final 'done' event.
+    Supports multi-turn context via the optional 'history' field.
+
+    Args:
+        data: Dict with 'text' (the user message) and optional 'history'
+              (list of prior messages for multi-turn context).
+
+    Returns:
+        EventSourceResponse with named SSE events: text, done, error.
+    """
+    import anthropic
+
+    user_text = data.get("text", "").strip()
+    if not user_text:
+        return EventSourceResponse(_empty_chat_generator())
+
+    # Build message history for multi-turn context
+    history: list[dict] = data.get("history", [])
+    messages = [*history, {"role": "user", "content": user_text}]
+
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+
+    async def generate() -> AsyncGenerator[dict[str, str], None]:
+        """Streams token chunks from Claude Haiku as SSE text events."""
+        try:
+            with client.messages.stream(
+                model=config.HAIKU_MODEL,
+                max_tokens=1024,
+                messages=messages,
+                system=(
+                    "You are Monet, a helpful AI assistant for startup founders. "
+                    "Be concise and direct. No fluff."
+                ),
+            ) as stream:
+                for text_chunk in stream.text_stream:
+                    yield {"event": "text", "data": json.dumps({"text": text_chunk})}
+            yield {"event": "done", "data": json.dumps({"status": "complete"})}
+        except Exception as exc:
+            logger.exception("Chat stream error: %s", exc)
+            yield {"event": "error", "data": json.dumps({"error": str(exc)})}
+
+    return EventSourceResponse(generate())
+
+
+async def _empty_chat_generator() -> AsyncGenerator[dict[str, str], None]:
+    """Yields a done event immediately when no message text is provided."""
+    yield {"event": "done", "data": json.dumps({"status": "complete"})}
 
 
 # --- Intent ---
@@ -720,6 +778,39 @@ async def connect_service(service: str) -> dict[str, str]:
 
 # --- Email Triage ---
 
+def strip_html(html: str) -> str:
+    """
+    Strip HTML tags and decode entities to get plain text suitable for display.
+
+    Removes all HTML markup, collapses whitespace, decodes common HTML entities,
+    and strips URLs. Caps output at 500 characters.
+
+    Args:
+        html: Raw HTML string from Composio/Gmail email body.
+
+    Returns:
+        Clean plain-text string, truncated to 500 characters.
+    """
+    if not html:
+        return ""
+    # Remove HTML tags
+    text = re.sub(r'<[^>]+>', ' ', html)
+    # Remove extra whitespace
+    text = re.sub(r'\s+', ' ', text)
+    # Decode common HTML entities
+    text = (
+        text.replace('&amp;', '&')
+            .replace('&lt;', '<')
+            .replace('&gt;', '>')
+            .replace('&quot;', '"')
+            .replace('&#39;', "'")
+            .replace('&nbsp;', ' ')
+    )
+    # Remove URLs
+    text = re.sub(r'https?://\S+', '', text)
+    return text.strip()[:500]
+
+
 def _extract_emails(raw: Any) -> list[dict[str, Any]]:
     """
     Extracts slim, normalised email records from a raw Composio GMAIL_FETCH_EMAILS response.
@@ -744,7 +835,7 @@ def _extract_emails(raw: Any) -> list[dict[str, Any]]:
 
     result = []
     for m in messages[:5]:
-        body = (
+        raw_body = (
             m.get("messageText")
             or m.get("body")
             or m.get("preview")
@@ -755,7 +846,7 @@ def _extract_emails(raw: Any) -> list[dict[str, Any]]:
             "id": m.get("messageId") or m.get("id") or "",
             "sender": m.get("sender") or m.get("from") or "",
             "subject": m.get("subject") or "(no subject)",
-            "body": body[:600],
+            "body": strip_html(raw_body),
             "timestamp": m.get("messageTimestamp") or m.get("date") or "",
             "to": m.get("to") or "",
         })

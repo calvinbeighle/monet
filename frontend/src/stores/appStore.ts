@@ -21,8 +21,11 @@ interface AppState {
   isLoading: boolean;
   /** Derived from agents - 'bottom' if any agent is running or has decisions */
   commandBarPosition: CommandBarPosition;
+  /** The initial message text to send when ChatView mounts */
+  pendingChatMessage: string | null;
   setActiveView: (view: ActiveView) => void;
   setLoading: (loading: boolean) => void;
+  setPendingChatMessage: (msg: string | null) => void;
   /** Submits a text intent to the backend orchestrator, then navigates to target view */
   submitIntent: (text: string) => void;
   /** Fetches real agent status from the backend and updates the store */
@@ -154,10 +157,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   activity: INITIAL_ACTIVITY,
   isLoading: false,
   commandBarPosition: 'center',
+  pendingChatMessage: null,
 
   setActiveView: (view) => set({ activeView: view }),
 
   setLoading: (loading) => set({ isLoading: loading }),
+
+  setPendingChatMessage: (msg) => set({ pendingChatMessage: msg }),
 
   /**
    * Fetches live agent status from GET /agents and updates the store.
@@ -242,7 +248,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const fallback = () => {
       const targetView = resolveViewFromText(trimmed);
       setTimeout(() => {
-        set({ isLoading: false, activeView: targetView });
+        // Store pending message if routing to chat view
+        if (targetView === 'chat') {
+          set({ isLoading: false, activeView: targetView, pendingChatMessage: trimmed });
+        } else {
+          set({ isLoading: false, activeView: targetView });
+        }
       }, 900);
     };
 
@@ -264,7 +275,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           general: 'chat',
         };
         const targetView = agentTypeToView[data.agentType] ?? resolveViewFromText(trimmed);
-        set({ isLoading: false, activeView: targetView });
+        // Store pending message if routing to chat view
+        if (targetView === 'chat') {
+          set({ isLoading: false, activeView: targetView, pendingChatMessage: trimmed });
+        } else {
+          set({ isLoading: false, activeView: targetView });
+        }
       })
       .catch(() => {
         // Backend offline or intent failed - fall back to local routing

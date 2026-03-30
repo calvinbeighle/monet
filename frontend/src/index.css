@@ -14,15 +14,15 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* App-specific custom vars */
-  --bg: #09090b;
-  --surface: #18181b;
-  --surface-elevated: #27272a;
+  /* App-specific custom vars - DIA-style pure black palette */
+  --bg: #000000;
+  --surface: #111111;
+  --surface-elevated: #1a1a1a;
   --border: rgba(255, 255, 255, 0.06);
   --border-strong: rgba(255, 255, 255, 0.12);
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.5);
+  --text-muted: rgba(255, 255, 255, 0.25);
   --accent: #8b5cf6;
   --accent-hover: #a78bfa;
   --success: #22c55e;
