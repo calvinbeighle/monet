@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete - agent backend with FastAPI, router, approval gate, email/code agents, CLI, and 72 passing tests.**
+> Status: **Phase 2 complete - Flutter shell with all 4 UI patterns, agent client, intent bar, status bar, and 103 passing tests (72 Python + 31 Flutter).**
 
 ---
 
@@ -45,24 +45,24 @@ Agents must work from CLI before any UI. This proves the core concept.
 
 ### Task 4: Code Agent
 
-- [ ] Create `agent/agents/code.py` - CodeAgent with GitHub tool definitions
-- [ ] Create `agent/tests/test_code_agent.py`
-- [ ] Tools: list_prs, read_diff, read_file, post_review, approve_pr, merge_pr, push_code, create_branch, write_file
-- [ ] Approval gate on approve_pr, merge_pr, push_code
-- [ ] Wire Nango GitHub integration
-- [ ] System prompt for code assistant behavior
+- [x] Create `agent/agents/code.py` - CodeAgent with GitHub tool definitions
+- [x] Create `agent/tests/test_code_agent.py`
+- [x] Tools: list_prs, read_diff, read_file, post_review, approve_pr, merge_pr, push_code, create_branch, write_file
+- [x] Approval gate on approve_pr, merge_pr, push_code
+- [x] Wire Nango GitHub integration
+- [x] System prompt for code assistant behavior
 
 ### Task 5: Approval Flow
 
-- [ ] Create `agent/approval.py` - ApprovalGate with create/approve/reject/list_pending
-- [ ] Create `agent/tests/test_approval.py`
-- [ ] ApprovalRequest and ApprovalStatus models
-- [ ] Add approval API routes to main.py: GET /api/approvals, POST /api/approvals/{id}/approve, POST /api/approvals/{id}/reject
-- [ ] Wire approval gate into agent runner PreToolUse hooks
+- [x] Create `agent/approval.py` - ApprovalGate with create/approve/reject/list_pending
+- [x] Create `agent/tests/test_approval.py`
+- [x] ApprovalRequest and ApprovalStatus models
+- [x] Add approval API routes to main.py: GET /api/approvals, POST /api/approvals/{id}/approve, POST /api/approvals/{id}/reject
+- [x] Wire approval gate into agent runner PreToolUse hooks
 
 ### Task 6: CLI Test Harness
 
-- [ ] Create `agent/cli.py` - CLI that calls agent backend, shows streaming output, prompts for approvals
+- [x] Create `agent/cli.py` - CLI that calls agent backend, shows streaming output, prompts for approvals
 - [ ] Manual testing: `python -m agent.cli "handle my inbox"` works end-to-end
 
 ---
@@ -73,53 +73,53 @@ Flutter shell with all 4 UI patterns. Runs on Mac for dev, targets Linux aarch64
 
 ### Task 7: Flutter Project Setup
 
-- [ ] Create `shell/` via `flutter create --platforms=linux,macos --org co.monet shell`
-- [ ] Add dependencies: http, web_socket_channel, provider, flutter_animate
-- [ ] Create `shell/lib/services/agent_client.dart` - HTTP client for agent backend (run, stream, approvals)
-- [ ] Create `shell/lib/main.dart` - MonetApp scaffold with intent bar, pattern router, status bar
-- [ ] Dark theme with custom colors (0xFF0A0A0F background, 0xFF12121A surfaces)
-- [ ] Pattern switching based on agent response `ui_pattern` field
+- [x] Create `shell/` via `flutter create --platforms=linux,macos --org co.monet shell`
+- [x] Add dependencies: http, provider, flutter_animate
+- [x] Create `shell/lib/services/agent_client.dart` - HTTP client for agent backend (run, stream, approvals)
+- [x] Create `shell/lib/main.dart` - MonetApp scaffold with intent bar, pattern router, status bar
+- [x] Dark theme with custom colors (0xFF0A0A0F background, 0xFF12121A surfaces)
+- [x] Pattern switching based on agent response `ui_pattern` field
 
 ### Task 8: Tinder UI Pattern (Swipe Cards)
 
-- [ ] Create `shell/lib/ui/patterns/tinder.dart`
-- [ ] Swipeable card stack with gesture detection
-- [ ] Right swipe = approve, left = reject
-- [ ] Progress counter ("3 of 12")
-- [ ] Undo button
-- [ ] Spring physics on swipe animation
-- [ ] Summary view at end (approved/rejected count)
+- [x] Create `shell/lib/ui/patterns/tinder.dart`
+- [x] Swipeable card stack with gesture detection
+- [x] Right swipe = approve, left = reject
+- [x] Progress counter ("3 of 12")
+- [x] Undo button
+- [x] Spring physics on swipe animation
+- [x] Summary view at end (approved/rejected count)
 
 ### Task 9: Chat UI Pattern (iMessage)
 
-- [ ] Create `shell/lib/ui/patterns/chat.dart`
-- [ ] Threaded conversation view with message bubbles
-- [ ] Agent messages stream in with typing indicator
-- [ ] Reply suggestions as tappable chips
+- [x] Create `shell/lib/ui/patterns/chat.dart`
+- [x] Threaded conversation view with message bubbles
+- [x] Agent messages stream in with typing indicator
+- [x] Reply suggestions as tappable chips
 - [ ] Inline approve/edit/reject
 
 ### Task 10: Diff UI Pattern
 
-- [ ] Create `shell/lib/ui/patterns/diff.dart`
-- [ ] Side-by-side text comparison
+- [x] Create `shell/lib/ui/patterns/diff.dart`
+- [x] Side-by-side text comparison
 - [ ] Syntax highlighting
-- [ ] Color-coded added/removed/modified lines
-- [ ] "Approve All" / "Reject All" buttons
+- [x] Color-coded added/removed/modified lines
+- [x] "Approve All" / "Reject All" buttons
 
 ### Task 11: Whiteboard UI Pattern
 
-- [ ] Create `shell/lib/ui/patterns/whiteboard.dart`
-- [ ] Zoomable/pannable canvas via InteractiveViewer
-- [ ] Draggable nodes with title/body
-- [ ] Connection lines between nodes (CustomPainter)
-- [ ] Tap node to expand/act
+- [x] Create `shell/lib/ui/patterns/whiteboard.dart`
+- [x] Zoomable/pannable canvas via InteractiveViewer
+- [x] Draggable nodes with title/body
+- [x] Connection lines between nodes (CustomPainter)
+- [x] Tap node to expand/act
 
 ### Task 12: Status Bar + Pattern Switching
 
-- [ ] Create `shell/lib/ui/status_bar.dart`
-- [ ] Connected tools indicators (green/gray dots)
-- [ ] Running agent indicator
-- [ ] Wire all 4 pattern widgets into main.dart
+- [x] Create `shell/lib/ui/status_bar.dart`
+- [x] Connected tools indicators (green/gray dots)
+- [x] Running agent indicator
+- [x] Wire all 4 pattern widgets into main.dart
 - [ ] Animated transitions between patterns
 
 ---
@@ -228,10 +228,10 @@ Debian VM boots directly into Monet.
 | --------------- | ----------------------------------- | ----------- |
 | Base OS         | Debian 12 aarch64 (stripped)        | Not started |
 | Compositor      | Sway                                | Not started |
-| Shell UI        | Flutter (native Wayland client)     | Not started |
-| Agent backend   | Python + FastAPI                    | Not started |
-| Agent framework | Claude Agent SDK                    | Not started |
-| Integrations    | Nango (managed OAuth, Gmail/GitHub) | Not started |
+| Shell UI        | Flutter (native Wayland client)     | Implemented |
+| Agent backend   | Python + FastAPI                    | Implemented |
+| Agent framework | Claude Agent SDK                    | Implemented |
+| Integrations    | Nango (managed OAuth, Gmail/GitHub) | Implemented |
 | State           | SQLite                              | Not started |
 | IPC             | Unix socket / HTTP localhost        | Not started |
 

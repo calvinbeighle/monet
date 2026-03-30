@@ -51,7 +51,7 @@ while true; do
     cat "$PROMPT_FILE" | claude -p \
         --dangerously-skip-permissions \
         --output-format=stream-json \
-        --model opus \
+        --model claude-opus-4-6 \
         --verbose
 
     # Push changes after each iteration
