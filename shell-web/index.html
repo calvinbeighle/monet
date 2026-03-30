@@ -91,12 +91,16 @@
 
     <!-- CHAT PATTERN -->
     <div id="chat-view" class="pattern-view">
+      <button class="back-btn" onclick="resetToWelcome()">&larr; Back</button>
       <div id="chat-messages"></div>
     </div>
 
     <!-- TINDER PATTERN -->
     <div id="tinder-view" class="pattern-view">
-      <div id="tinder-counter"></div>
+      <div class="pattern-topbar">
+        <button class="back-btn" onclick="resetToWelcome()">&larr; Back</button>
+        <div id="tinder-counter"></div>
+      </div>
       <div id="tinder-card">
         <div id="tinder-card-header">
           <span id="tinder-card-label"></span>
@@ -119,6 +123,7 @@
 
     <!-- DIFF PATTERN -->
     <div id="diff-view" class="pattern-view">
+      <button class="back-btn" onclick="resetToWelcome()">&larr; Back</button>
       <div id="diff-header">
         <div class="diff-panel-label">Original</div>
         <div class="diff-panel-label">Proposed</div>
@@ -140,6 +145,7 @@
 
     <!-- WHITEBOARD PATTERN -->
     <div id="whiteboard-view" class="pattern-view">
+      <button class="back-btn" onclick="resetToWelcome()">&larr; Back</button>
       <div id="whiteboard-canvas">
         <svg id="whiteboard-connections" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;"></svg>
         <div id="whiteboard-nodes"></div>

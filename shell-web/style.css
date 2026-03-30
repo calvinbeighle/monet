@@ -23,6 +23,35 @@
   --border:           rgba(255, 255, 255, 0.06);
   --border-strong:    rgba(255, 255, 255, 0.10);
   --shadow-lg:        0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+/* --- Back button (all patterns) --- */
+.back-btn {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  z-index: 50;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.back-btn:hover {
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+}
+.pattern-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+}
+.pattern-topbar .back-btn {
+  position: static;
   --shadow-md:        0 8px 32px rgba(0, 0, 0, 0.4);
   --shadow-sm:        0 2px 12px rgba(0, 0, 0, 0.3);
   --radius-sm:        6px;
