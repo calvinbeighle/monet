@@ -200,6 +200,15 @@ async def _run_email_agent() -> None:
         ))
         return
 
+    # Filter out no-reply/notification emails
+    _skip_senders = {"noreply", "no-reply", "notifications", "mailer-daemon", "donotreply", "accounts.google"}
+    _skip_subjects = {"security alert", "password reset", "verify your", "confirm your", "sign-in"}
+    emails = [
+        e for e in emails
+        if not any(s in (e.get("sender") or "").lower() for s in _skip_senders)
+        and not any(s in (e.get("subject") or "").lower() for s in _skip_subjects)
+    ]
+
     new_decisions = 0
     for email in emails:
         email_id = email.get("id", "")

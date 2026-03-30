@@ -382,9 +382,9 @@ export function TinderView() {
 
                   {/* Email body preview */}
                   <div className="px-7 py-5 max-h-[200px] overflow-y-auto">
-                    <p className="text-sm text-zinc-300 leading-relaxed">
+                    <pre className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap font-sans">
                       {stripHtml(currentCard.body)}
-                    </p>
+                    </pre>
                   </div>
 
                   {/* Divider */}
@@ -398,10 +398,10 @@ export function TinderView() {
                     <textarea
                       value={editedDraft}
                       onChange={(e) => setEditedDraft(e.target.value)}
-                      className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 text-sm text-zinc-200 resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-zinc-600 transition-all"
-                      style={{ minHeight: '100px' }}
-                      rows={4}
-                      placeholder="Edit the reply before sending..."
+                      className="w-full bg-zinc-800/50 border border-zinc-700 rounded-lg p-4 text-sm text-zinc-200 resize-none focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-zinc-600 transition-all font-mono leading-relaxed"
+                      style={{ minHeight: '120px', whiteSpace: 'pre-wrap' }}
+                      rows={5}
+                      placeholder={"Hi [Name],\n\n[Your reply here]\n\nBest,\nJared"}
                     />
                   </div>
                 </div>

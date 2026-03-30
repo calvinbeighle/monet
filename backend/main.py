@@ -251,14 +251,14 @@ def _build_chat_system_prompt() -> str:
 
 
 @app.post("/chat")
-async def chat(data: dict) -> EventSourceResponse:
+async def chat(data: dict) -> StreamingResponse:
     """
     Streams a Claude response for an orchestrator chat message.
 
     Builds a live system prompt from current agent status and pending decisions
     so the LLM can answer questions about agent activity with real data.
-    Uses Claude Haiku for speed. Returns an SSE stream with named 'text' events
-    as tokens arrive and a final 'done' event.
+    Uses Claude Haiku for speed. Returns a StreamingResponse with SSE-formatted
+    data so fetch + ReadableStream on the frontend can parse it reliably.
     Supports multi-turn context via the optional 'history' field.
 
     Args:
@@ -266,13 +266,20 @@ async def chat(data: dict) -> EventSourceResponse:
               (list of prior messages for multi-turn context).
 
     Returns:
-        EventSourceResponse with named SSE events: text, done, error.
+        StreamingResponse with text/event-stream content and named SSE events:
+        text, done, error.
     """
     import anthropic
 
     user_text = data.get("text", "").strip()
     if not user_text:
-        return EventSourceResponse(_empty_chat_generator())
+        async def _empty() -> AsyncGenerator[str, None]:
+            yield f"event: done\ndata: {json.dumps({'status': 'complete'})}\n\n"
+        return StreamingResponse(
+            _empty(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
 
     # Build message history for multi-turn context
     history: list[dict] = data.get("history", [])
@@ -281,8 +288,8 @@ async def chat(data: dict) -> EventSourceResponse:
     system_prompt = _build_chat_system_prompt()
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
-    async def generate() -> AsyncGenerator[dict[str, str], None]:
-        """Streams token chunks from Claude Haiku as SSE text events."""
+    async def generate() -> AsyncGenerator[str, None]:
+        """Streams token chunks from Claude Haiku as raw SSE-formatted text."""
         try:
             with client.messages.stream(
                 model=config.HAIKU_MODEL,
@@ -291,18 +298,21 @@ async def chat(data: dict) -> EventSourceResponse:
                 system=system_prompt,
             ) as stream:
                 for text_chunk in stream.text_stream:
-                    yield {"event": "text", "data": json.dumps({"text": text_chunk})}
-            yield {"event": "done", "data": json.dumps({"status": "complete"})}
+                    yield f"event: text\ndata: {json.dumps({'text': text_chunk})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'status': 'complete'})}\n\n"
         except Exception as exc:
             logger.exception("Chat stream error: %s", exc)
-            yield {"event": "error", "data": json.dumps({"error": str(exc)})}
+            yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
 
-    return EventSourceResponse(generate())
-
-
-async def _empty_chat_generator() -> AsyncGenerator[dict[str, str], None]:
-    """Yields a done event immediately when no message text is provided."""
-    yield {"event": "done", "data": json.dumps({"status": "complete"})}
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # --- Intent ---
@@ -985,12 +995,51 @@ async def triage_inbox() -> dict[str, Any]:
 
     client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
+    # Step 1: Filter to only emails that need a human reply
+    email_list = "\n".join(
+        f"{i+1}. From: {e['sender']} | Subject: {e['subject']} | Preview: {e['body'][:100]}"
+        for i, e in enumerate(emails)
+    )
+    filter_resp = client.messages.create(
+        model=config.HAIKU_MODEL,
+        max_tokens=100,
+        messages=[{
+            "role": "user",
+            "content": (
+                "Which of these emails need a human reply? Ignore newsletters, "
+                "notifications, automated alerts, no-reply senders, and marketing.\n"
+                "Reply with ONLY the numbers (comma-separated) of emails that need a reply. "
+                "If none need a reply, say NONE.\n\n" + email_list
+            ),
+        }],
+    )
+    filter_text = filter_resp.content[0].text.strip()
+
+    if filter_text.upper() == "NONE":
+        return {"cards": [], "count": 0}
+
+    # Parse which indices need replies
+    import re as _re
+    reply_indices = set()
+    for num in _re.findall(r"\d+", filter_text):
+        idx = int(num) - 1
+        if 0 <= idx < len(emails):
+            reply_indices.add(idx)
+
+    actionable = [emails[i] for i in sorted(reply_indices)]
+    if not actionable:
+        return {"cards": [], "count": 0}
+
+    # Step 2: Draft replies only for actionable emails
     cards = []
-    for email in emails:
+    for email in actionable:
         prompt = (
-            "Draft a brief, professional reply to this email. "
-            "Write only the reply body text - no greeting like 'Dear X', no sign-off. "
-            "2-4 sentences max.\n\n"
+            f"Draft a brief, professional reply to this email.\n"
+            f"Format the reply with:\n"
+            f"- A greeting addressing the sender by first name (e.g. 'Hi Sarah,')\n"
+            f"- The reply body (2-3 sentences max)\n"
+            f"- A professional signoff on its own line (e.g. 'Best,\\nJared')\n\n"
+            f"Write ONLY the formatted reply - no extra commentary or explanation.\n\n"
             f"From: {email['sender']}\n"
             f"Subject: {email['subject']}\n"
             f"Body: {email['body'][:500]}"
