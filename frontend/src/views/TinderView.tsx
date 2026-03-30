@@ -20,6 +20,7 @@ import { ArrowLeft, Send, SkipForward, Check } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { AiLoader } from '@/components/ui/ai-loader';
 import { useAppStore } from '@/stores/appStore';
 import { BACKEND_URL } from '@/types';
 
@@ -165,11 +166,9 @@ export function TinderView() {
 
       {/* Loading state */}
       {isLoadingCards && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-8 h-8 rounded-full border-2 border-violet-500 border-t-transparent animate-spin" />
-            <p className="text-sm text-zinc-500">Reading your inbox...</p>
-          </div>
+        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+          <AiLoader text="reading" size={120} />
+          <p className="text-sm text-zinc-500 mt-4">Checking your inbox...</p>
         </div>
       )}
 

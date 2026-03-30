@@ -46,6 +46,8 @@ from models import (
     UiPattern,
 )
 from router import classify_intent
+from decision_queue import decision_queue, Decision
+from scheduler import AgentScheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -70,24 +72,31 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Application lifespan handler.
 
-    On startup: validates config, seeds stub suggestions, and schedules
-    background agent loops. On shutdown: cancels all scheduled tasks.
+    On startup: validates config, seeds stub suggestions, starts the background
+    scheduler, and schedules legacy agent loops. On shutdown: cancels all tasks.
     """
     try:
         config.validate_config()
     except ValueError as exc:
         logger.warning("Config warning: %s", exc)
 
-    # Seed initial suggestions from agents on first boot
+    # Seed initial suggestions from agents on first boot (legacy suggestion store)
     asyncio.create_task(_seed_suggestions())
 
-    # Schedule background agent loops
+    # Start background scheduler - runs email/code agents on a schedule and
+    # pushes decisions into the decision_queue for the user to review
+    scheduler = AgentScheduler()
+    app.state.scheduler = scheduler
+    asyncio.create_task(scheduler.start())
+
+    # Also keep legacy scheduled runs for the AgentRunner suggestion store
     _runner.schedule_agent("email", interval_minutes=15.0)
     _runner.schedule_agent("code", interval_minutes=30.0)
 
     logger.info("Monet backend started.")
     yield
 
+    await scheduler.stop()
     _runner.stop_all()
     logger.info("Monet backend shut down.")
 
@@ -145,9 +154,12 @@ async def health_check() -> dict[str, Any]:
 @app.post("/intent", response_model=IntentResponse)
 async def submit_intent(body: IntentRequest) -> IntentResponse:
     """
-    Classifies the user's command bar input and creates a new agent session.
+    Routes the user's command bar input through the orchestrator, then creates
+    a new agent session for the resolved agent type.
 
-    The session is stored in memory and can be streamed via GET /stream/{session_id}.
+    The orchestrator uses Claude Sonnet to decide whether to delegate to a single
+    agent, fan out to multiple agents, or answer directly. The resulting session
+    can be streamed via GET /stream/{session_id}.
 
     Args:
         body: IntentRequest with raw user text and optional context.
@@ -155,9 +167,35 @@ async def submit_intent(body: IntentRequest) -> IntentResponse:
     Returns:
         IntentResponse with session_id and the classified UI pattern.
     """
-    classification = classify_intent(body.text)
-    agent_type = classification["agent_type"]
-    ui_pattern = classification["ui_pattern"]
+    # Try the orchestrator first (smart LLM routing via Claude Sonnet)
+    # Fall back to keyword-based classify_intent if orchestrator raises
+    try:
+        from orchestrator import route_intent
+        routing = route_intent(body.text)
+        action = routing.get("action", "answer")
+
+        if action == "delegate":
+            agent_type = routing.get("agent", "general")
+        elif action == "multi":
+            # For multi-agent, use the first agent for the session type
+            agents_list = routing.get("agents", [])
+            agent_type = agents_list[0]["agent"] if agents_list else "general"
+        else:
+            agent_type = "general"
+
+    except Exception as exc:
+        logger.warning("Orchestrator unavailable, falling back to keyword router: %s", exc)
+        classification = classify_intent(body.text)
+        agent_type = classification["agent_type"]
+
+    # Map agent type to UI pattern
+    _ui_map = {
+        "email": UiPattern.list,
+        "code": UiPattern.code,
+        "planning": UiPattern.detail,
+        "general": UiPattern.chat,
+    }
+    ui_pattern = _ui_map.get(agent_type, UiPattern.chat)
 
     session_id = str(uuid.uuid4())
     session = Session(
@@ -457,11 +495,190 @@ async def list_agents() -> dict[str, Any]:
     """
     Returns the current status and metadata of all registered agents.
 
+    Enriches each agent with the real pending decision count from the
+    decision_queue and the scheduler's current run state. Also includes
+    emoji and mood fields for the AgentOrbit UI.
+
     Returns:
-        Dict with 'agents' list.
+        Dict with 'agents' list, each containing id, name, status,
+        decisionCount, emoji, mood, lastRun, and summary.
     """
-    agents = _runner.get_agents()
-    return {"agents": [a.model_dump(by_alias=True) for a in agents]}
+    runner_agents = {a.id: a for a in _runner.get_agents()}
+
+    # Agent personality config - emoji and mood reflect current state
+    _agent_meta: dict[str, dict[str, Any]] = {
+        "email": {
+            "name": "Email Agent",
+            "emoji_idle": "😌",
+            "emoji_running": "🤓",
+            "emoji_decisions": "📬",
+            "mood_idle": "Nothing new in inbox",
+            "mood_running": "Reading your inbox...",
+            "decision_view": "tinder",
+        },
+        "code": {
+            "name": "Code Agent",
+            "emoji_idle": "😎",
+            "emoji_running": "🔍",
+            "emoji_decisions": "👀",
+            "mood_idle": "All PRs look good",
+            "mood_running": "Reviewing pull requests...",
+            "decision_view": "diff",
+        },
+        "planning": {
+            "name": "Planning Agent",
+            "emoji_idle": "🧘",
+            "emoji_running": "📋",
+            "emoji_decisions": "✅",
+            "mood_idle": "Ready when you are",
+            "mood_running": "Building your sprint plan...",
+            "decision_view": "whiteboard",
+        },
+    }
+
+    scheduler: AgentScheduler | None = None
+    try:
+        scheduler = app.state.scheduler
+    except AttributeError:
+        pass
+
+    agents_out = []
+    for agent_id, meta in _agent_meta.items():
+        runner_agent = runner_agents.get(agent_id)
+        pending_count = decision_queue.get_pending_count(agent_id)
+
+        # Determine live status
+        is_scheduler_running = scheduler.is_running(agent_id) if scheduler else False
+        runner_status = runner_agent.status.value if runner_agent else "idle"
+        status = "running" if is_scheduler_running or runner_status == "running" else runner_status
+
+        # Choose emoji and mood based on state
+        if pending_count > 0:
+            emoji = meta["emoji_decisions"]
+            mood = f"{pending_count} {'decision' if pending_count == 1 else 'decisions'} waiting"
+        elif status == "running":
+            emoji = meta["emoji_running"]
+            mood = meta["mood_running"]
+        else:
+            emoji = meta["emoji_idle"]
+            mood = meta["mood_idle"]
+
+        # Format lastRun as a human-readable relative time
+        last_run_str = None
+        last_run_dt = None
+        if scheduler:
+            last_run_dt = scheduler.get_last_run(agent_id)
+        if not last_run_dt and runner_agent and runner_agent.last_run:
+            last_run_dt = runner_agent.last_run
+        if last_run_dt:
+            delta = datetime.utcnow() - last_run_dt
+            minutes = int(delta.total_seconds() / 60)
+            if minutes < 2:
+                last_run_str = "just now"
+            elif minutes < 60:
+                last_run_str = f"{minutes}m ago"
+            else:
+                hours = minutes // 60
+                last_run_str = f"{hours}hr ago"
+
+        agents_out.append({
+            "id": agent_id,
+            "name": meta["name"],
+            "status": status,
+            "decisionCount": pending_count,
+            "decisionView": meta["decision_view"],
+            "emoji": emoji,
+            "mood": mood,
+            "lastRun": last_run_str,
+            "summary": runner_agent.summary if runner_agent else None,
+        })
+
+    return {"agents": agents_out}
+
+
+# --- Decisions ---
+
+@app.get("/decisions")
+async def get_decisions(agent_id: str | None = None) -> dict[str, Any]:
+    """
+    Returns all pending (unresolved) decisions from the decision queue.
+
+    Optionally filters by agent. The frontend polls this endpoint to populate
+    agent card decision counts and the tinder swipe stack.
+
+    Args:
+        agent_id: Optional agent filter (e.g. 'email', 'code').
+
+    Returns:
+        Dict with 'decisions' list and 'total' count.
+    """
+    pending = decision_queue.get_pending(agent_id)
+    serialized = [
+        {
+            "id": d.id,
+            "agentId": d.agent_id,
+            "type": d.type,
+            "priority": d.priority,
+            "title": d.title,
+            "summary": d.summary,
+            "data": d.data,
+            "uiPattern": d.ui_pattern,
+            "createdAt": d.created_at.isoformat(),
+        }
+        for d in pending
+    ]
+    return {"decisions": serialized, "total": len(serialized)}
+
+
+@app.post("/decisions/{decision_id}/resolve")
+async def resolve_decision(decision_id: str, data: dict) -> dict[str, Any]:
+    """
+    Resolves a pending decision as approved or skipped.
+
+    If resolution is 'approved' and a reply_text is provided, sends the email
+    via Composio Gmail before marking the decision resolved.
+
+    Args:
+        decision_id: The ID of the decision to resolve.
+        data: Dict with 'resolution' ('approved' or 'skipped') and optional
+              'reply_text' for email approvals.
+
+    Returns:
+        Dict with 'status' and the resolved decision_id.
+
+    Raises:
+        HTTPException 404: If the decision_id is not found.
+    """
+    resolution = data.get("resolution", "skipped")
+    reply_text = data.get("reply_text")
+
+    # Find the decision before resolving so we can read its data
+    pending = decision_queue.get_pending()
+    target = next((d for d in pending if d.id == decision_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Decision '{decision_id}' not found.")
+
+    # Send the email if this is an approved email_reply
+    if resolution == "approved" and target.type == "email_reply" and reply_text:
+        email = target.data.get("email", {})
+        try:
+            composio = ComposioClient()
+            await composio.execute_tool(
+                "GMAIL_SEND_EMAIL",
+                {
+                    "to": email.get("sender", ""),
+                    "subject": f"Re: {email.get('subject', '')}",
+                    "body": reply_text,
+                    "reply_to_id": email.get("id", ""),
+                },
+            )
+            logger.info("Sent approved reply for decision '%s'", decision_id)
+        except Exception as exc:
+            logger.warning("Failed to send reply for decision '%s': %s", decision_id, exc)
+
+    decision_queue.resolve(decision_id, resolution)
+    logger.info("Decision '%s' resolved as '%s'", decision_id, resolution)
+    return {"status": "resolved", "decisionId": decision_id, "resolution": resolution}
 
 
 # --- Connections ---

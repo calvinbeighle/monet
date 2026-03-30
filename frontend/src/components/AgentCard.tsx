@@ -1,13 +1,13 @@
 /**
  * components/AgentCard.tsx
  * Personified agent card for the Monet home screen.
- * Each card has an emoji avatar, mood phrase (speech bubble), optional
+ * Each card has an animated SVG avatar, mood phrase (speech bubble), optional
  * progress bar, and a decision badge pill at the bottom.
  *
  * States:
- *   running  - emoji pulses, progress bar visible, normal opacity
- *   idle     - dimmed (opacity-60), no progress bar
- *   error    - red tint on mood text, normal opacity
+ *   running  - avatar animates (particles/cursor/sparkles), progress bar visible
+ *   idle     - dimmed (opacity-60), no progress bar, avatar breathes subtly
+ *   error    - red tint on mood text, avatar shows error state
  *
  * Cards with pending decisions show a violet glow ring and are clickable.
  *
@@ -16,6 +16,7 @@
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/stores/appStore';
 import type { Agent } from '@/types';
+import { getAgentAvatar } from './agent-avatars';
 
 interface AgentCardProps {
   agent: Agent;
@@ -47,6 +48,8 @@ export function AgentCard({ agent }: AgentCardProps) {
   const isClickable = hasDecisions;
   const isRunning = agent.status === 'running';
   const isIdle = agent.status === 'idle' && !hasDecisions;
+
+  const AvatarComponent = getAgentAvatar(agent.id);
 
   function handleClick() {
     if (!isClickable) return;
@@ -81,18 +84,10 @@ export function AgentCard({ agent }: AgentCardProps) {
         `}
         style={{ padding: '24px 20px 20px' }}
       >
-        {/* Emoji avatar - pulses when running */}
-        <motion.span
-          style={{ fontSize: '40px', lineHeight: 1, display: 'block', marginBottom: '12px' }}
-          animate={isRunning ? { scale: [1, 1.08, 1] } : { scale: 1 }}
-          transition={
-            isRunning
-              ? { duration: 2, repeat: Infinity, ease: 'easeInOut' }
-              : { duration: 0 }
-          }
-        >
-          {agent.emoji}
-        </motion.span>
+        {/* Animated SVG avatar - state-driven animations per agent type */}
+        <div style={{ marginBottom: '12px' }}>
+          <AvatarComponent status={agent.status} hasDecisions={hasDecisions} />
+        </div>
 
         {/* Agent name */}
         <span

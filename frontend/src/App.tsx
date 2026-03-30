@@ -5,6 +5,7 @@
  * Just renders the active view full-screen.
  * AiLoader is an overlay shown only when isLoading is true in the store.
  */
+import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { HomeView } from '@/views/HomeView';
 import { ChatView } from '@/views/ChatView';
@@ -53,9 +54,18 @@ function ActiveViewRenderer() {
  * Root App component.
  * Full-screen view container with an overlay AiLoader that appears
  * only when isLoading is true in the Zustand store.
+ *
+ * Starts background polling of /agents and /decisions on mount so agent
+ * cards show live decision counts without requiring manual refresh.
  */
 function App() {
-  const { isLoading } = useAppStore();
+  const { isLoading, startPolling } = useAppStore();
+
+  useEffect(() => {
+    // Start polling - returns cleanup function that clears the interval
+    const stopPolling = startPolling();
+    return stopPolling;
+  }, [startPolling]);
 
   return (
     <div className="w-full h-full overflow-hidden bg-zinc-950">
