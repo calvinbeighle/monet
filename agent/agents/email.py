@@ -178,6 +178,10 @@ class EmailAgent(BaseAgent):
     def approval_required(self) -> set[str]:
         return {"send_email", "archive_email"}
 
+    @property
+    def suggestions(self) -> list[str]:
+        return ["Check inbox", "Draft a reply", "Send a follow-up", "Archive thread"]
+
     def execute_tool(self, tool_name: str, parameters: dict) -> str:
         """Execute a Gmail tool via Nango proxy API."""
         try:

@@ -45,5 +45,9 @@ class GeneralAgent(BaseAgent):
         # General agent has no tools - pure conversation
         return []
 
+    @property
+    def suggestions(self) -> list[str]:
+        return ["Handle my inbox", "Review open PRs", "Plan the next sprint"]
+
     def execute_tool(self, tool_name: str, parameters: dict) -> str:
         return f'{{"error": "General agent has no tools. Unknown tool: {tool_name}"}}'

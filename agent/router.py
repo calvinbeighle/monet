@@ -23,6 +23,15 @@ ROUTING_RULES: list[tuple[re.Pattern, str, UIPattern]] = [
         "code",
         UIPattern.DIFF,
     ),
+    # Planning - whiteboard UI (before code-write so "write a plan" routes here)
+    (
+        re.compile(
+            r"\b(plan|sprint|brainstorm|roadmap|architect|design|prioritize|organize)\b",
+            re.IGNORECASE,
+        ),
+        "planning",
+        UIPattern.WHITEBOARD,
+    ),
     # Code write - chat UI
     (
         re.compile(
@@ -30,14 +39,6 @@ ROUTING_RULES: list[tuple[re.Pattern, str, UIPattern]] = [
         ),
         "code",
         UIPattern.CHAT,
-    ),
-    # Planning - whiteboard UI
-    (
-        re.compile(
-            r"\b(plan|sprint|brainstorm|roadmap|architect|design)\b", re.IGNORECASE
-        ),
-        "planning",
-        UIPattern.WHITEBOARD,
     ),
 ]
 

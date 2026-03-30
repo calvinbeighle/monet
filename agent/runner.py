@@ -563,5 +563,6 @@ class AgentRunner:
                 "ui_pattern": routed.ui_pattern,
                 "session_id": sid,
                 "outputs": stream_outputs,
+                "suggestions": agent.suggestions if agent else [],
             },
         )

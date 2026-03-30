@@ -39,6 +39,9 @@ class TestPlanningAgent:
         """Planning is non-destructive - no tools need approval."""
         assert len(self.agent.approval_required) == 0
 
+    def test_suggestions_not_empty(self):
+        assert len(self.agent.suggestions) > 0
+
     def test_execute_unknown_tool(self):
         result = json.loads(self.agent.execute_tool("nonexistent_tool", {}))
         assert "error" in result

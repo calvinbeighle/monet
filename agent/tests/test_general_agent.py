@@ -38,3 +38,13 @@ class TestGeneralAgent:
         result = self.agent.execute_tool("some_tool", {"param": "value"})
         assert "error" in result.lower()
         assert "no tools" in result.lower() or "Unknown tool" in result.lower()
+
+    def test_suggestions_not_empty(self):
+        """General agent should suggest specialized agent intents."""
+        assert len(self.agent.suggestions) > 0
+
+    def test_suggestions_point_to_specialized_agents(self):
+        suggestions = self.agent.suggestions
+        combined = " ".join(suggestions).lower()
+        assert "inbox" in combined or "email" in combined
+        assert "pr" in combined or "code" in combined or "review" in combined

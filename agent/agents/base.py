@@ -30,6 +30,11 @@ class BaseAgent(ABC):
         """Tool names that require user approval before execution."""
         return set()
 
+    @property
+    def suggestions(self) -> list[str]:
+        """Follow-up suggestion chips shown after agent completes."""
+        return []
+
     @abstractmethod
     def execute_tool(self, tool_name: str, parameters: dict) -> str:
         """Execute a tool call and return the result as a string."""

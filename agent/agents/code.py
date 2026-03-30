@@ -278,6 +278,10 @@ class CodeAgent(BaseAgent):
     def approval_required(self) -> set[str]:
         return {"approve_pr", "merge_pr", "push_code"}
 
+    @property
+    def suggestions(self) -> list[str]:
+        return ["Review open PRs", "Show the diff", "Run tests", "Create a branch"]
+
     def execute_tool(self, tool_name: str, parameters: dict) -> str:
         """Execute a GitHub tool via Nango proxy API."""
         try:

@@ -240,6 +240,25 @@ class TestAgentRunnerStream:
 
         assert events[-1].type == "done"
 
+    def test_stream_done_includes_suggestions(self, runner, mock_anthropic_client):
+        """Done event should include agent-specific follow-up suggestions."""
+        mock_stream = MagicMock()
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        mock_stream.__iter__ = MagicMock(return_value=iter([]))
+        mock_stream.get_final_message.return_value = MockResponse(
+            content=[MockContentBlock(type="text", text="Here are your emails.")]
+        )
+        mock_anthropic_client.messages.stream.return_value = mock_stream
+
+        events = list(runner.stream_sync("handle my inbox"))
+        done_event = events[-1]
+
+        assert done_event.type == "done"
+        assert "suggestions" in done_event.metadata
+        assert isinstance(done_event.metadata["suggestions"], list)
+        assert len(done_event.metadata["suggestions"]) > 0
+
     def test_stream_general_agent(self, runner, mock_anthropic_client):
         """General intent streams through the general agent."""
         mock_stream = MagicMock()

@@ -93,3 +93,34 @@ class TestIntentRouter:
         result = self.router.route("review the plan")
         assert result.agent == "code"
         assert result.ui_pattern == UIPattern.DIFF.value
+
+    def test_write_a_plan_routes_to_planning(self):
+        # "plan" should match planning before "write" matches code
+        result = self.router.route("write a plan for the sprint")
+        assert result.agent == "planning"
+        assert result.ui_pattern == UIPattern.WHITEBOARD.value
+
+    def test_design_routes_to_planning(self):
+        result = self.router.route("design the new feature architecture")
+        assert result.agent == "planning"
+        assert result.ui_pattern == UIPattern.WHITEBOARD.value
+
+    def test_prioritize_routes_to_planning(self):
+        result = self.router.route("prioritize the backlog items")
+        assert result.agent == "planning"
+        assert result.ui_pattern == UIPattern.WHITEBOARD.value
+
+    def test_organize_routes_to_planning(self):
+        result = self.router.route("organize the project tasks")
+        assert result.agent == "planning"
+        assert result.ui_pattern == UIPattern.WHITEBOARD.value
+
+    def test_write_code_still_routes_to_code(self):
+        result = self.router.route("write a function to parse JSON")
+        assert result.agent == "code"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_build_still_routes_to_code(self):
+        result = self.router.route("build a REST API endpoint")
+        assert result.agent == "code"
+        assert result.ui_pattern == UIPattern.CHAT.value

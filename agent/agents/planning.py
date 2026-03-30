@@ -184,6 +184,15 @@ class PlanningAgent(BaseAgent):
         # Planning is non-destructive - no approval gates needed
         return set()
 
+    @property
+    def suggestions(self) -> list[str]:
+        return [
+            "Add more details",
+            "Break down tasks",
+            "Prioritize items",
+            "Connect related tasks",
+        ]
+
     def execute_tool(self, tool_name: str, parameters: dict) -> str:
         """Execute a planning tool. All state is held in memory for the session."""
         try:

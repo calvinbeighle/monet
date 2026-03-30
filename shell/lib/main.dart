@@ -118,6 +118,7 @@ class MonetShellState extends State<MonetShell> {
     setState(() {
       _isRunning = true;
       _chatStreaming = true;
+      _chatSuggestions.clear();
       _chatMessages.add(ChatMessage(content: intent, isUser: true));
     });
 
@@ -212,6 +213,12 @@ class MonetShellState extends State<MonetShell> {
               _isRunning = false;
               _streamingMessageIndex = null;
               _applyPatternData(event.metadata);
+              // Populate suggestion chips from agent response
+              final suggestions = event.metadata['suggestions'] as List<dynamic>?;
+              _chatSuggestions.clear();
+              if (suggestions != null) {
+                _chatSuggestions.addAll(suggestions.cast<String>());
+              }
             });
         }
       },
