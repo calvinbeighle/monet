@@ -1,162 +1,188 @@
-# Monet - Agent Native OS
+# Monet
 
-## Objective
-Fork an open-source desktop OS and replace the interaction layer with an agent-native interface that:
-> takes intent - runs agents - generates the optimal UI - user approves - executes across connected tools
+**A beautiful operating system for AI.**
 
----
-
-## Starting Point
-
-Fork an existing open-source desktop OS (e.g. a Linux distro) and run it in a VM for development and testing. The base OS provides the kernel, drivers, filesystem, networking, and process management. We replace the desktop shell and application layer with our agent-native UI.
+Monet is a Linux-based operating system that makes AI accessible and delightful for non-technical people. Users log in, connect their tools, and interact with AI agents that handle email, coding, and writing -- all rendered in Monet's own visual language. No terminal. No typing commands. Just a computing environment where AI does the work and the user sees the results.
 
 ---
 
-## Thesis
+## Vision
 
-> Human work shifts to:
-1. expressing intent
-2. monitoring agent activity
-3. making decisions / giving feedback
+The world's first operating system built around AI agents instead of applications. Where traditional OSes organize around files and apps, Monet organizes around agents and tools. The AI ingests data from connected services, re-presents it natively, and acts on the user's behalf.
 
-We are building the OS optimized for this new mode of work.
+Claude Code is the backend engine today. The architecture is model-agnostic from day one.
 
 ---
 
-## Core Idea
+## Users
 
-> The system chooses the interface, not the user.
-
-Not one UI (chat).
-It dynamically renders the best format for the task.
+Non-technical knowledge workers. People who use email, write documents, and need code written -- but don't know what a terminal is and shouldn't have to.
 
 ---
 
-## Core UI Patterns
+## Architecture
 
-### 1. Tinder (Batch Decisions)
-Use when:
-- many similar outputs
+### Kernel & Base
 
-Examples:
-- content ideas
-- outbound messages
+- Custom Linux distribution (minimal, purpose-built)
+- Bootable USB image as first deliverable (testable via [UTM](https://mac.getutm.app/))
+- Lightweight base -- strip everything that isn't needed for the agent runtime and UI layer
+- No traditional desktop environment (no GNOME, no KDE) -- Monet IS the environment
 
-UI:
-- swipe right = approve
-- swipe left = reject
+### Backend (Agent Runtime)
 
----
+- Model-agnostic agent orchestration layer
+  - Claude (Anthropic) as default provider
+  - Abstraction layer for swapping/adding models (OpenAI, Gemini, open-source)
+- Agent execution engine running in the cloud with local sync
+- Keystroke collection pipeline for user behavior modeling
+  - Feeds into personalization: agents learn preferences, anticipate needs over time
+- Tool integration framework (OAuth + API connectors)
+- Keep it extremely lightweight -- minimal dependencies, fast boot, low resource footprint
 
-### 2. Figma Whiteboard (Exploration)
-Use when:
-- open-ended / creative / planning
+### Frontend (The Environment)
 
-Examples:
-- product flows
-- strategy maps
-
-UI:
-- canvas
-- nodes + connections
-- zoomable
-
----
-
-### 3. iMessage (Conversation)
-Use when:
-- communication tasks
-
-Examples:
-- replies
-- follow-ups
-
-UI:
-- chat thread
-- inline suggestions
-- approve/edit/send
+- Full-screen native UI -- this IS the desktop
+- Monet's own design language for all data (no embedded third-party UIs)
+- Primary interaction: conversational UI with visual controls (buttons, cards, drag-and-drop)
+- Voice input supported
+- No raw text input required for any core flow
 
 ---
 
-### 4. Diff / Compare (Precision)
-Use when:
-- edits or selecting best option
+## MVP Scope (2-Week Demo Target: April 12, 2026)
 
-Examples:
-- code
-- rewrites
+Three features. Nothing else.
 
-UI:
-- side-by-side
-- highlight changes
-- choose best
+### 1. Login
 
----
+**What it does:** User boots into Monet and authenticates.
 
-## Core Flows (v1 focus)
+- Lock screen on boot -- username and password, set during first-run setup
+- Feels like logging into a computer, not a web app
+- Session persistence (stay logged in until explicit logout or shutdown)
+- Single-user for MVP (no teams/orgs)
 
-### 1. Email
-- Connect: Gmail / Outlook
-- Use cases:
-  - draft replies
-  - follow-ups
-  - outbound sequences
-- UI:
-  - iMessage-style threads
-  - quick approve/edit/send
-  - batch handling via Tinder UI
+**Out of scope for MVP:**
 
----
+- Multi-user accounts on one device
+- Biometrics / passkeys
+- Account recovery
 
-### 2. Code
-- Connect: GitHub
-- Use cases:
-  - generate code
-  - review PRs
-  - fix bugs
-- UI:
-  - diff / compare view
-  - approve changes
-  - apply + push
+### 2. Connect Tools
 
----
+**What it does:** User connects external services. Monet's AI ingests everything from the tool and re-presents it in Monet's native UI.
 
-## Flow
+**Launch tools (3):**
 
-1. User enters intent
-2. Agents run (LLMs + tools)
-3. System selects UI format
-4. UI is rendered
-5. User approves/rejects
-6. Actions execute in connected tools
+| Tool                              | What Monet Shows                                                                                                  | What Agents Can Do                 |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| **Email** (Gmail)                 | All emails, threads, contacts -- rendered in Monet's design language, not Gmail's UI                              | Read, draft, send, reply, organize |
+| **Code** (GitHub / local)         | Repositories, files, diffs -- presented visually. User describes what they want, AI writes code, user sees output | Create, edit, commit, run code     |
+| **Writing** (Google Docs / local) | Documents rendered natively                                                                                       | Draft, edit, rewrite, format       |
 
----
+**Connection flow:**
 
-## Integrations (light)
+1. User clicks "Connect a tool"
+2. Selects tool category (Email / Code / Writing)
+3. OAuth flow for cloud services, or local directory selection
+4. AI ingests all data from the tool
+5. Data re-rendered in Monet's visual language -- user never sees the original UI
 
-- Users connect tools (email, GitHub, etc.)
-- Handled via an integration layer (e.g. Nango)
-- Agents use these connections to:
-  - send emails
-  - push code
-  - update external systems
+**Out of scope for MVP:**
 
----
+- Calendar, Slack, CRM, or other tool categories
+- Granular permissions (agent gets full read/write access)
+- Real-time sync (polling on interval is fine)
 
-## Key Principle
+### 3. See Agents
 
-> UI is generated per task to minimize decision time
+**What it does:** A fun, visual dashboard showing all agents -- what they are, what they're doing, and what they've done.
 
----
+**Agent types:**
 
-## Success Metric
+- **Pre-built agents** ship with Monet (e.g., Email Agent, Code Agent, Writing Agent)
+- **User-created agents** can be configured through conversation ("Make me an agent that summarizes my emails every morning")
 
-- decisions in seconds
-- minimal reading
-- high approval rate
+**Dashboard shows:**
+
+- Each agent as a visual entity (not a row in a table -- think characters, avatars, or living things)
+- Real-time status: idle, working, completed task
+- Activity feed: what each agent has done recently
+- Click into an agent to see details, history, and configuration
+
+**Agent capabilities:**
+
+- Run autonomously in the background (cloud-hosted)
+- Execute tasks across connected tools
+- Report results back to the dashboard
+
+**Out of scope for MVP:**
+
+- Agent-to-agent communication
+- Complex multi-step workflows
+- Agent marketplace / sharing
 
 ---
 
-## One-line
+## Keystroke Collection
 
-> An OS where AI builds the right interface so you can decide and act fast
+Runs at the OS level. Captures interaction patterns (not passwords or sensitive input in auth fields).
+
+**Purpose for MVP:** Data collection and storage. Lay the pipeline.
+
+**Future purpose:** Personalization engine -- agents learn how the user works and anticipate needs.
+
+---
+
+## Technical Constraints
+
+| Constraint  | Decision                                                       |
+| ----------- | -------------------------------------------------------------- |
+| Base OS     | Linux (minimal custom distro)                                  |
+| Demo target | Bootable USB / UTM virtual machine                             |
+| AI backend  | Claude Code (current), model-agnostic abstraction from day one |
+| Weight      | Extremely lightweight -- fast boot, minimal packages           |
+| Team        | 2 people (Calvin + cofounder)                                  |
+| Timeline    | 2 weeks to demoable MVP                                        |
+
+---
+
+## What "Demoable" Means (April 12)
+
+A person can:
+
+1. Boot the USB image (or launch in UTM)
+2. See a login screen, create an account, log in
+3. Connect their Gmail account and see their emails rendered in Monet's UI
+4. See a dashboard of agents with at least one pre-built agent active
+5. Ask an agent to do something with their email (draft a reply, summarize inbox)
+6. Watch the agent work and see the result -- all without touching a terminal
+
+The demo proves: **this is a new kind of computer, and it's beautiful.**
+
+---
+
+## Open Questions
+
+- [ ] What does "fun" look like for the agent dashboard? Avatars? Animations? A spatial/3D layout? Need design direction.
+- [ ] Keystroke collection: what's the privacy model? Opt-in? Disclosure? On-device only?
+- [ ] Code tool for MVP: does the user need to see code output, or just the result of running code (e.g., "I built you a website, here it is")?
+- [ ] Brand identity: color palette, typography, visual language for the Monet UI?
+- [ ] Cloud infrastructure for agent execution: where do background agents run? Your own infra, or a cloud provider?
+- [ ] What does the user see between the three tools? Is there a "home screen" or is it agent-first (you see your agents, and they show you your data)?
+
+---
+
+## File Structure (Proposed)
+
+```
+~/Monet/
+  SCOPE.md              # This document
+  os/                   # Linux distro build (kernel config, packages, init)
+  runtime/              # Agent orchestration backend
+  ui/                   # Frontend / desktop environment
+  tools/                # Tool connectors (Gmail, GitHub, Docs)
+  keystroke/            # Keystroke collection pipeline
+  scripts/              # Build scripts, USB image creation
+```
