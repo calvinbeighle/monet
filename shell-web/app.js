@@ -1391,6 +1391,10 @@ function appendStreamText(chunk) {
  */
 function extractDraftText(result) {
   if (!result) return "";
+  /* Unwrap Composio wrapper */
+  if (typeof result === "object" && "data" in result && ("successfull" in result || "successful" in result)) {
+    result = result.data || result;
+  }
   if (typeof result === "string") return result.trim();
   if (typeof result === "object") {
     return (
@@ -1417,6 +1421,10 @@ function extractDraftText(result) {
  * @param {*} result
  */
 function handleTinderToolResult(toolName, result) {
+  /* Unwrap Composio wrapper if present */
+  if (result && typeof result === "object" && !Array.isArray(result) && "data" in result && ("successfull" in result || "successful" in result || "logId" in result)) {
+    result = result.data || result;
+  }
   /*
    * Detect draft_reply results and match them to email cards.
    * Tool names may vary - check common patterns.
