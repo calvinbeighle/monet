@@ -1,14 +1,8 @@
-# Monet - Agent Native OS
+# Monet - Agent Native Web App
 
 ## Objective
-Fork an open-source desktop OS and replace the interaction layer with an agent-native interface that:
+A web app that:
 > takes intent - runs agents - generates the optimal UI - user approves - executes across connected tools
-
----
-
-## Starting Point
-
-Fork an existing open-source desktop OS (e.g. a Linux distro) and run it in a VM for development and testing. The base OS provides the kernel, drivers, filesystem, networking, and process management. We replace the desktop shell and application layer with our agent-native UI.
 
 ---
 
@@ -19,7 +13,7 @@ Fork an existing open-source desktop OS (e.g. a Linux distro) and run it in a VM
 2. monitoring agent activity
 3. making decisions / giving feedback
 
-We are building the OS optimized for this new mode of work.
+We are building the interface optimized for this new mode of work.
 
 ---
 
@@ -32,6 +26,17 @@ It dynamically renders the best format for the task.
 
 ---
 
+## Stack
+
+- **Frontend:** React + TypeScript + Tailwind + Framer Motion
+- **Backend:** Python FastAPI
+- **LLM:** OpenRouter (Gemini Flash for email, Claude Sonnet for everything else)
+- **Integrations:** Composio (Gmail, GitHub, etc.)
+- **Auth:** Composio OAuth for tool connections
+- **Deployment:** Vercel (frontend) + Railway/Fly (backend)
+
+---
+
 ## Core UI Patterns
 
 ### 1. Tinder (Batch Decisions)
@@ -41,10 +46,12 @@ Use when:
 Examples:
 - content ideas
 - outbound messages
+- email triage
 
 UI:
 - swipe right = approve
 - swipe left = reject
+- editable reply/action before approving
 
 ---
 
@@ -132,10 +139,9 @@ UI:
 
 ---
 
-## Integrations (light)
+## Integrations
 
-- Users connect tools (email, GitHub, etc.)
-- Handled via an integration layer (e.g. Nango)
+- Users connect tools (email, GitHub, etc.) via Composio OAuth
 - Agents use these connections to:
   - send emails
   - push code
@@ -159,4 +165,4 @@ UI:
 
 ## One-line
 
-> An OS where AI builds the right interface so you can decide and act fast
+> AI that builds the right interface so you can decide and act fast
