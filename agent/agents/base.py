@@ -107,6 +107,11 @@ class BaseAgent(ABC):
         """
         ...
 
+    @property
+    def model(self) -> str:
+        """Model to use. Subclasses can override for cheaper/faster models."""
+        return self._cfg.model
+
     # ------------------------------------------------------------------
     # Core run loop
     # ------------------------------------------------------------------
@@ -266,7 +271,7 @@ class BaseAgent(ABC):
             RuntimeError: If OpenRouter returns an error payload in the response body.
         """
         payload: dict[str, Any] = {
-            "model": self._cfg.model,
+            "model": self.model,
             "max_tokens": 4096,
             "messages": [
                 {"role": "system", "content": self.system_prompt},
@@ -365,7 +370,7 @@ class BaseAgent(ABC):
             RuntimeError: If OpenRouter returns an error response or error payload.
         """
         payload: dict[str, Any] = {
-            "model": self._cfg.model,
+            "model": self.model,
             "max_tokens": 4096,
             "messages": [
                 {"role": "system", "content": self.system_prompt},

@@ -1522,8 +1522,8 @@ function handleTinderToolResult(toolName, result) {
 
     /* Attach email IDs to cards for later draft matching */
     cards.forEach(function(card) {
-      /* Prefer the metadata id as the email lookup key */
-      card.emailId = (card.metadata && (card.metadata.id || card.metadata.message_id)) || card.action_id || null;
+      /* Prefer the metadata id as the email lookup key (Composio uses messageId) */
+      card.emailId = (card.metadata && (card.metadata.messageId || card.metadata.id || card.metadata.message_id)) || card.action_id || null;
       /* Check if a draft already arrived before the card */
       if (card.emailId && state._tinderDrafts[card.emailId]) {
         card.draft = state._tinderDrafts[card.emailId];

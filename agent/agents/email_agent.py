@@ -192,6 +192,10 @@ class EmailAgent(BaseAgent):
         return AgentType.EMAIL
 
     @property
+    def model(self) -> str:
+        return "google/gemini-flash-preview-3.0"
+
+    @property
     def system_prompt(self) -> str:
         return _SYSTEM_PROMPT
 
@@ -211,34 +215,78 @@ class EmailAgent(BaseAgent):
         """
         return tool_name in _APPROVAL_REQUIRED_TOOLS
 
+    def _truncate_result(self, result: Any, max_len: int = 500) -> Any:
+        """Truncate large tool results to prevent context explosion."""
+        if isinstance(result, str) and len(result) > max_len:
+            return result[:max_len] + "... [truncated]"
+        if isinstance(result, dict):
+            # Truncate messageText and other large fields
+            r = dict(result)
+            for key in ("messageText", "body", "content", "snippet", "preview"):
+                if key in r and isinstance(r[key], str) and len(r[key]) > max_len:
+                    r[key] = r[key][:max_len] + "... [truncated]"
+            # Handle nested data from Composio
+            if "data" in r and isinstance(r["data"], dict):
+                r["data"] = self._truncate_result(r["data"], max_len)
+            if "data" in r and isinstance(r["data"], list):
+                r["data"] = [self._truncate_result(item, max_len) for item in r["data"]]
+            # Handle messages array
+            if "messages" in r and isinstance(r["messages"], list):
+                r["messages"] = [self._truncate_result(m, max_len) for m in r["messages"]]
+            return r
+        if isinstance(result, list):
+            return [self._truncate_result(item, max_len) for item in result]
+        return result
+
+    def _slim_emails(self, result: Any) -> Any:
+        """Strip emails down to subject, sender, preview, and messageId only."""
+        if not isinstance(result, dict):
+            return result
+        data = result.get("data", result)
+        if not isinstance(data, dict):
+            return result
+        msgs = data.get("messages", [])
+        slim = []
+        for m in msgs[:5]:
+            slim.append({
+                "messageId": m.get("messageId", ""),
+                "subject": m.get("subject", "(no subject)"),
+                "sender": m.get("sender", ""),
+                "preview": (m.get("preview") or m.get("messageText", ""))[:200],
+            })
+        return {"emails": slim, "count": len(slim)}
+
     async def _execute_tool(
         self, tool_name: str, tool_input: dict[str, Any]
     ) -> Any:
         """
         Execute a Gmail tool call via GmailIntegration.
-
-        GmailIntegration routes to real Composio Gmail actions when
-        COMPOSIO_API_KEY is set, or returns stub data otherwise.
-
-        Args:
-            tool_name: The Gmail tool to execute.
-            tool_input: Structured arguments for the tool.
-
-        Returns:
-            Any: Tool result from Gmail (live) or stub data.
+        Results are stripped to minimal fields to keep token usage low.
         """
         if tool_name == "list_emails":
-            return self._gmail.list_messages(
-                max_results=tool_input.get("max_results", 10),
+            raw = self._gmail.list_messages(
+                max_results=5,
                 label=tool_input.get("label", "INBOX"),
                 query=tool_input.get("query"),
             )
+            return self._slim_emails(raw)
 
         if tool_name == "read_email":
             message_id = tool_input.get("message_id", "")
             if not message_id:
                 return {"error": "message_id is required for read_email"}
-            return self._gmail.read_message(message_id)
+            raw = self._gmail.read_message(message_id)
+            # Strip to essentials
+            if isinstance(raw, dict):
+                data = raw.get("data", raw)
+                if isinstance(data, dict):
+                    return {
+                        "messageId": data.get("messageId", message_id),
+                        "subject": data.get("subject", ""),
+                        "sender": data.get("sender", ""),
+                        "body": (data.get("messageText") or data.get("body") or "")[:1000],
+                    }
+            return raw
 
         if tool_name == "draft_email":
             return self._gmail.draft_reply(
