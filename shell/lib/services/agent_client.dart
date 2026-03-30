@@ -137,7 +137,36 @@ class AgentClient {
     request.headers['Content-Type'] = 'application/json';
     request.body = jsonEncode(body);
 
-    final streamedResponse = await _client.send(request);
+    http.StreamedResponse streamedResponse;
+    try {
+      streamedResponse = await _client.send(request);
+    } on http.ClientException catch (e) {
+      yield AgentEvent(
+        type: 'error',
+        data: 'Cannot connect to agent backend. Is the server running?',
+        metadata: {'error_type': 'connection_error', 'retryable': true, 'detail': e.toString()},
+      );
+      yield AgentEvent(type: 'done', data: '');
+      return;
+    } catch (e) {
+      yield AgentEvent(
+        type: 'error',
+        data: 'Network error: ${e.toString()}',
+        metadata: {'error_type': 'connection_error', 'retryable': true},
+      );
+      yield AgentEvent(type: 'done', data: '');
+      return;
+    }
+
+    if (streamedResponse.statusCode != 200) {
+      yield AgentEvent(
+        type: 'error',
+        data: 'Server error (${streamedResponse.statusCode}). Please try again.',
+        metadata: {'error_type': 'server_error', 'retryable': true},
+      );
+      yield AgentEvent(type: 'done', data: '');
+      return;
+    }
 
     await for (final chunk in streamedResponse.stream
         .transform(utf8.decoder)

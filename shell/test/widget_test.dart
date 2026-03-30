@@ -376,6 +376,67 @@ void main() {
       expect(find.text('Reject'), findsNothing);
     });
 
+    testWidgets('renders error card with error icon', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [
+              ChatMessage(
+                content: 'Cannot connect to agent backend.',
+                isUser: false,
+                isError: true,
+              ),
+            ],
+          ),
+        ),
+      ));
+      expect(find.text('Cannot connect to agent backend.'), findsOneWidget);
+      expect(find.text('Error'), findsOneWidget);
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
+    });
+
+    testWidgets('error card shows retry button when retryable', (tester) async {
+      bool retryCalled = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [
+              ChatMessage(
+                content: 'Network error occurred.',
+                isUser: false,
+                isError: true,
+                isRetryable: true,
+              ),
+            ],
+            onRetry: () => retryCalled = true,
+          ),
+        ),
+      ));
+      expect(find.text('Retry'), findsOneWidget);
+      await tester.tap(find.text('Retry'));
+      expect(retryCalled, true);
+    });
+
+    testWidgets('error card hides retry button when not retryable', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [
+              ChatMessage(
+                content: 'Authentication failed.',
+                isUser: false,
+                isError: true,
+                isRetryable: false,
+              ),
+            ],
+            onRetry: () {},
+          ),
+        ),
+      ));
+      expect(find.text('Authentication failed.'), findsOneWidget);
+      expect(find.text('Retry'), findsNothing);
+    });
+
     testWidgets('rejected approval card shows status', (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(

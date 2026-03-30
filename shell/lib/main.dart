@@ -73,6 +73,9 @@ class MonetShellState extends State<MonetShell> {
   // Pending approvals mapped by approval ID
   final List<_PendingApproval> _pendingApprovals = [];
 
+  // Last intent for retry support
+  String? _lastIntent;
+
   StreamSubscription<AgentEvent>? _streamSub;
 
   @override
@@ -82,9 +85,16 @@ class MonetShellState extends State<MonetShell> {
     super.dispose();
   }
 
+  void _retryLastIntent() {
+    if (_lastIntent != null && !_isRunning) {
+      _submitIntent(_lastIntent!);
+    }
+  }
+
   void _submitIntent(String intent) {
     if (intent.trim().isEmpty || _isRunning) return;
     _intentController.clear();
+    _lastIntent = intent;
 
     final client = context.read<AgentClient>();
 
@@ -150,6 +160,23 @@ class MonetShellState extends State<MonetShell> {
             } else {
               _showApprovalDialog(approvalId, toolName, parameters);
             }
+          case 'error':
+            final retryable = event.metadata['retryable'] == true;
+            setState(() {
+              // Flush any accumulated text before the error
+              if (streamedContent.isNotEmpty) {
+                _chatMessages.add(
+                  ChatMessage(content: streamedContent, isUser: false),
+                );
+                streamedContent = '';
+              }
+              _chatMessages.add(ChatMessage(
+                content: event.data,
+                isUser: false,
+                isError: true,
+                isRetryable: retryable,
+              ));
+            });
           case 'done':
             setState(() {
               _chatStreaming = false;
@@ -411,6 +438,7 @@ class MonetShellState extends State<MonetShell> {
           onSend: _submitIntent,
           onSuggestionTap: _submitIntent,
           onApprovalDecision: _handleChatApprovalDecision,
+          onRetry: _retryLastIntent,
         );
     }
     return AnimatedSwitcher(

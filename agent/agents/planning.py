@@ -16,13 +16,30 @@ class PlanningAgent(BaseAgent):
     Outputs structured node data for the whiteboard UI pattern. Each tool call
     produces or modifies nodes that render as draggable cards on the canvas.
     No external API integrations - all planning logic runs through Claude.
+
+    Node state is scoped per session so concurrent planning sessions are isolated.
     """
 
     name = "planning"
     default_ui_pattern = UIPattern.WHITEBOARD
 
     def __init__(self):
-        self._nodes: dict[str, dict] = {}
+        # Per-session node storage: session_id -> {node_id -> node_dict}
+        self._sessions: dict[str, dict[str, dict]] = {}
+        self._current_session: str = "default"
+
+    def set_session(self, session_id: str) -> None:
+        """Set the active session for subsequent tool calls."""
+        self._current_session = session_id
+        if session_id not in self._sessions:
+            self._sessions[session_id] = {}
+
+    @property
+    def _nodes(self) -> dict[str, dict]:
+        """Get nodes for the current session."""
+        if self._current_session not in self._sessions:
+            self._sessions[self._current_session] = {}
+        return self._sessions[self._current_session]
 
     @property
     def system_prompt(self) -> str:

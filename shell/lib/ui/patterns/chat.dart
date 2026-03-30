@@ -5,6 +5,8 @@ class ChatMessage {
   final bool isUser;
   final bool isSystem;
   final bool isApproval;
+  final bool isError;
+  final bool isRetryable;
   final String? approvalId;
   final String? toolName;
   final Map<String, dynamic> approvalParameters;
@@ -17,6 +19,8 @@ class ChatMessage {
     required this.isUser,
     this.isSystem = false,
     this.isApproval = false,
+    this.isError = false,
+    this.isRetryable = false,
     this.approvalId,
     this.toolName,
     this.approvalParameters = const {},
@@ -33,6 +37,7 @@ class ChatPattern extends StatefulWidget {
   final void Function(String message)? onSend;
   final void Function(String suggestion)? onSuggestionTap;
   final void Function(String approvalId, bool approved)? onApprovalDecision;
+  final VoidCallback? onRetry;
 
   const ChatPattern({
     super.key,
@@ -42,6 +47,7 @@ class ChatPattern extends StatefulWidget {
     this.onSend,
     this.onSuggestionTap,
     this.onApprovalDecision,
+    this.onRetry,
   });
 
   @override
@@ -110,6 +116,9 @@ class ChatPatternState extends State<ChatPattern> {
   }
 
   Widget _buildBubble(ChatMessage message) {
+    if (message.isError) {
+      return _buildErrorCard(message);
+    }
     if (message.isApproval) {
       return _buildApprovalCard(message);
     }
@@ -180,6 +189,76 @@ class ChatPatternState extends State<ChatPattern> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildErrorCard(ChatMessage message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1215),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 16,
+                        color: Colors.red.shade300,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Error',
+                        style: TextStyle(
+                          color: Colors.red.shade300,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    message.content,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+                if (message.isRetryable && widget.onRetry != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: FilledButton.icon(
+                      onPressed: widget.onRetry,
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('Retry'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.red.shade700,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

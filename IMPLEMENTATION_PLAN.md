@@ -169,9 +169,9 @@ Full flows: intent -> agent -> UI -> approve -> execute.
 
 ### Task 18: Error Handling
 
-- [ ] OAuth expired -> prompt to reconnect
-- [ ] Agent fails -> error card with retry
-- [ ] Network down -> queue actions, send when back
+- [x] OAuth expired -> prompt to reconnect (implemented: runner detects 401/403/unauthorized in tool execution errors, emits oauth_expired error event, Flutter shell renders error card)
+- [x] Agent fails -> error card with retry (implemented: runner catches all Anthropic API errors, Flutter shell renders error cards with retry button for retryable errors)
+- [x] Network down -> error card with retry (full offline queue deferred to Phase 5)
 
 ---
 
@@ -242,6 +242,14 @@ Debian VM boots directly into Monet.
 - **Whiteboard `shouldRepaint` fixed:** `ConnectionPainter.shouldRepaint` now compares node positions and connection lists instead of always returning true.
 - **Animated transitions added:** `AnimatedSwitcher` with 300ms cross-fade wraps pattern switching in `main.dart`.
 - **Test count:** 153 total (111 Python + 42 Flutter), all passing.
+
+### Implementation Notes (2026-03-30) - Batch 3
+
+- **GeneralAgent implemented:** `agent/agents/general.py` - conversational fallback for unknown intents. No tools, pure Claude conversation. Registered in runner alongside email, code, and planning agents.
+- **PlanningAgent per-session state fixed:** Node state is now scoped per session via `_sessions` dict keyed by session_id. Runner calls `set_session()` before executing tools. Concurrent planning sessions are isolated.
+- **Error handling implemented:** Runner catches `AuthenticationError`, `RateLimitError`, `APIConnectionError`, `APITimeoutError`, and general `APIError` from Anthropic SDK. Tool execution errors are caught with OAuth detection (401/403/unauthorized). Stream and sync paths both handle errors gracefully.
+- **Flutter error cards implemented:** Chat pattern renders error cards with error icon, message, and retry button (for retryable errors). AgentClient catches network/connection errors and emits synthetic error+done events.
+- **Test count:** 174 total (129 Python + 45 Flutter), all passing.
 
 ---
 
