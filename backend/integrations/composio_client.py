@@ -23,6 +23,7 @@ STUB_OAUTH_URLS: dict[str, str] = {
     "gmail": "https://stub.composio.dev/oauth/gmail",
     "github": "https://stub.composio.dev/oauth/github",
     "slack": "https://stub.composio.dev/oauth/slack",
+    "calendar": "https://stub.composio.dev/oauth/calendar",
     "notion": "https://stub.composio.dev/oauth/notion",
 }
 
@@ -302,6 +303,7 @@ class ComposioClient:
             {"id": "gmail", "service": "gmail", "icon": "Mail", "connected": False},
             {"id": "github", "service": "github", "icon": "Github", "connected": False},
             {"id": "slack", "service": "slack", "icon": "MessageSquare", "connected": False},
+            {"id": "calendar", "service": "calendar", "icon": "Calendar", "connected": False},
             {"id": "notion", "service": "notion", "icon": "FileText", "connected": False},
         ]
 

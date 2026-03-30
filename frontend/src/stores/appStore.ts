@@ -38,6 +38,8 @@ interface AppState {
   inlineChatMessages: InlineChatMessage[];
   /** True while the inline chat assistant is streaming */
   isChatStreaming: boolean;
+  /** Set of service IDs currently in an active OAuth popup flow */
+  connectingIds: Set<string>;
   setActiveView: (view: ActiveView) => void;
   /** Opens a decision view as a modal overlay without leaving the home screen */
   setOverlayView: (view: OverlayView | null) => void;
@@ -53,6 +55,10 @@ interface AppState {
   refreshAgents: () => Promise<void>;
   /** Fetches pending decisions from the backend */
   refreshDecisions: () => Promise<void>;
+  /** Fetches live connection status from the backend and updates the store */
+  refreshConnections: () => Promise<void>;
+  /** Initiates OAuth for a service (opens popup) and polls until connected */
+  connectService: (serviceId: string) => Promise<void>;
   /** Starts the background polling interval - call once on app mount */
   startPolling: () => () => void;
 }
@@ -89,12 +95,13 @@ const FALLBACK_AGENTS: Agent[] = [
   },
 ];
 
-/** Hardcoded connections - these come from Composio, not the decisions system */
+/** Initial connections - all disconnected by default. Real state comes from /connections. */
 const INITIAL_CONNECTIONS: Connection[] = [
-  { id: 'gmail', service: 'Gmail', icon: 'gmail', connected: true },
+  { id: 'gmail', service: 'Gmail', icon: 'gmail', connected: false },
   { id: 'github', service: 'GitHub', icon: 'github', connected: false },
-  { id: 'notion', service: 'Notion', icon: 'notion', connected: true },
   { id: 'slack', service: 'Slack', icon: 'slack', connected: false },
+  { id: 'calendar', service: 'Calendar', icon: 'calendar', connected: false },
+  { id: 'notion', service: 'Notion', icon: 'notion', connected: false },
 ];
 
 /** Initial activity timeline - static for now */
@@ -186,6 +193,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingChatMessage: null,
   inlineChatMessages: [],
   isChatStreaming: false,
+  connectingIds: new Set<string>(),
 
   setActiveView: (view) => set({ activeView: view }),
 
@@ -360,20 +368,123 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   /**
+   * Fetches live connection status from GET /connections and updates the store.
+   * Merges backend results with known tool IDs so all tools always appear.
+   * Silently ignores network errors.
+   */
+  refreshConnections: async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/connections`);
+      if (!res.ok) return;
+      const data = await res.json();
+      // Backend returns { connections: [...] } or bare array
+      const raw: Array<{ id: string; service: string; connected: boolean }> = data.connections ?? data;
+      if (!Array.isArray(raw)) return;
+
+      // Merge with INITIAL_CONNECTIONS so all known tools are always represented
+      const backendMap = new Map(raw.map((c) => [c.id, c]));
+      const merged: Connection[] = INITIAL_CONNECTIONS.map((init) => {
+        const fromBackend = backendMap.get(init.id);
+        return fromBackend
+          ? { ...init, connected: Boolean(fromBackend.connected) }
+          : init;
+      });
+      set({ connections: merged });
+    } catch {
+      // Backend offline - keep existing connection state
+    }
+  },
+
+  /**
+   * Initiates an OAuth flow for a service by opening a popup window.
+   * Sets the service as "connecting" in connectingIds, then polls GET /connections
+   * every 3 seconds until the service shows as connected or 2 minutes elapse.
+   *
+   * @param serviceId - Lowercase service name (e.g. 'gmail', 'github')
+   */
+  connectService: async (serviceId: string) => {
+    let res: Response;
+    try {
+      res = await fetch(`${BACKEND_URL}/connect/${serviceId}`, { method: 'POST' });
+    } catch {
+      return;
+    }
+    if (!res.ok) return;
+
+    const data = await res.json();
+    // Backend returns { oauth_url: "..." } - also handle { redirect_url: "..." }
+    const redirectUrl: string | undefined = data.oauth_url ?? data.redirect_url;
+    if (!redirectUrl) return;
+
+    // Open centered popup
+    const width = 600;
+    const height = 700;
+    const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+    const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+    window.open(
+      redirectUrl,
+      'monet_oauth',
+      `width=${width},height=${height},left=${left},top=${top},popup=yes,noopener=yes`,
+    );
+
+    // Mark as connecting
+    set((state) => {
+      const next = new Set(state.connectingIds);
+      next.add(serviceId);
+      return { connectingIds: next };
+    });
+
+    const clearConnecting = () => {
+      set((state) => {
+        const next = new Set(state.connectingIds);
+        next.delete(serviceId);
+        return { connectingIds: next };
+      });
+    };
+
+    const startedAt = Date.now();
+    const poll = setInterval(async () => {
+      if (Date.now() - startedAt > 120_000) {
+        clearInterval(poll);
+        clearConnecting();
+        return;
+      }
+      try {
+        const r = await fetch(`${BACKEND_URL}/connections`);
+        if (!r.ok) return;
+        const result = await r.json();
+        const conns: Array<{ id: string; connected: boolean }> = result.connections ?? result;
+        if (!Array.isArray(conns)) return;
+        const found = conns.find((c) => c.id === serviceId);
+        if (found?.connected) {
+          clearInterval(poll);
+          clearConnecting();
+          // Refresh all connections so the pill updates
+          get().refreshConnections();
+        }
+      } catch {
+        // Ignore transient errors
+      }
+    }, 3_000);
+  },
+
+  /**
    * Starts background polling of /agents every 10 seconds.
    * Returns a cleanup function that cancels the interval.
    * Call once on app mount via useEffect.
    */
   startPolling: () => {
-    const { refreshAgents, refreshDecisions } = get();
+    const { refreshAgents, refreshDecisions, refreshConnections } = get();
 
     // Fetch immediately on start
     refreshAgents();
+    refreshConnections();
     refreshDecisions();
 
     const interval = setInterval(() => {
       refreshAgents();
       refreshDecisions();
+      refreshConnections();
     }, 10_000);
 
     return () => clearInterval(interval);

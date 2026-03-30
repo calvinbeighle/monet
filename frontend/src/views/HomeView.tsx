@@ -27,6 +27,7 @@ import { ChevronRight, X } from 'lucide-react';
 import { AgentOrbitWithSuspense } from '@/components/AgentOrbit';
 import { CommandBar } from '@/components/CommandBar';
 import { AgentCard } from '@/components/AgentCard';
+import { ConnectionPills } from '@/components/ConnectionPills';
 import { useAppStore } from '@/stores/appStore';
 import type { Agent } from '@/types';
 import type { InlineChatMessage } from '@/stores/appStore';
@@ -215,13 +216,14 @@ function InlineChatMessageRow({ message }: InlineChatMessageRowProps) {
  * commandBarPosition derives whether agents are active.
  */
 export function HomeView() {
-  const { agents, setOverlayView, inlineChatMessages, clearInlineChat } = useAppStore();
+  const { agents, connections, connectingIds, connectService, setOverlayView, inlineChatMessages, clearInlineChat } = useAppStore();
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Always show agent cards if agents exist - idle orbit only on first load with no agents
   const hasAgents = agents.length > 0;
   const isActive = hasAgents;
   const hasChatMessages = inlineChatMessages.length > 0;
+  const hasDisconnectedTools = connections.some((c) => !c.connected);
 
   /** Agents that have pending decisions - used for suggestion rows in idle state */
   const agentsWithDecisions = agents.filter(
@@ -315,6 +317,25 @@ export function HomeView() {
             <div style={{ flexShrink: 0, marginTop: hasChatMessages ? '8px' : '0' }}>
               <CommandBar position="center" />
             </div>
+
+            {/* Connection pills - under the search bar like DIA */}
+            <AnimatePresence>
+              {hasDisconnectedTools && !hasChatMessages && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ marginTop: '12px', flexShrink: 0 }}
+                >
+                  <ConnectionPills
+                    connections={connections}
+                    onConnect={connectService}
+                    connectingIds={connectingIds}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Clear chat button - shown when there are messages */}
             <AnimatePresence>
@@ -423,6 +444,24 @@ export function HomeView() {
 
             {/* Command bar - DIA exact style */}
             <CommandBar position="center" />
+
+            {/* Connection pills - shown below command bar in idle mode when tools are disconnected */}
+            <AnimatePresence>
+              <motion.div
+                key="conn-pills-idle"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2, delay: 0.05 }}
+                style={{ marginTop: '20px' }}
+              >
+                <ConnectionPills
+                  connections={connections}
+                  onConnect={connectService}
+                  connectingIds={connectingIds}
+                />
+              </motion.div>
+            </AnimatePresence>
 
             {/* Suggestion rows - 16px below the command bar */}
             <AnimatePresence>
