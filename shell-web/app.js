@@ -103,11 +103,17 @@ var state = {
 
   /* Tinder queue */
   tinder: {
-    queue:   [],    /* [{ title, body, action_id }] */
+    queue:   [],    /* [{ title, subtitle, body, label, cardType, action_id, draft, emailId }] */
     current: null,
     index:   0,
     total:   0,
   },
+
+  /*
+   * Map of emailId -> draft reply text for matching drafts to emails.
+   * Populated when draft_reply tool results arrive.
+   */
+  _tinderDrafts: {},   /* { [emailId]: draftText } */
 
   /* Internal accumulators */
   _tinderBuffer:    "",
@@ -133,15 +139,17 @@ var dom = {
   /* Chat */
   chatMessages:     $("chat-messages"),
   /* Tinder */
-  tinderCounter:      $("tinder-counter"),
-  tinderCard:         $("tinder-card"),
-  tinderCardLabel:    $("tinder-card-label"),
-  tinderCardSubtitle: $("tinder-card-subtitle"),
-  tinderCardTitle:    $("tinder-card-title"),
-  tinderCardBody:     $("tinder-card-body"),
-  tinderCommentary:   $("tinder-commentary"),
-  tinderApprove:      $("tinder-approve"),
-  tinderReject:       $("tinder-reject"),
+  tinderCounter:        $("tinder-counter"),
+  tinderCard:           $("tinder-card"),
+  tinderCardLabel:      $("tinder-card-label"),
+  tinderCardSubtitle:   $("tinder-card-subtitle"),
+  tinderCardTitle:      $("tinder-card-title"),
+  tinderCardBody:       $("tinder-card-body"),
+  tinderReplySection:   $("tinder-reply-section"),
+  tinderReplyTextarea:  $("tinder-reply-textarea"),
+  tinderCommentary:     $("tinder-commentary"),
+  tinderApprove:        $("tinder-approve"),
+  tinderReject:         $("tinder-reject"),
   /* Diff */
   diffOriginal:     $("diff-original"),
   diffProposed:     $("diff-proposed"),
@@ -288,6 +296,7 @@ function resetToWelcome() {
   state.tinder.index = 0;
   state.tinder.total = 0;
   state._tinderBuffer = "";
+  state._tinderDrafts = {};
   state._wbBuffer = "";
   state._diffBuffer = "";
   /* Clear diff */
@@ -684,6 +693,7 @@ function showErrorInPattern(msg) {
     dom.tinderCardSubtitle.textContent = "";
     dom.tinderCardTitle.textContent = "Error";
     dom.tinderCardBody.textContent = msg;
+    dom.tinderReplyTextarea.value = "";
     dom.tinderCounter.textContent = "Something went wrong";
   } else if (state.currentPattern === "diff") {
     var errLine = document.createElement("div");
@@ -908,13 +918,15 @@ function showNextTinderCard() {
     state.tinder.current = null;
 
     /* Show completion state inside the card */
-    dom.tinderCard.className = ""; /* Reset type class */
+    dom.tinderCard.className = "";
     dom.tinderCardLabel.textContent = "";
     dom.tinderCardLabel.className = "";
     dom.tinderCardSubtitle.textContent = "";
     dom.tinderCardTitle.textContent = "All done!";
     dom.tinderCardBody.textContent =
       "Processed " + state.tinder.index + " item" + (state.tinder.index === 1 ? "" : "s") + ".";
+    dom.tinderReplyTextarea.value = "";
+    dom.tinderReplyTextarea.placeholder = "";
     dom.tinderCounter.textContent = "\u2713 " + state.tinder.index + " reviewed";
     return;
   }
@@ -930,14 +942,26 @@ function showNextTinderCard() {
   dom.tinderCardLabel.textContent = card.label || "";
   dom.tinderCardLabel.className = card.cardType ? "label-" + card.cardType : "";
 
-  /* Subtitle (sender / author) */
+  /* Subtitle (sender / author) - shown inline in header */
   dom.tinderCardSubtitle.textContent = card.subtitle || "";
 
   /* Title (subject / PR title) */
   dom.tinderCardTitle.textContent = card.title || "";
 
-  /* Body snippet */
+  /* Full body - scrollable, not truncated */
   dom.tinderCardBody.textContent = card.body || "";
+
+  /*
+   * Populate reply textarea.
+   * Check if a draft is already available (matched by emailId),
+   * otherwise pre-fill with whatever was attached to the card,
+   * or leave empty with a placeholder while the agent drafts.
+   */
+  var emailId = card.emailId || card.action_id || null;
+  var existingDraft = emailId ? (state._tinderDrafts[emailId] || null) : null;
+  var draftText = existingDraft || card.draft || "";
+  dom.tinderReplyTextarea.value = draftText;
+  dom.tinderReplyTextarea.placeholder = draftText ? "" : "Agent is drafting a reply...";
 
   var total = state.tinder.total || "?";
   dom.tinderCounter.textContent = state.tinder.index + " of " + total;
@@ -945,6 +969,8 @@ function showNextTinderCard() {
 
 /**
  * Animate the tinder card out and then show the next one.
+ * When approving, captures the current textarea value and POSTs it
+ * as the reply body so the user's edits are preserved.
  *
  * @param {"left"|"right"} direction
  * @param {string} sessionId
@@ -956,11 +982,22 @@ function dismissTinderCard(direction, sessionId, actionId, approved) {
 
   dom.tinderCard.classList.add(direction === "right" ? "exit-right" : "exit-left");
 
-  if (actionId && sessionId) {
+  if (sessionId) {
     var endpoint = approved ? "/approve/" : "/reject/";
-    fetch(BACKEND + endpoint + encodeURIComponent(sessionId) + "/" + encodeURIComponent(actionId), {
-      method: "POST",
-    }).catch(function(e) { console.warn("tinder action error:", e); });
+    var url = BACKEND + endpoint + encodeURIComponent(sessionId) + "/" + encodeURIComponent(actionId || "item");
+
+    if (approved) {
+      /* Include the user's (possibly edited) reply text in the approval body */
+      var replyText = dom.tinderReplyTextarea.value || "";
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reply_text: replyText, reason: "User approved" }),
+      }).catch(function(e) { console.warn("tinder approve error:", e); });
+    } else {
+      fetch(url, { method: "POST" })
+        .catch(function(e) { console.warn("tinder reject error:", e); });
+    }
   }
 
   setTimeout(function() {
@@ -1319,6 +1356,7 @@ function appendStreamText(chunk) {
         dom.tinderCardSubtitle.textContent = "";
         dom.tinderCardTitle.textContent = "Loading...";
         dom.tinderCardBody.textContent = "";
+        dom.tinderReplyTextarea.value = "";
       }
       break;
 
@@ -1339,20 +1377,112 @@ function appendStreamText(chunk) {
 }
 
 /**
- * Handle a tool_result event for the tinder pattern by extracting cards.
- * This is the primary source of cards - each email or PR becomes a card.
+ * Extract a draft reply text string from a tool result object.
+ * Handles various shapes the backend may return for draft_reply results.
+ *
+ * @param {*} result - Tool result from draft_reply
+ * @returns {string} The draft text, or empty string if not found
+ */
+function extractDraftText(result) {
+  if (!result) return "";
+  if (typeof result === "string") return result.trim();
+  if (typeof result === "object") {
+    return (
+      result.draft ||
+      result.reply ||
+      result.body ||
+      result.text ||
+      result.content ||
+      result.message ||
+      ""
+    ).trim();
+  }
+  return "";
+}
+
+/**
+ * Handle a tool_result event for the tinder pattern.
+ *
+ * - For list/read email tools: extract email cards and enqueue them.
+ * - For draft_reply tools: match the draft to an existing card by email_id,
+ *   store in _tinderDrafts map, and update the textarea if the card is current.
  *
  * @param {string} toolName
  * @param {*} result
  */
 function handleTinderToolResult(toolName, result) {
+  /*
+   * Detect draft_reply results and match them to email cards.
+   * Tool names may vary - check common patterns.
+   */
+  var isDraft = /draft/i.test(toolName);
+  if (isDraft) {
+    var draftText = extractDraftText(result);
+    if (draftText) {
+      /*
+       * Try to find which email this draft belongs to.
+       * The result may carry an email_id, message_id, or thread_id field.
+       */
+      var emailId = null;
+      if (result && typeof result === "object") {
+        emailId = result.email_id || result.message_id || result.thread_id || result.id || null;
+      }
+
+      if (emailId) {
+        /* Store the draft keyed by email ID for later lookup */
+        state._tinderDrafts[emailId] = draftText;
+
+        /* If the current card matches this email ID, update the textarea live */
+        var current = state.tinder.current;
+        if (current && (current.emailId === emailId || current.action_id === emailId)) {
+          dom.tinderReplyTextarea.value = draftText;
+          dom.tinderReplyTextarea.placeholder = "";
+        }
+
+        /* Also update any queued card that matches */
+        state.tinder.queue.forEach(function(card) {
+          if (card.emailId === emailId || card.action_id === emailId) {
+            card.draft = draftText;
+          }
+        });
+      } else {
+        /*
+         * No email_id in result - attach the draft to the current card
+         * if no draft is set yet, or to the last queued card.
+         */
+        var current = state.tinder.current;
+        if (current && !dom.tinderReplyTextarea.value) {
+          dom.tinderReplyTextarea.value = draftText;
+          dom.tinderReplyTextarea.placeholder = "";
+        } else if (state.tinder.queue.length > 0) {
+          var lastCard = state.tinder.queue[state.tinder.queue.length - 1];
+          if (!lastCard.draft) {
+            lastCard.draft = draftText;
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  /* Non-draft tool result - extract email/PR cards as before */
   var cards = extractTinderCards(result);
   if (cards.length > 0) {
     /* Clear any streaming buffer since we now have real cards */
     state._tinderBuffer = "";
     dom.tinderCardTitle.textContent = "";
     dom.tinderCardBody.innerHTML = "";
-    cards.forEach(function(card) { enqueueTinderCard(card); });
+
+    /* Attach email IDs to cards for later draft matching */
+    cards.forEach(function(card) {
+      /* Prefer the metadata id as the email lookup key */
+      card.emailId = (card.metadata && (card.metadata.id || card.metadata.message_id)) || card.action_id || null;
+      /* Check if a draft already arrived before the card */
+      if (card.emailId && state._tinderDrafts[card.emailId]) {
+        card.draft = state._tinderDrafts[card.emailId];
+      }
+      enqueueTinderCard(card);
+    });
   }
 }
 
@@ -1377,6 +1507,7 @@ function clearPatternContent(pattern) {
       state.tinder.current = null;
       state.tinder.index = 0;
       state.tinder.total = 0;
+      state._tinderDrafts = {};
       dom.tinderCard.className = "";
       dom.tinderCard.style.borderColor = "";
       dom.tinderCardLabel.textContent = "";
@@ -1384,6 +1515,8 @@ function clearPatternContent(pattern) {
       dom.tinderCardSubtitle.textContent = "";
       dom.tinderCardTitle.textContent = "";
       dom.tinderCardBody.textContent = "";
+      dom.tinderReplyTextarea.value = "";
+      dom.tinderReplyTextarea.placeholder = "Agent is drafting a reply...";
       dom.tinderCommentary.textContent = "";
       dom.tinderCounter.textContent = "";
       break;
@@ -1560,6 +1693,7 @@ function handleDone() {
         dom.tinderCardSubtitle.textContent = "";
         dom.tinderCardTitle.textContent = "Done";
         dom.tinderCardBody.textContent = state._tinderBuffer.trim() || "Agent completed.";
+        dom.tinderReplyTextarea.value = "";
         dom.tinderCounter.textContent = "Complete";
       }
     } else if (state.tinder.queue.length === 0 && !state.tinder.current) {

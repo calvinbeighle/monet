@@ -483,11 +483,22 @@ async def connect_service(service: str) -> JSONResponse:
     """
     manager = OAuthManager(user_id="default")
     try:
-        result = manager.initiate_oauth(service)
+        result = await asyncio.wait_for(
+            asyncio.to_thread(manager.initiate_oauth, service),
+            timeout=_COMPOSIO_TIMEOUT_SECS,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except (RuntimeError, asyncio.TimeoutError, Exception) as exc:
+        return JSONResponse(
+            {
+                "error": str(exc),
+                "service": service,
+                "status": "error",
+                "message": "Could not reach Composio - check network connectivity on the VM.",
+            },
+            status_code=502,
+        )
 
     return JSONResponse(result)
 
@@ -495,6 +506,9 @@ async def connect_service(service: str) -> JSONResponse:
 # ---------------------------------------------------------------------------
 # GET /connections
 # ---------------------------------------------------------------------------
+
+
+_COMPOSIO_TIMEOUT_SECS = 8  # Max wait for any Composio API call
 
 
 @app.get("/connections")
@@ -506,14 +520,33 @@ async def list_connections() -> JSONResponse:
     entity. In stub mode, returns a simulated list showing both services
     connected so the frontend behaves normally during development.
 
+    Runs the blocking Composio SDK call in a thread pool so it does not
+    block the event loop. Times out after 8 seconds so the frontend receives
+    a fast response even when the VM has no external network.
+
     Returns:
         JSON array where each entry has service, status, and connection_id.
         The connected field is true when status is "active" or "connected".
     """
     from integrations.composio_client import ComposioClient
 
+    _disconnected = [
+        {"service": "gmail",  "status": "unknown", "connected": False},
+        {"service": "github", "status": "unknown", "connected": False},
+    ]
+
     client = ComposioClient()
-    connections = client.list_connections(user_id="default")
+    if client.is_stub:
+        # Stub mode is synchronous and instant - no need for threading
+        connections = client.list_connections(user_id="default")
+    else:
+        try:
+            connections = await asyncio.wait_for(
+                asyncio.to_thread(client.list_connections, "default"),
+                timeout=_COMPOSIO_TIMEOUT_SECS,
+            )
+        except (RuntimeError, asyncio.TimeoutError, Exception):
+            return JSONResponse(_disconnected)
 
     # Annotate each connection with a simple boolean for the frontend
     result = [
