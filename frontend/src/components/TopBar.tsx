@@ -1,104 +1,60 @@
 /**
  * components/TopBar.tsx
- * Top navigation bar with sidebar toggle, navigation arrows, and action buttons.
- * Sits above both the sidebar and main content as a fixed strip.
+ * Fixed 48px top bar with hamburger menu toggle and Monitor button.
+ * Left: hamburger icon to toggle sidebar sheet.
+ * Right: Monitor button with pending decision count badge.
  */
-import { ChevronLeft, ChevronRight, RotateCw, Menu, Zap, User } from 'lucide-react';
-import { useAppStore } from '../stores/appStore';
-
-/** A small icon button with hover effect */
-function IconButton({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className="w-7 h-7 flex items-center justify-center rounded-md cursor-pointer transition-all duration-150"
-      style={{ color: 'var(--text-muted)', background: 'transparent' }}
-      onMouseEnter={(e) => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.background = 'var(--surface-elevated)';
-        el.style.color = 'var(--text-secondary)';
-      }}
-      onMouseLeave={(e) => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.background = 'transparent';
-        el.style.color = 'var(--text-muted)';
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** A small pill button for Skills / Personalization */
-function PillButton({ label, icon }: { label: string; icon: React.ReactNode }) {
-  return (
-    <button
-      className="flex items-center gap-1.5 px-3 h-7 rounded-full text-xs font-medium cursor-pointer transition-all duration-150"
-      style={{
-        background: 'var(--surface)',
-        color: 'var(--text-secondary)',
-        border: '1px solid var(--border-strong)',
-      }}
-      onMouseEnter={(e) => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.background = 'var(--surface-elevated)';
-        el.style.color = 'var(--text-primary)';
-      }}
-      onMouseLeave={(e) => {
-        const el = e.currentTarget as HTMLButtonElement;
-        el.style.background = 'var(--surface)';
-        el.style.color = 'var(--text-secondary)';
-      }}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}
+import { Menu, Activity } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { useAppStore } from '@/stores/appStore';
 
 /**
- * TopBar component renders a 48px tall navigation strip across the full width.
- * Left side: hamburger, back, forward, reload. Right side: Skills, Personalization.
+ * TopBar renders a minimal fixed strip at the top of the viewport.
+ * Hamburger on the left opens the sidebar Sheet.
+ * Monitor button on the right switches to the Monitor view.
  */
 export function TopBar() {
-  const { toggleSidebar } = useAppStore();
+  const { toggleSidebar, setActiveView, decisions, activeView } = useAppStore();
 
   return (
     <div
-      className="flex items-center justify-between px-3 w-full flex-shrink-0"
+      className="fixed top-0 left-0 right-0 flex items-center justify-between px-3 z-50"
       style={{
         height: '48px',
         borderBottom: '1px solid var(--border)',
         background: 'var(--bg)',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 10,
       }}
     >
-      {/* Left nav controls */}
-      <div className="flex items-center gap-1">
-        <IconButton onClick={toggleSidebar}>
-          <Menu size={15} strokeWidth={1.5} />
-        </IconButton>
-        <div style={{ width: '1px', height: '16px', background: 'var(--border-strong)', margin: '0 4px' }} />
-        <IconButton>
-          <ChevronLeft size={15} strokeWidth={1.5} />
-        </IconButton>
-        <IconButton>
-          <ChevronRight size={15} strokeWidth={1.5} />
-        </IconButton>
-        <IconButton>
-          <RotateCw size={13} strokeWidth={1.5} />
-        </IconButton>
-      </div>
+      {/* Left: hamburger */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="w-8 h-8 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+        onClick={toggleSidebar}
+        aria-label="Toggle sidebar"
+      >
+        <Menu size={16} strokeWidth={1.5} />
+      </Button>
 
-      {/* Right action pills */}
-      <div className="flex items-center gap-2">
-        <PillButton label="Skills" icon={<Zap size={11} strokeWidth={1.5} />} />
-        <PillButton label="Personalization" icon={<User size={11} strokeWidth={1.5} />} />
-      </div>
+      {/* Right: Monitor button */}
+      <Button
+        variant={activeView === 'monitor' ? 'secondary' : 'ghost'}
+        size="sm"
+        className="h-7 text-xs gap-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+        onClick={() => setActiveView('monitor')}
+      >
+        <Activity size={13} strokeWidth={1.5} />
+        Monitor
+        {decisions.length > 0 && (
+          <Badge
+            variant="secondary"
+            className="h-4 px-1 text-[10px] bg-violet-600/80 text-violet-100 ml-0.5"
+          >
+            {decisions.length}
+          </Badge>
+        )}
+      </Button>
     </div>
   );
 }

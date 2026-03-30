@@ -1,108 +1,38 @@
 /**
  * views/DiffView.tsx
- * Placeholder for the side-by-side diff/code review view.
+ * Placeholder code diff / PR review view.
  * Shown when activeView is 'diff'.
  */
-import { GitCompare } from 'lucide-react';
-import { useAppStore } from '../stores/appStore';
+import { ArrowLeft, GitCompare } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useAppStore } from '@/stores/appStore';
 
 /**
- * Diff view placeholder with a two-column fake diff layout.
+ * Diff view placeholder with back button.
  */
 export function DiffView() {
-  const { setActiveView, activeSuggestion } = useAppStore();
-
-  const diffLines = [
-    { type: 'context', text: '  const handler = async (req, res) => {' },
-    { type: 'removed', text: '-   const data = await fetchData(req.body);' },
-    { type: 'added', text: '+   const data = await fetchData(req.body, { timeout: 5000 });' },
-    { type: 'context', text: '    if (!data) {' },
-    { type: 'removed', text: '-     return res.status(404).json({ error: "not found" });' },
-    { type: 'added', text: '+     return res.status(404).json({ error: "Not found", code: 404 });' },
-    { type: 'context', text: '    }' },
-  ];
-
-  const lineColors: Record<string, string> = {
-    context: 'transparent',
-    removed: 'rgba(239, 68, 68, 0.12)',
-    added: 'rgba(34, 197, 94, 0.12)',
-  };
-
-  const textColors: Record<string, string> = {
-    context: 'var(--text-secondary)',
-    removed: '#ef4444',
-    added: '#22c55e',
-  };
+  const { setActiveView } = useAppStore();
 
   return (
-    <div className="flex flex-col items-center justify-center flex-1 gap-4 px-6">
-      <div
-        className="w-14 h-14 rounded-2xl flex items-center justify-center"
-        style={{ background: 'var(--surface-elevated)' }}
-      >
-        <GitCompare size={24} strokeWidth={1.5} style={{ color: 'var(--accent)' }} />
-      </div>
-      <div className="text-center">
-        <h2 style={{ color: 'var(--text-primary)', fontSize: '18px', fontWeight: 500 }}>
-          Diff View
-        </h2>
-        {activeSuggestion && (
-          <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '4px' }}>
-            {activeSuggestion.title}
-          </p>
-        )}
-      </div>
-
-      {/* Fake diff block */}
-      <div
-        className="w-full rounded-xl overflow-hidden font-mono"
-        style={{
-          maxWidth: '640px',
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          fontSize: '11px',
-        }}
-      >
-        {/* File header */}
-        <div
-          className="px-4 py-2"
-          style={{
-            background: 'var(--surface-elevated)',
-            borderBottom: '1px solid var(--border)',
-            color: 'var(--text-muted)',
-            fontSize: '11px',
-          }}
+    <div className="flex flex-col w-full h-full">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-800/60">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="w-7 h-7 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+          onClick={() => setActiveView('home')}
         >
-          src/api/handler.ts
-        </div>
-        {diffLines.map((line, i) => (
-          <div
-            key={i}
-            className="px-4 py-0.5"
-            style={{ background: lineColors[line.type], color: textColors[line.type] }}
-          >
-            {line.text}
-          </div>
-        ))}
+          <ArrowLeft size={15} strokeWidth={1.5} />
+        </Button>
+        <h2 className="text-sm font-medium text-zinc-200">Code Review</h2>
       </div>
 
-      <button
-        onClick={() => setActiveView('welcome')}
-        className="px-4 py-2 rounded-lg text-sm cursor-pointer transition-all duration-150"
-        style={{
-          background: 'var(--surface-elevated)',
-          color: 'var(--text-secondary)',
-          border: '1px solid var(--border-strong)',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
-        }}
-      >
-        - Back to Home
-      </button>
+      <div className="flex flex-col items-center justify-center flex-1 gap-4">
+        <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-zinc-800">
+          <GitCompare size={20} strokeWidth={1.5} style={{ color: 'var(--accent)' }} />
+        </div>
+        <p className="text-sm text-zinc-500">Diff viewer - coming soon</p>
+      </div>
     </div>
   );
 }

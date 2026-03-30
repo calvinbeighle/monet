@@ -1,68 +1,70 @@
 /**
  * App.tsx
  * Root layout component for the Monet application.
- * Renders the sidebar, top bar, and the active view in a full-screen flex layout.
+ * Renders the fixed TopBar, slide-in SidebarSheet, and the active view.
+ * View switching is driven by the Zustand store's activeView state.
  */
-import { AnimatePresence, motion } from 'framer-motion';
-import { Sidebar } from './components/Sidebar';
-import { TopBar } from './components/TopBar';
-import { WelcomeScreen } from './components/WelcomeScreen';
-import { ChatView } from './views/ChatView';
-import { TinderView } from './views/TinderView';
-import { DiffView } from './views/DiffView';
-import { WhiteboardView } from './views/WhiteboardView';
-import { useAppStore } from './stores/appStore';
+import { useState, useEffect } from 'react';
+import { TopBar } from '@/components/TopBar';
+import { SidebarSheet } from '@/components/SidebarSheet';
+import { HomeView } from '@/views/HomeView';
+import { MonitorView } from '@/views/MonitorView';
+import { ChatView } from '@/views/ChatView';
+import { TinderView } from '@/views/TinderView';
+import { DiffView } from '@/views/DiffView';
+import { WhiteboardView } from '@/views/WhiteboardView';
+import { useAppStore } from '@/stores/appStore';
+import { AiLoader } from '@/components/ui/ai-loader';
+import type { ActiveView } from '@/types';
 
-/** Maps active view name to the corresponding component */
-function ActiveView() {
+/** Map of view names to their components */
+const VIEW_MAP: Record<ActiveView, React.ReactNode> = {
+  home: <HomeView />,
+  monitor: <MonitorView />,
+  chat: <ChatView />,
+  tinder: <TinderView />,
+  diff: <DiffView />,
+  whiteboard: <WhiteboardView />,
+};
+
+/**
+ * Renders the currently active view based on the store state.
+ */
+function ActiveViewRenderer() {
   const { activeView } = useAppStore();
-
-  const viewComponents: Record<string, React.ReactNode> = {
-    welcome: <WelcomeScreen />,
-    chat: <ChatView />,
-    tinder: <TinderView />,
-    diff: <DiffView />,
-    whiteboard: <WhiteboardView />,
-  };
-
-  return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={activeView}
-        className="flex flex-col flex-1 w-full h-full overflow-hidden"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.2, ease: 'easeOut' }}
-      >
-        {viewComponents[activeView] ?? <WelcomeScreen />}
-      </motion.div>
-    </AnimatePresence>
-  );
+  return <>{VIEW_MAP[activeView] ?? <HomeView />}</>;
 }
 
 /**
- * Root App component. Lays out the sidebar on the left and the main content
- * area on the right, with a TopBar spanning the full width.
+ * Root App component. Fixed TopBar at the top, Sheet sidebar overlay,
+ * and main content area that fills the remaining space below the bar.
  */
 function App() {
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 2500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (loading) {
+    return <AiLoader text="monet" size={200} />;
+  }
+
   return (
-    <div
-      className="flex w-full h-full overflow-hidden"
-      style={{ background: 'var(--bg)' }}
-    >
-      {/* Sidebar - animates in/out */}
-      <Sidebar />
+    <div className="w-full h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
+      {/* Fixed 48px top bar */}
+      <TopBar />
 
-      {/* Main content area */}
-      <div className="flex flex-col flex-1 min-w-0 relative" style={{ background: 'var(--bg)' }}>
-        {/* Top navigation bar - absolutely positioned to span full width within the main area */}
-        <TopBar />
+      {/* Sheet sidebar - overlays from left */}
+      <SidebarSheet />
 
-        {/* Content below the top bar */}
-        <div className="flex flex-col flex-1 overflow-hidden" style={{ paddingTop: '48px' }}>
-          <ActiveView />
-        </div>
+      {/* Main content - padded top to clear the fixed bar */}
+      <div
+        className="flex flex-col w-full h-full overflow-hidden"
+        style={{ paddingTop: '48px' }}
+      >
+        <ActiveViewRenderer />
       </div>
     </div>
   );
