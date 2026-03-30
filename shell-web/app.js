@@ -791,13 +791,36 @@ function extractTinderCards(raw, hint) {
     raw.forEach(function(item) {
       if (!item || typeof item !== "object") return;
       var cardType = inferCardType(item, hint);
+      /* Extract subject from messageText if not a top-level field (Composio format) */
+      var title = item.subject || item.title || item.name || "";
+      if (!title && item.messageText) {
+        /* Try to extract subject from email text - often first line or "Subject: X" */
+        var subMatch = item.messageText.match(/Subject:\s*(.+)/i);
+        if (subMatch) { title = subMatch[1].trim(); }
+        else {
+          /* Use first meaningful line as title */
+          var lines = item.messageText.split(/[\r\n]+/).filter(function(l) { return l.trim().length > 3; });
+          title = lines[0] ? lines[0].trim().substring(0, 80) : "Email";
+        }
+      }
+      if (!title) title = "Item";
+      /* Build subtitle from sender fields (Composio uses various formats) */
+      var subtitle = buildCardSubtitle(item, cardType);
+      if (!subtitle && item.sender) subtitle = item.sender;
+      if (!subtitle && item.from) subtitle = typeof item.from === "object" ? (item.from.name || item.from.email || "") : item.from;
+      /* Body: use snippet, messageText, or body */
+      var body = item.snippet || item.body || item.description || item.content || "";
+      if (!body && item.messageText) {
+        body = item.messageText.substring(0, 500);
+      }
       cards.push({
-        title:     item.subject || item.title || item.name || item.sender || "Item",
-        subtitle:  buildCardSubtitle(item, cardType),
-        body:      item.snippet || item.body || item.description || item.content || "",
+        title:     title,
+        subtitle:  subtitle,
+        body:      body,
         label:     cardTypeLabel(cardType),
         cardType:  cardType,
-        action_id: item.id || item.action_id || null,
+        action_id: item.id || item.action_id || item.messageId || null,
+        emailId:   item.messageId || item.id || item.action_id || null,
         metadata:  item,
       });
     });
@@ -1432,15 +1455,25 @@ function handleTinderToolResult(toolName, result) {
   var isDraft = /draft/i.test(toolName);
   if (isDraft) {
     var draftText = extractDraftText(result);
+    /* If no draft text in result, use the body from the tool_call input we tracked */
+    if (!draftText && state._lastDraftBody) {
+      draftText = state._lastDraftBody;
+    }
     if (draftText) {
       /*
        * Try to find which email this draft belongs to.
-       * The result may carry an email_id, message_id, or thread_id field.
+       * Check result fields AND the tracked reply_to_id from the tool_call event.
        */
       var emailId = null;
       if (result && typeof result === "object") {
-        emailId = result.email_id || result.message_id || result.thread_id || result.id || null;
+        emailId = result.email_id || result.message_id || result.thread_id || result.reply_to_id || result.id || null;
       }
+      if (!emailId && state._lastDraftReplyToId) {
+        emailId = state._lastDraftReplyToId;
+      }
+      /* Clear tracked state */
+      state._lastDraftReplyToId = null;
+      state._lastDraftBody = "";
 
       if (emailId) {
         /* Store the draft keyed by email ID for later lookup */
@@ -1638,6 +1671,14 @@ function handleAgentEvent(data) {
           data.tool_name || data.name || "tool",
           data.tool_input || data.input || {}
         );
+      }
+      /* Track draft_email tool calls so we can match reply_to_id to cards */
+      if (state.currentPattern === "tinder" && /draft/i.test(data.tool_name || "")) {
+        var inp = data.tool_input || data.input || {};
+        if (inp.reply_to_id) {
+          state._lastDraftReplyToId = inp.reply_to_id;
+          state._lastDraftBody = inp.body || "";
+        }
       }
       break;
 
