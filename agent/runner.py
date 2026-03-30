@@ -248,6 +248,9 @@ class AgentRunner:
             for t in agent.tools
         ]
 
+        # Collect outputs for the done event
+        stream_outputs: list[dict] = []
+
         for _round in range(MAX_TOOL_ROUNDS):
             # Stream the Claude response
             collected_content = []
@@ -306,6 +309,19 @@ class AgentRunner:
                 final_message = stream.get_final_message()
                 collected_content = final_message.content
 
+            # Collect text outputs for the done event
+            text_parts = [
+                block.text
+                for block in collected_content
+                if hasattr(block, "type")
+                and block.type == "text"
+                and hasattr(block, "text")
+            ]
+            if text_parts:
+                stream_outputs.append(
+                    {"content": "\n".join(text_parts), "status": "complete"}
+                )
+
             if not tool_use_blocks:
                 history.append({"role": "assistant", "content": collected_content})
                 self._persist_message(sid, "assistant", collected_content)
@@ -355,4 +371,12 @@ class AgentRunner:
             history.append({"role": "user", "content": tool_results})
             self._persist_message(sid, "user", tool_results)
 
-        yield AgentEvent(type="done")
+        yield AgentEvent(
+            type="done",
+            metadata={
+                "agent": routed.agent,
+                "ui_pattern": routed.ui_pattern,
+                "session_id": sid,
+                "outputs": stream_outputs,
+            },
+        )
