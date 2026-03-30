@@ -92,6 +92,7 @@ class IntentResponse(BaseModel):
     agent: AgentType = Field(description="Agent selected to handle this intent.")
     ui_pattern: UIPattern = Field(description="UI rendering hint for the frontend.")
     message: str = Field(description="Human-readable acknowledgement.")
+    original_intent: str = Field(description="The original intent text submitted by the user.")
 
 
 class ApprovalRequest(BaseModel):
