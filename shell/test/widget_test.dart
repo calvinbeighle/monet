@@ -300,6 +300,100 @@ void main() {
         matching: find.byType(Center),
       ), findsWidgets);
     });
+
+    testWidgets('renders inline approval card with buttons', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [
+              ChatMessage(
+                content: 'Approve send_email?',
+                isUser: false,
+                isApproval: true,
+                approvalId: 'test-123',
+                toolName: 'send_email',
+                approvalParameters: {'to': 'john@example.com'},
+              ),
+            ],
+            onApprovalDecision: (_, __) {},
+          ),
+        ),
+      ));
+      expect(find.text('send email'), findsOneWidget);
+      expect(find.text('Approve'), findsOneWidget);
+      expect(find.text('Reject'), findsOneWidget);
+      expect(find.byIcon(Icons.shield_outlined), findsOneWidget);
+    });
+
+    testWidgets('inline approval card calls onApprovalDecision', (tester) async {
+      String? decidedId;
+      bool? decidedApproved;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [
+              ChatMessage(
+                content: 'Approve merge_pr?',
+                isUser: false,
+                isApproval: true,
+                approvalId: 'test-456',
+                toolName: 'merge_pr',
+              ),
+            ],
+            onApprovalDecision: (id, approved) {
+              decidedId = id;
+              decidedApproved = approved;
+            },
+          ),
+        ),
+      ));
+      await tester.tap(find.text('Approve'));
+      expect(decidedId, 'test-456');
+      expect(decidedApproved, true);
+    });
+
+    testWidgets('resolved approval card shows status', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [
+              ChatMessage(
+                content: 'Approve send_email?',
+                isUser: false,
+                isApproval: true,
+                approvalId: 'test-789',
+                toolName: 'send_email',
+                approvalStatus: 'approved',
+              ),
+            ],
+          ),
+        ),
+      ));
+      expect(find.text('Approved'), findsOneWidget);
+      expect(find.text('Approve'), findsNothing);
+      expect(find.text('Reject'), findsNothing);
+    });
+
+    testWidgets('rejected approval card shows status', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ChatPattern(
+            messages: [
+              ChatMessage(
+                content: 'Approve send_email?',
+                isUser: false,
+                isApproval: true,
+                approvalId: 'test-101',
+                toolName: 'send_email',
+                approvalStatus: 'rejected',
+              ),
+            ],
+          ),
+        ),
+      ));
+      expect(find.text('Rejected'), findsOneWidget);
+      expect(find.byIcon(Icons.cancel), findsOneWidget);
+    });
   });
 
   // -- DiffPattern tests --

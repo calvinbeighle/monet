@@ -123,7 +123,33 @@ class MonetShellState extends State<MonetShell> {
             final approvalId = event.metadata['approval_id'] as String? ?? '';
             final toolName = event.data;
             final parameters = event.metadata['parameters'] as Map<String, dynamic>? ?? {};
-            _showApprovalDialog(approvalId, toolName, parameters);
+            // In chat mode, show inline approval card; otherwise show dialog
+            if (_activePattern == 'chat' || _activePattern == null) {
+              setState(() {
+                // Add any accumulated text before the approval card
+                if (streamedContent.isNotEmpty) {
+                  _chatMessages.add(
+                    ChatMessage(content: streamedContent, isUser: false),
+                  );
+                  streamedContent = '';
+                }
+                _chatMessages.add(ChatMessage(
+                  content: 'Approve $toolName?',
+                  isUser: false,
+                  isApproval: true,
+                  approvalId: approvalId,
+                  toolName: toolName,
+                  approvalParameters: parameters,
+                ));
+              });
+              _pendingApprovals.add(_PendingApproval(
+                id: approvalId,
+                toolName: toolName,
+                parameters: parameters,
+              ));
+            } else {
+              _showApprovalDialog(approvalId, toolName, parameters);
+            }
           case 'done':
             setState(() {
               _chatStreaming = false;
@@ -259,6 +285,25 @@ class MonetShellState extends State<MonetShell> {
     _pendingApprovals.clear();
   }
 
+  void _handleChatApprovalDecision(String approvalId, bool approved) {
+    final client = context.read<AgentClient>();
+    if (approved) {
+      client.approve(approvalId);
+    } else {
+      client.reject(approvalId);
+    }
+    // Update the message status
+    setState(() {
+      for (final msg in _chatMessages) {
+        if (msg.isApproval && msg.approvalId == approvalId) {
+          msg.approvalStatus = approved ? 'approved' : 'rejected';
+          break;
+        }
+      }
+    });
+    _pendingApprovals.removeWhere((a) => a.id == approvalId);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -356,6 +401,7 @@ class MonetShellState extends State<MonetShell> {
           isStreaming: _chatStreaming,
           onSend: _submitIntent,
           onSuggestionTap: _submitIntent,
+          onApprovalDecision: _handleChatApprovalDecision,
         );
     }
   }

@@ -4,6 +4,11 @@ class ChatMessage {
   final String content;
   final bool isUser;
   final bool isSystem;
+  final bool isApproval;
+  final String? approvalId;
+  final String? toolName;
+  final Map<String, dynamic> approvalParameters;
+  String approvalStatus; // 'pending', 'approved', 'rejected'
   final DateTime timestamp;
   final String? id;
 
@@ -11,6 +16,11 @@ class ChatMessage {
     required this.content,
     required this.isUser,
     this.isSystem = false,
+    this.isApproval = false,
+    this.approvalId,
+    this.toolName,
+    this.approvalParameters = const {},
+    this.approvalStatus = 'pending',
     DateTime? timestamp,
     this.id,
   }) : timestamp = timestamp ?? DateTime.now();
@@ -22,6 +32,7 @@ class ChatPattern extends StatefulWidget {
   final bool isStreaming;
   final void Function(String message)? onSend;
   final void Function(String suggestion)? onSuggestionTap;
+  final void Function(String approvalId, bool approved)? onApprovalDecision;
 
   const ChatPattern({
     super.key,
@@ -30,6 +41,7 @@ class ChatPattern extends StatefulWidget {
     this.isStreaming = false,
     this.onSend,
     this.onSuggestionTap,
+    this.onApprovalDecision,
   });
 
   @override
@@ -98,6 +110,9 @@ class ChatPatternState extends State<ChatPattern> {
   }
 
   Widget _buildBubble(ChatMessage message) {
+    if (message.isApproval) {
+      return _buildApprovalCard(message);
+    }
     if (message.isSystem) {
       return _buildSystemMessage(message);
     }
@@ -165,6 +180,141 @@ class ChatPatternState extends State<ChatPattern> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildApprovalCard(ChatMessage message) {
+    final isPending = message.approvalStatus == 'pending';
+    final isApproved = message.approvalStatus == 'approved';
+    final displayName = (message.toolName ?? 'action').replaceAll('_', ' ');
+    final params = message.approvalParameters;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.75,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xFF12121A),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isPending
+                    ? const Color(0xFF7C6EF0).withValues(alpha: 0.3)
+                    : isApproved
+                        ? Colors.green.withValues(alpha: 0.3)
+                        : Colors.red.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.shield_outlined,
+                        size: 16,
+                        color: const Color(0xFF7C6EF0),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          color: Color(0xFF7C6EF0),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (params.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text(
+                      params.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        height: 1.4,
+                      ),
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                if (isPending)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            if (message.approvalId != null) {
+                              widget.onApprovalDecision?.call(
+                                message.approvalId!,
+                                false,
+                              );
+                            }
+                          },
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.red.shade300,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                          ),
+                          child: const Text('Reject'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () {
+                            if (message.approvalId != null) {
+                              widget.onApprovalDecision?.call(
+                                message.approvalId!,
+                                true,
+                              );
+                            }
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.green.shade700,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                          ),
+                          child: const Text('Approve'),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isApproved ? Icons.check_circle : Icons.cancel,
+                          size: 14,
+                          color: isApproved ? Colors.green : Colors.red.shade300,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isApproved ? 'Approved' : 'Rejected',
+                          style: TextStyle(
+                            color: isApproved ? Colors.green : Colors.red.shade300,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
