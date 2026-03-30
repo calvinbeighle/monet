@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete - 153 passing tests (111 Python + 42 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete - 204 passing tests (153 Python + 51 Flutter).**
 
 ---
 
@@ -190,12 +190,12 @@ Debian VM boots directly into Monet.
 
 ### Task 20: First-Boot Onboarding and Login
 
-- [ ] Create `agent/auth.py` - SQLite user store with bcrypt/pbkdf2 password hashing
-- [ ] Create `agent/tests/test_auth.py`
-- [ ] Create `shell/lib/ui/onboarding.dart` - first-boot: create user + connect tools
-- [ ] Lock screen on subsequent boots
+- [x] Create `agent/auth.py` - SQLite user store with bcrypt/pbkdf2 password hashing
+- [x] Create `agent/tests/test_auth.py`
+- [x] Create `shell/lib/ui/onboarding.dart` - first-boot: create user + connect tools
+- [ ] Lock screen on subsequent boots (partially done - login form exists but no session persistence across app restarts)
 - [ ] Session persistence until explicit logout
-- [ ] Auth API routes in FastAPI
+- [x] Auth API routes in FastAPI
 
 ### Task 21: System Integration
 
@@ -256,6 +256,13 @@ Debian VM boots directly into Monet.
 
 - **Real-time token streaming fixed:** Tokens now render in the chat UI as they arrive instead of buffering until the `done` event. `ChatMessage.content` is now mutable. `MonetShellState` tracks `_streamingMessageIndex` - on first token, creates a new assistant message; on subsequent tokens, appends to it in-place with `setState()`. Typing indicator (bouncing dots) only shows before the first token arrives, then disappears as the streaming message takes over. Chat scroll now triggers continuously during streaming.
 - **Test count:** 176 total (129 Python + 47 Flutter), all passing.
+
+### Implementation Notes (2026-03-30) - Batch 5
+
+- **Auth system implemented:** `agent/auth.py` with SQLite-backed AuthStore using PBKDF2-HMAC-SHA256 (100k iterations, 16-byte random salt). Three API routes: GET /api/auth/status (first-boot detection), POST /api/auth/create, POST /api/auth/login.
+- **Onboarding UI implemented:** `shell/lib/ui/onboarding.dart` with automatic first-boot detection. Shows create account form when no users exist, login form when users exist. Falls back to login with error message when backend is unreachable.
+- **MonetApp now gates on auth:** Shell is only shown after successful authentication. OnboardingScreen renders first, calls /api/auth/status to decide between create-account and login flows.
+- **Test count:** 204 total (153 Python + 51 Flutter), all passing.
 
 ---
 
