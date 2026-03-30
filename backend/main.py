@@ -932,6 +932,58 @@ def strip_html(html: str) -> str:
     return text.strip()[:500]
 
 
+def _strip_quoted_threads(text: str) -> str:
+    """Remove quoted reply chains from email body. Keep only the latest message."""
+    # Cut at "On ... wrote:" pattern (common in Gmail replies)
+    cut = re.split(r'\bOn\s+\w{3},\s+\w{3}\s+\d+', text, maxsplit=1)
+    text = cut[0].strip() if cut else text
+    # Cut at "---------- Forwarded message"
+    cut = text.split("---------- Forwarded message", 1)
+    text = cut[0].strip()
+    # Cut at "> " quoted lines (3+ consecutive quoted lines)
+    lines = text.split("\n")
+    clean_lines = []
+    quote_count = 0
+    for line in lines:
+        if line.strip().startswith(">"):
+            quote_count += 1
+            if quote_count >= 2:
+                break
+        else:
+            quote_count = 0
+            clean_lines.append(line)
+    text = "\n".join(clean_lines).strip()
+    # Remove [No reply needed] markers from previous agent runs
+    text = re.sub(r'\[No reply needed[^\]]*\]', '', text).strip()
+    # Remove invisible unicode spacers
+    text = re.sub(r'[͏\u200b\u200c\u200d\ufeff]', '', text)
+    return text[:500] if text else ""
+
+
+# Senders/subjects to always skip (newsletters, notifications, no-reply)
+_SKIP_SENDERS = {"noreply", "no-reply", "notifications", "mailer-daemon",
+                  "donotreply", "accounts.google", "notify", "news@", "team@mail",
+                  "marketing", "updates@", "digest@"}
+_SKIP_SUBJECTS = {"security alert", "password reset", "verify your", "confirm your",
+                   "sign-in", "unsubscribe", "newsletter", "weekly digest", "notification"}
+
+
+def _should_skip_email(sender: str, subject: str, user_email: str = "") -> bool:
+    """Return True if this email should be filtered out (not actionable)."""
+    sender_lower = sender.lower()
+    subject_lower = subject.lower()
+    # Skip known no-reply senders
+    if any(s in sender_lower for s in _SKIP_SENDERS):
+        return True
+    # Skip known notification subjects
+    if any(s in subject_lower for s in _SKIP_SUBJECTS):
+        return True
+    # Skip self-sent emails
+    if user_email and user_email.lower() in sender_lower:
+        return True
+    return False
+
+
 def _extract_emails(raw: Any) -> list[dict[str, Any]]:
     """
     Extracts slim, normalised email records from a raw Composio GMAIL_FETCH_EMAILS response.
@@ -955,7 +1007,15 @@ def _extract_emails(raw: Any) -> list[dict[str, Any]]:
         messages = raw
 
     result = []
-    for m in messages[:5]:
+    for m in messages[:10]:  # Fetch more, filter down
+        sender = m.get("sender") or m.get("from") or ""
+        subject = m.get("subject") or "(no subject)"
+        to_addr = m.get("to") or ""
+
+        # Skip non-actionable emails
+        if _should_skip_email(sender, subject, to_addr):
+            continue
+
         raw_body = (
             m.get("messageText")
             or m.get("body")
@@ -963,14 +1023,24 @@ def _extract_emails(raw: Any) -> list[dict[str, Any]]:
             or m.get("snippet")
             or ""
         )
+        # Strip HTML then strip quoted threads
+        clean_body = _strip_quoted_threads(strip_html(raw_body))
+
+        if not clean_body or len(clean_body) < 10:
+            continue  # Skip if body is effectively empty after cleaning
+
         result.append({
             "id": m.get("messageId") or m.get("id") or "",
-            "sender": m.get("sender") or m.get("from") or "",
-            "subject": m.get("subject") or "(no subject)",
-            "body": strip_html(raw_body),
+            "sender": sender,
+            "subject": subject,
+            "body": clean_body,
             "timestamp": m.get("messageTimestamp") or m.get("date") or "",
-            "to": m.get("to") or "",
+            "to": to_addr,
         })
+
+        if len(result) >= 5:
+            break
+
     return result
 
 

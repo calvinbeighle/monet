@@ -5,7 +5,7 @@
  * - Pure black/very dark background (#111111)
  * - Very subtle border: 1px rgba(255,255,255,0.06)
  * - NO box shadows, NO glows, NO colored rings
- * - Compact layout: emoji avatar left, name + mood center, badge right
+ * - Compact layout: character avatar top, name + character name center, badge bottom
  * - Violet accent only for active decision badge
  * - Clickable when agent has pending decisions
  *
@@ -15,6 +15,19 @@ import { motion } from 'framer-motion';
 import { useAppStore } from '@/stores/appStore';
 import type { Agent } from '@/types';
 import { getAgentAvatar } from './agent-avatars';
+
+/**
+ * Returns the character name for a given agent ID.
+ * Each agent has a personified name that makes them feel like team members.
+ */
+function getCharacterName(agentId: string): string {
+  const names: Record<string, string> = {
+    email: 'mira',
+    code: 'kai',
+    planning: 'nova',
+  };
+  return names[agentId] ?? '';
+}
 
 interface AgentCardProps {
   agent: Agent;
@@ -34,6 +47,7 @@ export function AgentCard({ agent }: AgentCardProps) {
   const isIdle = agent.status === 'idle' && !hasDecisions;
 
   const AvatarComponent = getAgentAvatar(agent.id);
+  const characterName = getCharacterName(agent.id);
 
   function handleClick() {
     if (!isClickable) return;
@@ -84,12 +98,29 @@ export function AgentCard({ agent }: AgentCardProps) {
             color: '#ffffff',
             textAlign: 'center',
             letterSpacing: '-0.01em',
-            marginBottom: '4px',
+            marginBottom: '2px',
             lineHeight: 1.3,
           }}
         >
           {agent.name}
         </span>
+
+        {/* Character name - personified team member identity */}
+        {characterName && (
+          <span
+            style={{
+              fontSize: '11px',
+              color: 'rgba(255,255,255,0.3)',
+              textAlign: 'center',
+              letterSpacing: '0.06em',
+              marginBottom: '4px',
+              lineHeight: 1.2,
+              fontWeight: 400,
+            }}
+          >
+            {characterName}
+          </span>
+        )}
 
         {/* Mood phrase */}
         <span
