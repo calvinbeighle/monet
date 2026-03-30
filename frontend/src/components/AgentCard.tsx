@@ -90,50 +90,58 @@ export function AgentCard({ agent }: AgentCardProps) {
           <AvatarComponent status={agent.status} hasDecisions={hasDecisions} />
         </div>
 
-        {/* Agent name */}
-        <span
-          style={{
-            fontSize: '13px',
-            fontWeight: 500,
-            color: '#ffffff',
-            textAlign: 'center',
-            letterSpacing: '-0.01em',
-            marginBottom: '2px',
-            lineHeight: 1.3,
-          }}
-        >
-          {agent.name}
-        </span>
-
-        {/* Character name - personified team member identity */}
+        {/* Character name - primary identity */}
         {characterName && (
           <span
             style={{
-              fontSize: '11px',
-              color: 'rgba(255,255,255,0.3)',
+              fontSize: '15px',
+              fontWeight: 500,
+              color: '#ffffff',
               textAlign: 'center',
-              letterSpacing: '0.06em',
-              marginBottom: '4px',
-              lineHeight: 1.2,
-              fontWeight: 400,
+              letterSpacing: '-0.01em',
+              marginBottom: '2px',
+              lineHeight: 1.3,
+              textTransform: 'capitalize',
             }}
           >
             {characterName}
           </span>
         )}
 
-        {/* Mood phrase */}
+        {/* Role - what this agent does */}
+        <span
+          style={{
+            fontSize: '11px',
+            color: 'rgba(255,255,255,0.35)',
+            textAlign: 'center',
+            letterSpacing: '0.02em',
+            marginBottom: '6px',
+            lineHeight: 1.2,
+          }}
+        >
+          {agent.name}
+        </span>
+
+        {/* Granular status */}
         <span
           style={{
             fontSize: '12px',
-            fontStyle: 'italic',
-            color: agent.status === 'error' ? '#ef4444' : 'rgba(255,255,255,0.4)',
+            color: agent.status === 'error'
+              ? '#ef4444'
+              : isRunning
+                ? '#a78bfa'
+                : hasDecisions
+                  ? '#8b5cf6'
+                  : 'rgba(255,255,255,0.3)',
             textAlign: 'center',
             lineHeight: 1.4,
             marginBottom: hasDecisions || (isRunning && agent.progress !== undefined) ? '12px' : '0',
           }}
         >
-          &ldquo;{agent.mood}&rdquo;
+          {agent.status === 'error' && 'Connection lost'}
+          {isRunning && (agent.currentStep || agent.mood || 'Working...')}
+          {agent.status === 'idle' && hasDecisions && `${agent.decisionCount} items ready`}
+          {isIdle && !hasDecisions && (agent.lastRun ? `Done - ${agent.lastRun}` : 'Standing by')}
         </span>
 
         {/* Progress bar - running agents only */}
