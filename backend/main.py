@@ -782,8 +782,9 @@ def strip_html(html: str) -> str:
     """
     Strip HTML tags and decode entities to get plain text suitable for display.
 
-    Removes all HTML markup, collapses whitespace, decodes common HTML entities,
-    and strips URLs. Caps output at 500 characters.
+    Removes style/script blocks first (so CSS/JS text is not included),
+    then strips all HTML markup, collapses whitespace, decodes common HTML
+    entities, and strips URLs. Caps output at 500 characters.
 
     Args:
         html: Raw HTML string from Composio/Gmail email body.
@@ -793,8 +794,11 @@ def strip_html(html: str) -> str:
     """
     if not html:
         return ""
+    # Remove <style>...</style> and <script>...</script> blocks (including content)
+    text = re.sub(r'<style[^>]*>.*?</style>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
     # Remove HTML tags
-    text = re.sub(r'<[^>]+>', ' ', html)
+    text = re.sub(r'<[^>]+>', ' ', text)
     # Remove extra whitespace
     text = re.sub(r'\s+', ' ', text)
     # Decode common HTML entities

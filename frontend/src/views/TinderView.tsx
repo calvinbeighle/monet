@@ -42,16 +42,20 @@ interface EmailCard {
 
 /**
  * Strips HTML tags from a string using the browser's DOM parser.
- * Used as a frontend safety net in case any HTML slips through from the backend.
+ * Removes style and script elements first so their content is not included
+ * in the resulting text. Used as a frontend safety net in case any HTML
+ * slips through from the backend.
  *
  * @param html - Raw string that may contain HTML markup
- * @returns Plain text with all HTML removed
+ * @returns Plain text with all HTML and style/script content removed
  */
 function stripHtml(html: string): string {
   if (!html) return '';
   const div = document.createElement('div');
   div.innerHTML = html;
-  return div.textContent || div.innerText || '';
+  // Remove style and script elements so their content is not included
+  div.querySelectorAll('style, script').forEach((el) => el.remove());
+  return (div.textContent || div.innerText || '').replace(/\s+/g, ' ').trim();
 }
 
 /**

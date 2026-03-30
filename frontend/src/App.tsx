@@ -13,7 +13,6 @@ import { TinderView } from '@/views/TinderView';
 import { DiffView } from '@/views/DiffView';
 import { WhiteboardView } from '@/views/WhiteboardView';
 import { useAppStore } from '@/stores/appStore';
-import { AiLoader } from '@/components/ui/ai-loader';
 import type { ActiveView } from '@/types';
 
 /** Map of view names to their React components */
@@ -59,33 +58,16 @@ function ActiveViewRenderer() {
  * cards show live decision counts without requiring manual refresh.
  */
 function App() {
-  const { isLoading, startPolling } = useAppStore();
+  const { startPolling } = useAppStore();
 
   useEffect(() => {
-    // Start polling - returns cleanup function that clears the interval
     const stopPolling = startPolling();
     return stopPolling;
   }, [startPolling]);
 
   return (
-    <div className="w-full h-full overflow-hidden bg-zinc-950">
+    <div className="w-full h-full overflow-hidden" style={{ background: '#000000' }}>
       <ActiveViewRenderer />
-
-      {/* Loading overlay - only shown when actually waiting for something */}
-      <AnimatePresence>
-        {isLoading && (
-          <motion.div
-            key="loader"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-xl"
-          >
-            <AiLoader text="monet" size={160} />
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
