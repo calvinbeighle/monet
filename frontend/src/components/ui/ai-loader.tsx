@@ -9,7 +9,7 @@ export const AiLoader: React.FC<LoaderProps> = ({ size = 180, text = "monet" }) 
   const letters = text.split("");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-b from-[#1a1a2e] via-[#0f0f1a] to-black">
+    <div className="flex items-center justify-center">
       <div
         className="relative flex items-center justify-center font-inter select-none"
         style={{ width: size, height: size }}

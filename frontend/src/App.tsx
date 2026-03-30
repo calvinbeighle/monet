@@ -1,14 +1,12 @@
 /**
  * App.tsx
  * Root layout component for the Monet application.
- * Renders the fixed TopBar, slide-in SidebarSheet, and the active view.
- * View switching is driven by the Zustand store's activeView state.
+ * No sidebar, no top bar, no fake loading screen.
+ * Just renders the active view full-screen.
+ * AiLoader is an overlay shown only when isLoading is true in the store.
  */
-import { useState, useEffect } from 'react';
-import { TopBar } from '@/components/TopBar';
-import { SidebarSheet } from '@/components/SidebarSheet';
+import { AnimatePresence, motion } from 'framer-motion';
 import { HomeView } from '@/views/HomeView';
-import { MonitorView } from '@/views/MonitorView';
 import { ChatView } from '@/views/ChatView';
 import { TinderView } from '@/views/TinderView';
 import { DiffView } from '@/views/DiffView';
@@ -17,10 +15,10 @@ import { useAppStore } from '@/stores/appStore';
 import { AiLoader } from '@/components/ui/ai-loader';
 import type { ActiveView } from '@/types';
 
-/** Map of view names to their components */
-const VIEW_MAP: Record<ActiveView, React.ReactNode> = {
+/** Map of view names to their React components */
+const VIEW_COMPONENTS: Record<ActiveView, React.ReactNode> = {
   home: <HomeView />,
-  monitor: <MonitorView />,
+  monitor: <HomeView />, // monitor is folded into home (agent cards on home screen)
   chat: <ChatView />,
   tinder: <TinderView />,
   diff: <DiffView />,
@@ -29,43 +27,56 @@ const VIEW_MAP: Record<ActiveView, React.ReactNode> = {
 
 /**
  * Renders the currently active view based on the store state.
+ * Wrapped in AnimatePresence for smooth view transitions.
  */
 function ActiveViewRenderer() {
   const { activeView } = useAppStore();
-  return <>{VIEW_MAP[activeView] ?? <HomeView />}</>;
+  const content = VIEW_COMPONENTS[activeView] ?? <HomeView />;
+
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={activeView}
+        className="w-full h-full"
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -6 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+      >
+        {content}
+      </motion.div>
+    </AnimatePresence>
+  );
 }
 
 /**
- * Root App component. Fixed TopBar at the top, Sheet sidebar overlay,
- * and main content area that fills the remaining space below the bar.
+ * Root App component.
+ * Full-screen view container with an overlay AiLoader that appears
+ * only when isLoading is true in the Zustand store.
  */
 function App() {
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 2500);
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (loading) {
-    return <AiLoader text="monet" size={200} />;
-  }
+  const { isLoading } = useAppStore();
 
   return (
     <div className="w-full h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
-      {/* Fixed 48px top bar */}
-      <TopBar />
+      <ActiveViewRenderer />
 
-      {/* Sheet sidebar - overlays from left */}
-      <SidebarSheet />
-
-      {/* Main content - padded top to clear the fixed bar */}
-      <div
-        className="flex flex-col w-full h-full overflow-hidden"
-        style={{ paddingTop: '48px' }}
-      >
-        <ActiveViewRenderer />
-      </div>
+      {/* Loading overlay - only shown when actually waiting for something */}
+      <AnimatePresence>
+        {isLoading && (
+          <motion.div
+            key="loader"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ background: 'rgba(9,9,11,0.75)', backdropFilter: 'blur(8px)' }}
+          >
+            <AiLoader text="monet" size={160} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

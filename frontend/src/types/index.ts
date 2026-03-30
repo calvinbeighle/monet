@@ -15,6 +15,12 @@ export interface Agent {
   summary?: string;
   /** Progress percentage 0-100 for running agents */
   progress?: number;
+  /** Current step label shown while running, e.g. "reading inbox" */
+  currentStep?: string;
+  /** Number of pending decisions this agent has generated */
+  decisionCount?: number;
+  /** Which decision view to open when clicking this agent */
+  decisionView?: 'tinder' | 'diff' | 'whiteboard' | 'chat';
 }
 
 /** Represents an external service connection */
@@ -29,6 +35,7 @@ export interface Connection {
 /** Represents a pending decision requiring user action */
 export interface Decision {
   id: string;
+  agentId: string;
   title: string;
   summary: string;
   priority: 'urgent' | 'normal';
@@ -52,3 +59,6 @@ export interface ActivityEvent {
 
 /** All possible view identifiers */
 export type ActiveView = 'home' | 'monitor' | 'chat' | 'tinder' | 'diff' | 'whiteboard';
+
+/** Where the command bar is anchored */
+export type CommandBarPosition = 'center' | 'bottom';
