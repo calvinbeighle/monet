@@ -23,7 +23,7 @@ interface AppState {
   submitIntent: (text: string) => void;
 }
 
-/** Initial hardcoded demo agents with decision counts and view routing */
+/** Initial hardcoded demo agents with decision counts, view routing, and personality */
 const INITIAL_AGENTS: Agent[] = [
   {
     id: 'email',
@@ -34,6 +34,8 @@ const INITIAL_AGENTS: Agent[] = [
     currentStep: 'drafting reply',
     decisionCount: 3,
     decisionView: 'tinder',
+    emoji: '🤓',
+    mood: 'Reading through 5 emails...',
   },
   {
     id: 'code',
@@ -41,6 +43,8 @@ const INITIAL_AGENTS: Agent[] = [
     status: 'idle',
     lastRun: '2hr ago',
     decisionCount: 0,
+    emoji: '😎',
+    mood: 'All PRs look good',
   },
   {
     id: 'planning',
@@ -48,6 +52,8 @@ const INITIAL_AGENTS: Agent[] = [
     status: 'idle',
     lastRun: 'Yesterday',
     decisionCount: 0,
+    emoji: '🧘',
+    mood: 'Ready when you are',
   },
 ];
 

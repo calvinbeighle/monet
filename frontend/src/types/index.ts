@@ -26,6 +26,10 @@ export interface Agent {
   decisionCount?: number;
   /** Which decision view to open when clicking this agent */
   decisionView?: 'tinder' | 'diff' | 'whiteboard' | 'chat';
+  /** Emoji avatar that reflects the agent's current mood */
+  emoji: string;
+  /** Short mood phrase shown as speech bubble text */
+  mood: string;
 }
 
 /** Represents an external service connection */

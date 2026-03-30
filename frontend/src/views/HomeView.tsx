@@ -1,11 +1,19 @@
 /**
  * views/HomeView.tsx
  * Main home screen with two layout modes:
- * - Idle (no active agents, no decisions): centered 3D orbit + branding + command bar
- * - Active (agents running or have decisions): agent card row at top, command bar fixed at bottom
  *
- * Uses Framer Motion for the layout transition between modes.
- * AgentOrbit is always visible in the idle layout; hidden in the active layout.
+ * Idle  (no active agents, no decisions):
+ *   - Centered 3D orbit + "monet" branding + command bar, all as one vertically
+ *     centered group with a slight -3vh upward offset.
+ *
+ * Active (any agent running or has decisions):
+ *   - Agent card row centered horizontally
+ *   - Command bar 48px below the cards
+ *   - The whole group is vertically centered with -3vh upward offset
+ *   - NO "ACTIVE AGENTS" label
+ *   - Command bar is NOT fixed - it flows naturally below the cards
+ *
+ * Uses Framer Motion AnimatePresence for the transition between modes.
  */
 import { motion, AnimatePresence } from 'framer-motion';
 import { AgentOrbitWithSuspense } from '@/components/AgentOrbit';
@@ -15,8 +23,7 @@ import { useAppStore } from '@/stores/appStore';
 
 /**
  * HomeView renders the adaptive home screen.
- * When no agents are active, shows the centered orbit + command bar.
- * When agents are active, shows agent cards in a flex row + bottom command bar.
+ * commandBarPosition derives whether agents are active.
  */
 export function HomeView() {
   const { agents, commandBarPosition } = useAppStore();
@@ -27,41 +34,39 @@ export function HomeView() {
     <div className="relative flex flex-col w-full h-full overflow-hidden bg-zinc-950">
       <AnimatePresence mode="wait">
         {isActive ? (
-          /* Active layout - everything centered on screen */
+          /* ------------------------------------------------------------------ */
+          /* Active layout                                                        */
+          /* Cards + command bar as a centered block, slightly above center      */
+          /* ------------------------------------------------------------------ */
           <motion.div
             key="active"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="flex flex-col items-center w-full h-full"
+            className="flex flex-col items-center justify-center w-full h-full"
+            style={{ marginTop: '-3vh' }}
           >
-            {/* Top spacer - pushes content to ~30% from top */}
-            <div className="flex-[2]" />
-
-            {/* Section label */}
-            <p className="text-[11px] uppercase tracking-[0.15em] text-zinc-500 font-medium mb-5">
-              Active Agents
-            </p>
-
-            {/* Agent cards - centered row */}
+            {/* Agent cards row - centered, no wrapping on wide screens */}
             <div className="flex flex-row gap-4 justify-center flex-wrap px-8">
               {agents.map((agent) => (
                 <AgentCard key={agent.id} agent={agent} />
               ))}
             </div>
 
-            {/* Bottom spacer + command bar */}
-            <div className="flex-[3]" />
-
-            <div className="w-full px-8 pb-8 shrink-0">
-              <div className="mx-auto" style={{ maxWidth: '560px' }}>
-                <CommandBar position="center" />
-              </div>
+            {/* Command bar - 48px gap below cards, max 560px wide */}
+            <div
+              className="w-full px-8 shrink-0"
+              style={{ marginTop: '48px', maxWidth: '600px' }}
+            >
+              <CommandBar position="center" />
             </div>
           </motion.div>
         ) : (
-          /* Idle layout - centered orbit + branding + command bar */
+          /* ------------------------------------------------------------------ */
+          /* Idle layout                                                          */
+          /* Orbit + branding + command bar, all vertically centered             */
+          /* ------------------------------------------------------------------ */
           <motion.div
             key="idle"
             initial={{ opacity: 0 }}
@@ -69,7 +74,7 @@ export function HomeView() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
             className="flex flex-col items-center justify-center flex-1 w-full h-full"
-            style={{ marginTop: '-5vh' }}
+            style={{ marginTop: '-3vh' }}
           >
             {/* 3D orbit visualization */}
             <AgentOrbitWithSuspense agents={agents} size={140} />
@@ -97,8 +102,6 @@ export function HomeView() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Bottom command bar removed - now inline in active layout */}
     </div>
   );
 }
