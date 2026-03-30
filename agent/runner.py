@@ -193,10 +193,16 @@ class AgentRunner:
         routed = self.router.route(intent)
         agent = self._resolve_agent(routed.agent)
 
+        sid, history = self._get_or_create_session(session_id)
+
         yield AgentEvent(
             type="routing",
             data=routed.agent,
-            metadata={"ui_pattern": routed.ui_pattern, "agent": routed.agent},
+            metadata={
+                "ui_pattern": routed.ui_pattern,
+                "agent": routed.agent,
+                "session_id": sid,
+            },
         )
 
         if agent is None:
@@ -206,8 +212,6 @@ class AgentRunner:
             )
             yield AgentEvent(type="done")
             return
-
-        sid, history = self._get_or_create_session(session_id)
         history.append({"role": "user", "content": intent})
 
         tools = [

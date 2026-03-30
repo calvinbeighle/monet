@@ -29,10 +29,6 @@ class RunRequest(BaseModel):
     session_id: Optional[str] = None
 
 
-class ApprovalAction(BaseModel):
-    pass
-
-
 @app.get("/api/health")
 def health():
     return {"status": "ok", "version": "0.1.0"}
