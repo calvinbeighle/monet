@@ -288,6 +288,17 @@ class AgentRunner:
             self._persist_message(sid, "user", tool_results)
             create_kwargs["messages"] = history
 
+        # Include planning node data as outputs for whiteboard pattern
+        if hasattr(agent, "_nodes") and routed.ui_pattern == UIPattern.WHITEBOARD:
+            for node in agent._nodes.values():
+                outputs.append(
+                    AgentOutput(
+                        content=node.get("title", ""),
+                        status="complete",
+                        metadata=node,
+                    )
+                )
+
         return AgentResult(
             agent=routed.agent,
             ui_pattern=routed.ui_pattern,
@@ -526,9 +537,24 @@ class AgentRunner:
                     }
                 )
 
+                # Emit whiteboard_update after planning tool calls so UI can render incrementally
+                if (
+                    hasattr(agent, "_nodes")
+                    and routed.ui_pattern == UIPattern.WHITEBOARD
+                ):
+                    yield AgentEvent(
+                        type="whiteboard_update",
+                        data="",
+                        metadata={"nodes": list(agent._nodes.values())},
+                    )
+
             history.append({"role": "user", "content": tool_results})
             self._persist_message(sid, "user", tool_results)
             stream_kwargs["messages"] = history
+
+        # Include planning node data in done event for whiteboard pattern
+        if hasattr(agent, "_nodes") and routed.ui_pattern == UIPattern.WHITEBOARD:
+            stream_outputs = list(agent._nodes.values())
 
         yield AgentEvent(
             type="done",

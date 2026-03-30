@@ -6,6 +6,7 @@ class WhiteboardNode {
   String body;
   double x;
   double y;
+  String priority;
   List<String> connections;
 
   WhiteboardNode({
@@ -14,8 +15,20 @@ class WhiteboardNode {
     this.body = '',
     this.x = 0,
     this.y = 0,
+    this.priority = 'medium',
     this.connections = const [],
   });
+
+  static Color priorityColor(String priority) {
+    switch (priority) {
+      case 'high':
+        return const Color(0xFFEF4444);
+      case 'low':
+        return const Color(0xFF22C55E);
+      default:
+        return const Color(0xFF7C6EF0);
+    }
+  }
 }
 
 class WhiteboardPattern extends StatefulWidget {
@@ -97,21 +110,38 @@ class WhiteboardPatternState extends State<WhiteboardPattern> {
           decoration: BoxDecoration(
             color: const Color(0xFF12121A),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            border: Border.all(
+              color: WhiteboardNode.priorityColor(node.priority).withValues(alpha: 0.5),
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                node.title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: WhiteboardNode.priorityColor(node.priority),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      node.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
               if (node.body.isNotEmpty) ...[
                 const SizedBox(height: 6),

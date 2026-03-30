@@ -178,6 +178,23 @@ class MonetShellState extends State<MonetShell> {
               _streamingMessageIndex = null;
               _showApprovalDialog(approvalId, toolName, parameters);
             }
+          case 'whiteboard_update':
+            final nodes = event.metadata['nodes'] as List<dynamic>? ?? [];
+            setState(() {
+              _whiteboardNodes = nodes
+                  .map((o) => WhiteboardNode(
+                        id: (o as Map<String, dynamic>)['id'] as String? ?? '',
+                        title: o['title'] as String? ?? '',
+                        body: o['body'] as String? ?? '',
+                        x: (o['x'] as num?)?.toDouble() ?? 0,
+                        y: (o['y'] as num?)?.toDouble() ?? 0,
+                        priority: o['priority'] as String? ?? 'medium',
+                        connections: (o['connections'] as List<dynamic>?)
+                                ?.cast<String>() ??
+                            [],
+                      ))
+                  .toList();
+            });
           case 'error':
             final retryable = event.metadata['retryable'] == true;
             setState(() {
@@ -270,6 +287,7 @@ class MonetShellState extends State<MonetShell> {
                   body: o['body'] as String? ?? '',
                   x: (o['x'] as num?)?.toDouble() ?? 0,
                   y: (o['y'] as num?)?.toDouble() ?? 0,
+                  priority: o['priority'] as String? ?? 'medium',
                   connections: (o['connections'] as List<dynamic>?)
                           ?.cast<String>() ??
                       [],
@@ -318,6 +336,20 @@ class MonetShellState extends State<MonetShell> {
       }
     }
     _pendingApprovals.clear();
+  }
+
+  void _handleNodeTap(String nodeId) {
+    // Find the tapped node and send a follow-up intent to expand it into subtasks
+    final node = _whiteboardNodes.where((n) => n.id == nodeId).firstOrNull;
+    if (node != null && !_isRunning) {
+      _submitIntent('Break down "${node.title}" into subtasks');
+    }
+  }
+
+  void _handleNodeMoved(String nodeId, double x, double y) {
+    // Update local state - node positions are already updated by the gesture
+    // in WhiteboardPattern, so just trigger a rebuild to update connections
+    setState(() {});
   }
 
   void _handleChatApprovalDecision(String approvalId, bool approved) {
@@ -434,7 +466,8 @@ class MonetShellState extends State<MonetShell> {
         child = WhiteboardPattern(
           key: const ValueKey('whiteboard'),
           nodes: _whiteboardNodes,
-          onNodeTap: (id) {},
+          onNodeTap: _handleNodeTap,
+          onNodeMoved: _handleNodeMoved,
         );
       case 'chat':
       default:

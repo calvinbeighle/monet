@@ -35,7 +35,9 @@ class AgentResult:
 
 @dataclass
 class AgentEvent:
-    type: str  # "token" | "tool_call" | "approval_request" | "done"
+    type: (
+        str  # "token" | "tool_call" | "approval_request" | "whiteboard_update" | "done"
+    )
     data: str = ""
     metadata: dict = field(default_factory=dict)
 

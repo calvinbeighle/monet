@@ -693,6 +693,59 @@ void main() {
       ));
       expect(find.byType(InteractiveViewer), findsOneWidget);
     });
+
+    testWidgets('renders priority indicator dot', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: WhiteboardPattern(
+            nodes: [
+              WhiteboardNode(
+                id: '1',
+                title: 'High Priority',
+                x: 100,
+                y: 100,
+                priority: 'high',
+              ),
+            ],
+          ),
+        ),
+      ));
+      expect(find.text('High Priority'), findsOneWidget);
+      // Priority dot should be rendered (8x8 circle container)
+      final decoratedBoxes = find.byType(Container);
+      expect(decoratedBoxes, findsWidgets);
+    });
+
+    testWidgets('WhiteboardNode.priorityColor returns correct colors', (tester) async {
+      expect(WhiteboardNode.priorityColor('high'), const Color(0xFFEF4444));
+      expect(WhiteboardNode.priorityColor('low'), const Color(0xFF22C55E));
+      expect(WhiteboardNode.priorityColor('medium'), const Color(0xFF7C6EF0));
+      expect(WhiteboardNode.priorityColor('unknown'), const Color(0xFF7C6EF0));
+    });
+
+    testWidgets('calls onNodeMoved after drag', (tester) async {
+      String? movedId;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: WhiteboardPattern(
+            nodes: [
+              WhiteboardNode(id: 'drag1', title: 'Drag Me', x: 100, y: 100),
+            ],
+            onNodeMoved: (id, x, y) => movedId = id,
+          ),
+        ),
+      ));
+      // Perform a drag gesture on the node
+      final nodeFinder = find.text('Drag Me');
+      await tester.drag(nodeFinder, const Offset(50, 30));
+      await tester.pumpAndSettle();
+      expect(movedId, 'drag1');
+    });
+
+    testWidgets('default priority is medium', (tester) async {
+      final node = WhiteboardNode(id: 'test', title: 'Test');
+      expect(node.priority, 'medium');
+    });
   });
 
   // -- StatusBar tests --

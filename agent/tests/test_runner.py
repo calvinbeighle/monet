@@ -393,6 +393,138 @@ class TestAgentRunnerErrorHandling:
         assert events[-1].type == "done"
 
 
+class TestPlanningFlowIntegration:
+    """Tests for the full planning flow - intent to whiteboard nodes."""
+
+    def test_run_sync_planning_includes_node_data(self, runner, mock_anthropic_client):
+        """Planning agent run_sync should include node data in outputs."""
+        import json
+
+        # First call: agent uses create_node tool
+        tool_response = make_tool_response(
+            "create_node",
+            {
+                "title": "Goal 1",
+                "body": "Main objective",
+                "x": 100,
+                "y": 100,
+                "priority": "high",
+            },
+        )
+        # Second call: agent responds with text
+        text_response = make_text_response("I've created your plan.")
+
+        mock_anthropic_client.messages.create.side_effect = [
+            tool_response,
+            text_response,
+        ]
+
+        result = runner.run_sync("plan the next sprint")
+
+        assert result.agent == "planning"
+        assert result.ui_pattern == "whiteboard"
+        # Should have outputs including node data
+        node_outputs = [o for o in result.outputs if o.metadata.get("id")]
+        assert len(node_outputs) == 1
+        assert node_outputs[0].metadata["title"] == "Goal 1"
+        assert node_outputs[0].metadata["priority"] == "high"
+
+    def test_stream_planning_emits_whiteboard_updates(
+        self, runner, mock_anthropic_client
+    ):
+        """Streaming planning should emit whiteboard_update events after tool calls."""
+        import json
+
+        # Mock streaming with tool calls
+        mock_stream = MagicMock()
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+
+        # Simulate create_node tool call in stream events
+        mock_events = [
+            MagicMock(
+                type="content_block_start",
+                content_block=MockContentBlock(
+                    type="tool_use", id="tool_1", name="create_node"
+                ),
+            ),
+            MagicMock(
+                type="content_block_delta",
+                delta=MagicMock(
+                    text=None,
+                    partial_json='{"title": "Sprint Goal", "x": 200, "y": 100, "priority": "high"}',
+                    **{"__class__.__name__": "Delta"},
+                ),
+            ),
+            MagicMock(type="content_block_stop"),
+        ]
+        # Remove text attr from delta to avoid hasattr confusion
+        del mock_events[1].delta.text
+        mock_stream.__iter__ = MagicMock(return_value=iter(mock_events))
+
+        # Final message with tool use block
+        final_content = [
+            MockContentBlock(
+                type="tool_use",
+                id="tool_1",
+                name="create_node",
+                input={"title": "Sprint Goal", "x": 200, "y": 100, "priority": "high"},
+            )
+        ]
+        mock_stream.get_final_message.return_value = MockResponse(content=final_content)
+
+        # Second round: text response (no tool calls)
+        mock_stream2 = MagicMock()
+        mock_stream2.__enter__ = MagicMock(return_value=mock_stream2)
+        mock_stream2.__exit__ = MagicMock(return_value=False)
+        mock_stream2.__iter__ = MagicMock(return_value=iter([]))
+        mock_stream2.get_final_message.return_value = MockResponse(
+            content=[MockContentBlock(type="text", text="Plan created.")]
+        )
+
+        mock_anthropic_client.messages.stream.side_effect = [mock_stream, mock_stream2]
+
+        events = list(runner.stream_sync("plan the sprint"))
+
+        # Should have routing, tool_call, whiteboard_update, done events
+        event_types = [e.type for e in events]
+        assert "routing" in event_types
+        assert "tool_call" in event_types
+        assert "whiteboard_update" in event_types
+        assert "done" in event_types
+
+        # whiteboard_update should contain node data
+        wb_events = [e for e in events if e.type == "whiteboard_update"]
+        assert len(wb_events) >= 1
+        nodes = wb_events[-1].metadata["nodes"]
+        assert len(nodes) == 1
+        assert nodes[0]["title"] == "Sprint Goal"
+        assert nodes[0]["priority"] == "high"
+
+    def test_stream_planning_done_includes_node_data(
+        self, runner, mock_anthropic_client
+    ):
+        """Planning stream done event should include final node state in outputs."""
+        # Simple: no tool calls, just text (nodes stay empty)
+        mock_stream = MagicMock()
+        mock_stream.__enter__ = MagicMock(return_value=mock_stream)
+        mock_stream.__exit__ = MagicMock(return_value=False)
+        mock_stream.__iter__ = MagicMock(return_value=iter([]))
+        mock_stream.get_final_message.return_value = MockResponse(
+            content=[MockContentBlock(type="text", text="I'll plan your sprint.")]
+        )
+        mock_anthropic_client.messages.stream.return_value = mock_stream
+
+        events = list(runner.stream_sync("plan the sprint"))
+
+        done_event = events[-1]
+        assert done_event.type == "done"
+        assert done_event.metadata["agent"] == "planning"
+        assert done_event.metadata["ui_pattern"] == "whiteboard"
+        # Outputs should be the node list (empty since no tool calls)
+        assert isinstance(done_event.metadata["outputs"], list)
+
+
 class TestPlanningAgentSessionIsolation:
     """Tests that planning agent state is isolated per session."""
 
