@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Nothing implemented yet.** No source code exists - no `agent/`, `shell/`, or `os/` directories.
+> Status: **Phase 1 complete - agent backend with FastAPI, router, approval gate, email/code agents, CLI, and 72 passing tests.**
 
 ---
 
@@ -14,34 +14,34 @@ Agents must work from CLI before any UI. This proves the core concept.
 
 ### Task 1: Claude Agent SDK Setup
 
-- [ ] Create `agent/main.py` - FastAPI server with `/api/run`, `/api/stream`, `/api/health` endpoints
-- [ ] Create `agent/runner.py` - AgentRunner class with `run_sync()` and `stream_sync()` methods
-- [ ] Create `agent/requirements.txt` - fastapi, uvicorn, claude-agent-sdk, nango
-- [ ] Create `agent/__init__.py`
-- [ ] Create `agent/tests/__init__.py`
-- [ ] Create `agent/tests/test_runner.py` - tests for structured result and streaming events
-- [ ] Data models: AgentResult, AgentOutput, AgentEvent, UIPattern enum
-- [ ] Wire Claude Agent SDK into runner (currently planned as placeholder/TODO)
+- [x] Create `agent/main.py` - FastAPI server with `/api/run`, `/api/stream`, `/api/health` endpoints
+- [x] Create `agent/runner.py` - AgentRunner class with `run_sync()` and `stream_sync()` methods
+- [x] Create `agent/requirements.txt` - fastapi, uvicorn, claude-agent-sdk, nango
+- [x] Create `agent/__init__.py`
+- [x] Create `agent/tests/__init__.py`
+- [x] Create `agent/tests/test_runner.py` - tests for structured result and streaming events
+- [x] Data models: AgentResult, AgentOutput, AgentEvent, UIPattern enum
+- [x] Wire Claude Agent SDK into runner (implemented with anthropic SDK, real agent loop with tool execution)
 - [ ] Session create/resume in SQLite
 
 ### Task 2: Intent Router
 
-- [ ] Create `agent/router.py` - IntentRouter with keyword matching + Claude Haiku fallback
-- [ ] Create `agent/tests/test_router.py` - tests for email/code/planning/unknown intent routing
-- [ ] RoutedIntent data model: `{ agent, ui_pattern, original }`
-- [ ] Keyword rules: email batch -> tinder, email single -> chat, code review -> diff, planning -> whiteboard
-- [ ] Wire router into AgentRunner.stream_sync()
+- [x] Create `agent/router.py` - IntentRouter with keyword matching + Claude Haiku fallback
+- [x] Create `agent/tests/test_router.py` - tests for email/code/planning/unknown intent routing
+- [x] RoutedIntent data model: `{ agent, ui_pattern, original }`
+- [x] Keyword rules: email batch -> tinder, email single -> chat, code review -> diff, planning -> whiteboard
+- [x] Wire router into AgentRunner.stream_sync()
 
 ### Task 3: Email Agent
 
-- [ ] Create `agent/agents/__init__.py`
-- [ ] Create `agent/agents/email.py` - EmailAgent with tool definitions and approval gates
-- [ ] Create `agent/tests/test_email_agent.py`
-- [ ] Tools: list_inbox, read_email, draft_reply, send_email, archive_email, label_email
-- [ ] Approval gate on send_email and archive_email
-- [ ] Wire Nango Gmail integration (MCP or direct API)
-- [ ] System prompt for email assistant behavior
-- [ ] PreToolUse hook for approval-required actions
+- [x] Create `agent/agents/__init__.py`
+- [x] Create `agent/agents/email.py` - EmailAgent with tool definitions and approval gates
+- [x] Create `agent/tests/test_email_agent.py`
+- [x] Tools: list_inbox, read_email, draft_reply, send_email, archive_email, label_email
+- [x] Approval gate on send_email and archive_email
+- [x] Wire Nango Gmail integration (MCP or direct API)
+- [x] System prompt for email assistant behavior
+- [x] PreToolUse hook for approval-required actions
 
 ### Task 4: Code Agent
 
