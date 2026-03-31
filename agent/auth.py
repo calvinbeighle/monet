@@ -8,6 +8,7 @@ explicit logout or revocation - this is what enables "stay logged in until logou
 """
 
 import hashlib
+import hmac
 import logging
 import os
 import secrets
@@ -33,6 +34,7 @@ class AuthStore:
 
     def _init_db(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
             conn.execute(
                 """CREATE TABLE IF NOT EXISTS users (
                     username TEXT PRIMARY KEY,
@@ -60,10 +62,14 @@ class AuthStore:
         return f"{salt.hex()}:{dk.hex()}"
 
     def _verify_password(self, password: str, stored_hash: str) -> bool:
-        """Verify a password against a stored salt:hash string."""
+        """Verify a password against a stored salt:hash string.
+
+        Uses hmac.compare_digest for constant-time comparison to prevent
+        timing attacks that could leak password hash information.
+        """
         salt_hex, _ = stored_hash.split(":", 1)
         salt = bytes.fromhex(salt_hex)
-        return self._hash_password(password, salt) == stored_hash
+        return hmac.compare_digest(self._hash_password(password, salt), stored_hash)
 
     def has_users(self) -> bool:
         """Check if any user exists (for first-boot detection)."""
@@ -75,8 +81,8 @@ class AuthStore:
         """Create a new user. Raises UserExistsError if username is taken."""
         if not username or not username.strip():
             raise ValueError("Username cannot be empty")
-        if not password or len(password) < 4:
-            raise ValueError("Password must be at least 4 characters")
+        if not password or len(password) < 8:
+            raise ValueError("Password must be at least 8 characters")
 
         password_hash = self._hash_password(password)
         try:
@@ -111,9 +117,18 @@ class AuthStore:
             return [row[0] for row in rows]
 
     def create_token(self, username: str) -> str:
-        """Create a persistent session token for a user. Returns the token string."""
+        """Create a persistent session token for a user. Returns the token string.
+
+        Verifies the user exists before creating the token to prevent orphaned tokens.
+        """
         token = secrets.token_hex(TOKEN_BYTES)
         with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            row = conn.execute(
+                "SELECT 1 FROM users WHERE username = ?", (username,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"User '{username}' does not exist")
             conn.execute(
                 "INSERT INTO auth_tokens (token, username) VALUES (?, ?)",
                 (token, username),

@@ -64,8 +64,16 @@ def run_streaming(base_url: str, intent: str, session_id: str | None = None):
                     print(f"Parameters: {json.dumps(params, indent=2)}")
                 print(f"{'=' * 50}")
 
-                # Prompt user for approval in a separate thread to not block streaming
-                _handle_approval_interactive(base_url, approval_id, tool)
+                # Run approval prompt in a separate thread so the streaming
+                # loop can continue receiving events while we wait for user input.
+                # Without this, the stream blocks waiting for input() while the
+                # backend blocks waiting for the approval POST - a deadlock.
+                t = threading.Thread(
+                    target=_handle_approval_interactive,
+                    args=(base_url, approval_id, tool),
+                    daemon=True,
+                )
+                t.start()
 
             elif event_type == "error":
                 print(f"\n[Error: {event.get('data', 'unknown error')}]")

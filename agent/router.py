@@ -110,7 +110,8 @@ ROUTING_RULES: list[tuple[re.Pattern, str, UIPattern]] = [
     # Writing - chat UI (before code-write so "write a doc" routes here, not to code)
     (
         re.compile(
-            r"\b(document|doc|article|blog|essay|report|memo|notes|summarize|rewrite|proofread|google doc)\b",
+            r"\b(document|doc|article|blog|essay|report|memo|notes|summarize|summary|rewrite|proofread|google doc)\b"
+            r"|\bwrite\b.*\b(doc|article|blog|essay|report|memo|document)\b",
             re.IGNORECASE,
         ),
         "writing",

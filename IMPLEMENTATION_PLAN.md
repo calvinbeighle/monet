@@ -386,6 +386,16 @@ Debian VM boots directly into Monet.
 - **Test count:** 741 total (609 Python + 132 Flutter), all passing.
 - **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
 
+### Implementation Notes (2026-03-31) - Batch 20
+
+- **Auth security hardened:** `agent/auth.py` now uses `hmac.compare_digest` for constant-time password comparison (prevents timing attacks). SQLite foreign keys enabled via `PRAGMA foreign_keys = ON` in `_init_db`. `create_token` validates user exists before creating token. Password minimum increased from 4 to 8 characters. `shell/lib/ui/onboarding.dart` updated to match.
+- **Router gap fixed:** Writing intent regex now includes `summary` keyword and a compound pattern `write + (doc|article|blog|essay|report|memo|document)` so "write a doc" routes to writing agent instead of falling through to code agent.
+- **CLI deadlock fixed:** `agent/cli.py` approval handling now runs in a daemon thread via `threading.Thread` so the NDJSON stream loop can continue receiving events while the user is prompted for approval input.
+- **Flutter streaming bug fixed:** `_streamingMessageIndex` is now cleared to null on `routing` events in `shell/lib/main.dart`, preventing tokens from appending to the wrong chat message when switching patterns mid-stream.
+- **Flutter diff flow state fixed:** `_collectCurrentPatternState` now includes a `diff` case that returns diff line data, so multi-step flows that include a diff step carry state forward correctly.
+- **Test count:** 748 total (616 Python + 132 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
+
 ---
 
 ## Architecture Notes

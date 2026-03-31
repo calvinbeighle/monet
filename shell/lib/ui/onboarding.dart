@@ -77,8 +77,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       setState(() => _errorMessage = 'Username is required');
       return;
     }
-    if (password.length < 4) {
-      setState(() => _errorMessage = 'Password must be at least 4 characters');
+    if (password.length < 8) {
+      setState(() => _errorMessage = 'Password must be at least 8 characters');
       return;
     }
     if (password != confirm) {

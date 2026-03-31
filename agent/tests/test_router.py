@@ -187,3 +187,33 @@ class TestIntentRouter:
         result = self.router.route("write a function to parse JSON")
         assert result.agent == "code"
         assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_write_a_doc_routes_to_writing(self):
+        """'write a doc' should route to writing, not code."""
+        result = self.router.route("write a doc about the API")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_write_an_essay_routes_to_writing(self):
+        """'write an essay' should route to writing, not code."""
+        result = self.router.route("write an essay about history")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_write_a_report_routes_to_writing(self):
+        """'write a report' should route to writing, not code."""
+        result = self.router.route("write a report on quarterly earnings")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_summary_routes_to_writing(self):
+        """'summary' keyword should route to writing."""
+        result = self.router.route("give me a summary of the meeting")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_write_a_blog_routes_to_writing(self):
+        """'write a blog' should route to writing via compound pattern."""
+        result = self.router.route("write a blog about productivity")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value

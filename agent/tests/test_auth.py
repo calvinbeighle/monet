@@ -51,20 +51,20 @@ class TestAuthStore:
 
     def test_list_users(self, auth_store):
         assert auth_store.list_users() == []
-        auth_store.create_user("alice", "pass1")
-        auth_store.create_user("bob", "pass2")
+        auth_store.create_user("alice", "password_one")
+        auth_store.create_user("bob", "password_two")
         users = auth_store.list_users()
         assert "alice" in users
         assert "bob" in users
         assert len(users) == 2
 
     def test_multiple_users_independent(self, auth_store):
-        auth_store.create_user("alice", "pass_alice")
-        auth_store.create_user("bob", "pass_bob")
-        assert auth_store.authenticate("alice", "pass_alice") is True
-        assert auth_store.authenticate("bob", "pass_bob") is True
-        assert auth_store.authenticate("alice", "pass_bob") is False
-        assert auth_store.authenticate("bob", "pass_alice") is False
+        auth_store.create_user("alice", "password_alice")
+        auth_store.create_user("bob", "password_bob")
+        assert auth_store.authenticate("alice", "password_alice") is True
+        assert auth_store.authenticate("bob", "password_bob") is True
+        assert auth_store.authenticate("alice", "password_bob") is False
+        assert auth_store.authenticate("bob", "password_alice") is False
 
     def test_password_hash_uses_salt(self, auth_store):
         """Each hash should use a unique random salt."""
@@ -95,11 +95,11 @@ class TestAuthStore:
             auth_store.create_user("   ", "password123")
 
     def test_short_password_raises(self, auth_store):
-        with pytest.raises(ValueError, match="at least 4 characters"):
-            auth_store.create_user("alice", "ab")
+        with pytest.raises(ValueError, match="at least 8 characters"):
+            auth_store.create_user("alice", "short")
 
     def test_empty_password_raises(self, auth_store):
-        with pytest.raises(ValueError, match="at least 4 characters"):
+        with pytest.raises(ValueError, match="at least 8 characters"):
             auth_store.create_user("alice", "")
 
     def test_username_stripped(self, auth_store):
@@ -176,12 +176,26 @@ class TestAuthTokens:
 
     def test_tokens_scoped_to_user(self, auth_store):
         """Revoking all tokens for one user doesn't affect another's."""
-        auth_store.create_user("alice", "pass1")
-        auth_store.create_user("bob", "pass2")
+        auth_store.create_user("alice", "password_one")
+        auth_store.create_user("bob", "password_two")
         auth_store.create_token("alice")
         bob_token = auth_store.create_token("bob")
         auth_store.revoke_all_tokens("alice")
         assert auth_store.verify_token(bob_token) == "bob"
+
+    def test_create_token_nonexistent_user_raises(self, auth_store):
+        """Creating a token for a nonexistent user should raise ValueError."""
+        with pytest.raises(ValueError, match="does not exist"):
+            auth_store.create_token("nobody")
+
+    def test_password_verification_uses_constant_time_comparison(self, auth_store):
+        """Verify the timing-safe comparison is in place by checking correct and
+        incorrect passwords both return proper results (functional test - the
+        actual constant-time guarantee comes from hmac.compare_digest)."""
+        auth_store.create_user("alice", "password123")
+        assert auth_store.authenticate("alice", "password123") is True
+        assert auth_store.authenticate("alice", "wrong_password") is False
+        assert auth_store.authenticate("alice", "password124") is False
 
 
 class TestAuthAPI:
@@ -270,7 +284,7 @@ class TestAuthAPI:
         )
         resp = client.post(
             "/api/auth/create",
-            json={"username": "alice", "password": "other"},
+            json={"username": "alice", "password": "other_password123"},
         )
         assert resp.status_code == 409
         assert "already exists" in resp.json()["detail"]

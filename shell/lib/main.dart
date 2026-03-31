@@ -351,6 +351,7 @@ class MonetShellState extends State<MonetShell> {
               _activePattern = event.metadata['ui_pattern'] as String?;
               _activeAgent = event.metadata['agent'] as String?;
               _sessionId ??= event.metadata['session_id'] as String?;
+              _streamingMessageIndex = null;
             });
           case 'token':
             setState(() {
@@ -637,6 +638,16 @@ class MonetShellState extends State<MonetShell> {
                     'title': n.title,
                     'body': n.body,
                     'priority': n.priority,
+                  })
+              .toList(),
+        };
+      case 'diff':
+        return {
+          'diff_decisions': _diffLines
+              .map((l) => {
+                    'left': l.left,
+                    'right': l.right,
+                    'type': l.type.name,
                   })
               .toList(),
         };
