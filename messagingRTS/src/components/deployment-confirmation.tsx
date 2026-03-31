@@ -1,9 +1,14 @@
 // Deployment confirmation dialog per Spec 06
 // Shows agent role, description, thread count. Confirm deploys, cancel snaps agent back.
+// On confirm: deploys agent, simulates travel + work, generates proposals via work simulator.
 
 import { AGENT_DEFINITIONS } from "../lib/types";
 import { useDeploymentStore } from "../lib/stores/deployment-store";
 import { useAgentStore } from "../lib/stores/agent-store";
+import {
+  generateSimulatedProposals,
+  SIMULATED_WORK_DURATION_MS,
+} from "../features/agents/work-simulator";
 
 export function DeploymentConfirmation() {
   const confirmation = useDeploymentStore((s) => s.confirmation);
@@ -11,6 +16,7 @@ export function DeploymentConfirmation() {
   const cancelConfirmation = useDeploymentStore((s) => s.cancelConfirmation);
   const startTravel = useDeploymentStore((s) => s.startTravel);
   const startWork = useDeploymentStore((s) => s.startWork);
+  const completeDeployment = useDeploymentStore((s) => s.completeDeployment);
 
   if (!confirmation) return null;
 
@@ -21,14 +27,28 @@ export function DeploymentConfirmation() {
     const record = confirmDeployment();
     if (!record) return;
 
-    // Deploy the agent in the agent store
-    useAgentStore.getState().deploy(record.agentRole, record.clusterId, record.threadIds);
+    const agentStore = useAgentStore.getState();
+    agentStore.deploy(record.agentRole, record.clusterId, record.threadIds);
 
-    // Transition through travel -> working (simulated for now, AI backend will drive this)
+    // Travel phase (1.5s), then work phase (simulated duration)
     startTravel(record.id);
     setTimeout(() => {
+      // Check agent is still deployed (not recalled during travel)
+      const currentAgent = useAgentStore.getState().getAgent(record.agentRole);
+      if (currentAgent.status !== "deployed") return;
+
       useAgentStore.getState().startWork(record.agentRole);
       startWork(record.id);
+
+      // Simulate work completion after duration
+      setTimeout(() => {
+        const workingAgent = useAgentStore.getState().getAgent(record.agentRole);
+        if (workingAgent.status !== "working") return;
+
+        const proposals = generateSimulatedProposals(record.agentRole, record.threadIds);
+        useAgentStore.getState().complete(record.agentRole, proposals);
+        completeDeployment(record.id);
+      }, SIMULATED_WORK_DURATION_MS);
     }, 1500);
   };
 
