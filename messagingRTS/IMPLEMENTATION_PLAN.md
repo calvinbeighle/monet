@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 570 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3, v0.6.0 through v0.6.1. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 598 tests passing. Tags through v0.6.5. Build, typecheck, lint all clean.
 
-**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (partial), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 2.1 Application Shell, 2.2 Map Rendering,
+**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (partial), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.3 Agent Deployment UI (drag-to-deploy, confirmation, recall, quick-deploy).
 
-**Next priorities**: 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 4.2 Agent AI Backend.
+**Next priorities**: 1.7 Offline Queue & Conflict Resolution, 4.2 Agent AI Backend.
 
 ---
 
@@ -87,13 +87,13 @@ These must be resolved before implementation begins:
 
 ### 1.6 Outbound Actions (Reply, Draft, Archive)
 
-- [ ] Send reply within thread (pre-populated recipients, subject, In-Reply-To, References headers)
-- [ ] Draft lifecycle: create, save (update same draft), discard, send
-- [ ] Archive thread (remove Inbox label)
-- [ ] Optimistic local state update before Gmail confirmation
-- [ ] Rollback on failure with user notification
-- [ ] **Spec**: 01-email-integration (Sending a Reply, Drafts, Archiving)
-- [ ] **Tests**: Reply send/fail, draft CRUD, archive, optimistic update + rollback
+- [x] Send reply within thread (pre-populated recipients, subject, In-Reply-To, References headers)
+- [x] Draft lifecycle: create, save (update same draft), discard, send
+- [x] Archive thread (remove Inbox label)
+- [x] Optimistic local state update before Gmail confirmation
+- [x] Rollback on failure with user notification
+- [x] **Spec**: 01-email-integration (Sending a Reply, Drafts, Archiving)
+- [x] **Tests**: Reply send/fail, draft CRUD, archive, optimistic update + rollback
 
 ### 1.7 Offline Queue & Conflict Resolution
 
@@ -433,3 +433,13 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - App.tsx init flow extended: auth check -> load persisted threads (immediate display) -> startInitialLoad (fetch from Gmail) -> startPolling (incremental sync). Cleanup stops polling. Shell transitions through loading -> active/empty/degraded based on results.
 - Pre-existing gmail-client.ts type errors fixed: GmailApiError class field declarations converted from parameter properties to explicit fields (erasableSyntaxOnly compatibility). gmail-client.test.ts mock proxy function typed with proper signature; non-null assertions added for opts parameter access.
 - Test count: 570 total (64 new: 30 thread-fetcher, 18 sync-store, 16 sync-engine), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Outbound Actions (2026-03-31)
+
+- Outbound actions orchestration layer (src/features/sync/outbound-actions.ts): Coordinates reply, draft, and archive operations per Spec 01 Sections 4-6. Each action applies optimistic local state updates before the Gmail API call and rolls back on failure. Offline actions are queued in the sync store for ordered replay on reconnect (Spec 10 Section 8).
+- sendReplyAction: Validates recipients + body per Spec 01, creates optimistic ThreadMessage in thread store, resets risk tier to safe + restarts risk timer (Spec 07), replaces optimistic message ID with real Gmail ID on success, full rollback on failure. Clears any active draft on success.
+- Draft lifecycle (Spec 01 Section 5): Module-level Map tracks per-thread DraftRecord with state machine (none -> unsaved -> saved -> dirty -> sending -> discarded). beginDraft, updateDraftContent, saveDraftAction (create or update Gmail draft), discardDraftAction (delete from Gmail). Subsequent saves update the same draft ID rather than creating new ones.
+- archiveThreadAction: Optimistic INBOX label removal + archived visual state, full rollback on failure. User notification on both success paths (offline queue) and failure.
+- Sync engine enhanced: executeAction now handles draft-save (createDraft/updateDraft) and draft-discard (deleteDraft) action types for offline queue replay. Previously these fell through to console.warn.
+- Detail panel (src/components/detail-panel.tsx): Reply composer placeholder replaced with functional ReplyComposer component. Textarea with send/save-draft/discard buttons. Recipients auto-populated from thread participants. Archive button in header (visible when thread has INBOX label). Draft state indicator shows current draft lifecycle state.
+- Test count: 598 total (28 new outbound action tests), all passing. Typecheck and lint clean.

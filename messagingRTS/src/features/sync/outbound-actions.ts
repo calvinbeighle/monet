@@ -190,7 +190,7 @@ export async function sendReplyAction(
     clearDraftRecord(threadId);
 
     return true;
-  } catch (err) {
+  } catch {
     // Rollback per Spec 01: on failure, composed reply text is preserved
     threadStore.setThread(snapshot);
 
@@ -286,7 +286,7 @@ export async function saveDraftAction(threadId: string, payload: DraftPayload): 
       });
     }
     return true;
-  } catch (err) {
+  } catch {
     useAppStore.getState().addNotification({
       message: "Failed to save draft.",
       severity: "warning",
@@ -321,7 +321,7 @@ export async function discardDraftAction(threadId: string): Promise<boolean> {
     record.state = "discarded";
     draftRecords.delete(threadId);
     return true;
-  } catch (err) {
+  } catch {
     useAppStore.getState().addNotification({
       message: "Failed to discard draft from Gmail.",
       severity: "warning",
@@ -362,7 +362,7 @@ export async function archiveThreadAction(threadId: string): Promise<boolean> {
   try {
     await _archiveThread(threadId);
     return true;
-  } catch (err) {
+  } catch {
     // Rollback per Spec 01: thread remains in Inbox view, user is informed
     threadStore.setThread(snapshot);
     useAppStore.getState().addNotification({
