@@ -33,6 +33,7 @@ class EmailAgent(BaseAgent):
     """
 
     name = "email"
+    description = "Reads, drafts, sends, and organizes your emails"
     default_ui_pattern = UIPattern.TINDER
 
     @property

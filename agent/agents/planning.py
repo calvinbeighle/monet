@@ -21,6 +21,7 @@ class PlanningAgent(BaseAgent):
     """
 
     name = "planning"
+    description = "Plans sprints, brainstorms ideas, and organizes tasks"
     default_ui_pattern = UIPattern.WHITEBOARD
 
     def __init__(self):

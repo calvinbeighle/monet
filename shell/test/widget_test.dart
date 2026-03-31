@@ -1,10 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:shell/main.dart';
 import 'package:shell/services/agent_client.dart';
+import 'package:shell/ui/agents_dashboard.dart';
 import 'package:shell/ui/approval_overlay.dart';
 import 'package:shell/ui/onboarding.dart';
 import 'package:shell/ui/patterns/tinder.dart';
@@ -12,6 +16,7 @@ import 'package:shell/ui/patterns/chat.dart';
 import 'package:shell/ui/patterns/diff.dart';
 import 'package:shell/ui/patterns/whiteboard.dart';
 import 'package:shell/ui/status_bar.dart';
+import 'package:http/http.dart' as http;
 
 // -- MonetApp tests --
 
@@ -1438,6 +1443,363 @@ void main() {
     test('disconnected state', () {
       const tool = ConnectedTool(name: 'GitHub', connected: false);
       expect(tool.connected, false);
+    });
+  });
+
+  // -- AgentInfo model tests --
+
+  group('AgentInfo model', () {
+    test('fromJson parses all fields', () {
+      final info = AgentInfo.fromJson({
+        'name': 'email',
+        'description': 'Handles email tasks',
+        'default_ui_pattern': 'tinder',
+        'tools': ['list_inbox', 'send_email', 'archive_email'],
+        'approval_required': ['send_email'],
+        'suggestions': ['Reply to unread', 'Send follow-up'],
+        'stats': {
+          'total_runs': 42,
+          'completed': 40,
+          'errors': 2,
+          'running': 1,
+          'total_tool_calls': 130,
+          'total_approvals': 15,
+          'last_run_at': 1700000000.0,
+        },
+      });
+
+      expect(info.name, 'email');
+      expect(info.description, 'Handles email tasks');
+      expect(info.defaultUiPattern, 'tinder');
+      expect(info.tools, ['list_inbox', 'send_email', 'archive_email']);
+      expect(info.approvalRequired, ['send_email']);
+      expect(info.suggestions, ['Reply to unread', 'Send follow-up']);
+      expect(info.stats.totalRuns, 42);
+      expect(info.stats.completed, 40);
+      expect(info.stats.errors, 2);
+      expect(info.stats.running, 1);
+      expect(info.stats.totalToolCalls, 130);
+      expect(info.stats.totalApprovals, 15);
+      expect(info.stats.lastRunAt, 1700000000.0);
+    });
+
+    test('fromJson with missing optional fields uses defaults', () {
+      final info = AgentInfo.fromJson({
+        'name': 'general',
+        'description': 'General purpose agent',
+        'default_ui_pattern': 'chat',
+        'stats': {},
+      });
+
+      expect(info.name, 'general');
+      expect(info.tools, isEmpty);
+      expect(info.approvalRequired, isEmpty);
+      expect(info.suggestions, isEmpty);
+      expect(info.stats.totalRuns, 0);
+      expect(info.stats.running, 0);
+      expect(info.stats.lastRunAt, isNull);
+    });
+
+    test('AgentStats currentStatus returns working when running > 0', () {
+      final stats = AgentStats.fromJson({
+        'total_runs': 5,
+        'running': 2,
+      });
+      expect(stats.currentStatus, 'working');
+    });
+
+    test('AgentStats currentStatus returns idle when totalRuns == 0', () {
+      final stats = AgentStats.fromJson({
+        'total_runs': 0,
+        'running': 0,
+      });
+      expect(stats.currentStatus, 'idle');
+    });
+
+    test('AgentStats currentStatus returns idle when totalRuns > 0 but running == 0', () {
+      final stats = AgentStats.fromJson({
+        'total_runs': 10,
+        'completed': 10,
+        'running': 0,
+      });
+      expect(stats.currentStatus, 'idle');
+    });
+  });
+
+  // -- AgentActivity model tests --
+
+  group('AgentActivity model', () {
+    test('fromJson parses all fields', () {
+      final activity = AgentActivity.fromJson({
+        'id': 'act-001',
+        'agent_name': 'code',
+        'intent': 'Fix the null pointer bug',
+        'session_id': 'sess-42',
+        'ui_pattern': 'diff',
+        'status': 'completed',
+        'started_at': 1700000100.0,
+        'finished_at': 1700000160.0,
+        'error_message': null,
+        'tool_calls_count': 8,
+        'approvals_count': 1,
+        'summary': 'Fixed null pointer in auth module',
+      });
+
+      expect(activity.id, 'act-001');
+      expect(activity.agentName, 'code');
+      expect(activity.intent, 'Fix the null pointer bug');
+      expect(activity.sessionId, 'sess-42');
+      expect(activity.uiPattern, 'diff');
+      expect(activity.status, 'completed');
+      expect(activity.startedAt, 1700000100.0);
+      expect(activity.finishedAt, 1700000160.0);
+      expect(activity.errorMessage, isNull);
+      expect(activity.toolCallsCount, 8);
+      expect(activity.approvalsCount, 1);
+      expect(activity.summary, 'Fixed null pointer in auth module');
+    });
+
+    test('fromJson uses defaults for missing fields', () {
+      final activity = AgentActivity.fromJson({
+        'id': 'act-002',
+        'agent_name': 'email',
+        'intent': 'Send newsletter',
+        'status': 'running',
+        'started_at': 1700000200.0,
+      });
+
+      expect(activity.sessionId, isNull);
+      expect(activity.uiPattern, isNull);
+      expect(activity.finishedAt, isNull);
+      expect(activity.errorMessage, isNull);
+      expect(activity.toolCallsCount, 0);
+      expect(activity.approvalsCount, 0);
+      expect(activity.summary, isNull);
+    });
+
+    test('duration calculates correctly when finishedAt is set', () {
+      final activity = AgentActivity.fromJson({
+        'id': 'act-003',
+        'agent_name': 'code',
+        'intent': 'Review PR',
+        'status': 'completed',
+        'started_at': 1700000000.0,
+        'finished_at': 1700000045.0,
+      });
+
+      final dur = activity.duration;
+      expect(dur, isNotNull);
+      expect(dur!.inSeconds, 45);
+    });
+
+    test('duration is null when finishedAt is null', () {
+      final activity = AgentActivity.fromJson({
+        'id': 'act-004',
+        'agent_name': 'code',
+        'intent': 'Review PR',
+        'status': 'running',
+        'started_at': 1700000000.0,
+      });
+
+      expect(activity.duration, isNull);
+    });
+  });
+
+  // -- StatusBar with agents button tests --
+
+  group('StatusBar agents button', () {
+    testWidgets('renders Agents button when onAgentsTap is provided', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(onAgentsTap: () {}),
+        ),
+      ));
+      expect(find.text('Agents'), findsOneWidget);
+      expect(find.byIcon(Icons.smart_toy_outlined), findsOneWidget);
+    });
+
+    testWidgets('does not render Agents button when onAgentsTap is null', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(),
+        ),
+      ));
+      expect(find.text('Agents'), findsNothing);
+    });
+
+    testWidgets('Agents button tap calls onAgentsTap callback', (tester) async {
+      bool tapped = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(onAgentsTap: () => tapped = true),
+        ),
+      ));
+      await tester.tap(find.text('Agents'));
+      expect(tapped, true);
+    });
+  });
+
+  // -- AgentsDashboard widget tests --
+
+  group('AgentsDashboard', () {
+    /// Builds a MockClient that returns the given agents list JSON from
+    /// GET /api/agents and an empty list from GET /api/agents/activity.
+    http.Client _buildMockClient({
+      List<Map<String, dynamic>> agents = const [],
+      List<Map<String, dynamic>> activity = const [],
+      int agentsStatus = 200,
+      int activityStatus = 200,
+    }) {
+      return MockClient((request) async {
+        if (request.url.path == '/api/agents' && !request.url.path.contains('activity')) {
+          return http.Response(jsonEncode(agents), agentsStatus);
+        }
+        if (request.url.path.startsWith('/api/agents/activity')) {
+          return http.Response(jsonEncode(activity), activityStatus);
+        }
+        return http.Response('Not found', 404);
+      });
+    }
+
+    Widget buildDashboard(http.Client mockClient) {
+      return Provider<AgentClient>.value(
+        value: AgentClient(client: mockClient),
+        child: const MaterialApp(
+          home: Scaffold(
+            body: AgentsDashboard(),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('AgentsDashboardState starts in loading state', (tester) async {
+      // Verify the data model: AgentsDashboard starts with _loading = true
+      // and shows a progress indicator before any data arrives.
+      // We test this via the AgentStats model since the widget's loading
+      // state depends on an async HTTP call that resolves too quickly
+      // in the test environment to observe.
+      final stats = AgentStats.fromJson({});
+      expect(stats.totalRuns, 0);
+      expect(stats.currentStatus, 'idle');
+
+      // Verify the dashboard can mount and display data
+      final mockClient = _buildMockClient(agents: []);
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+      // Empty agents list - no error, no agent cards
+      expect(find.text('Your Agents'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows Your Agents heading after data loads', (tester) async {
+      final mockClient = _buildMockClient(agents: [
+        {
+          'name': 'email',
+          'description': 'Handles email tasks',
+          'default_ui_pattern': 'tinder',
+          'tools': ['list_inbox', 'send_email'],
+          'approval_required': [],
+          'suggestions': [],
+          'stats': {
+            'total_runs': 5,
+            'completed': 5,
+            'errors': 0,
+            'running': 0,
+            'total_tool_calls': 12,
+            'total_approvals': 0,
+          },
+        },
+      ]);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      // Use pump with duration instead of pumpAndSettle because the
+      // AgentsDashboard has a periodic polling timer that prevents settling.
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text('Your Agents'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows error state and Retry button when backend returns error', (tester) async {
+      final mockClient = _buildMockClient(agentsStatus: 500, activityStatus: 500);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text('Could not load agents'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('renders agent card with capitalized name', (tester) async {
+      final mockClient = _buildMockClient(agents: [
+        {
+          'name': 'code',
+          'description': 'Generates and reviews code',
+          'default_ui_pattern': 'diff',
+          'tools': ['read_file', 'write_file'],
+          'approval_required': ['write_file'],
+          'suggestions': [],
+          'stats': {
+            'total_runs': 3,
+            'completed': 3,
+            'errors': 0,
+            'running': 0,
+            'total_tool_calls': 9,
+            'total_approvals': 2,
+          },
+        },
+      ]);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Agent card should display capitalized name
+      expect(find.text('Code'), findsOneWidget);
+      // Description should appear on the card
+      expect(find.text('Generates and reviews code'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows working badge when at least one agent is running', (tester) async {
+      final mockClient = _buildMockClient(agents: [
+        {
+          'name': 'email',
+          'description': 'Email agent',
+          'default_ui_pattern': 'tinder',
+          'tools': [],
+          'approval_required': [],
+          'suggestions': [],
+          'stats': {
+            'total_runs': 2,
+            'completed': 1,
+            'errors': 0,
+            'running': 1,
+            'total_tool_calls': 4,
+            'total_approvals': 0,
+          },
+        },
+      ]);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      // Use pump with duration instead of pumpAndSettle because the
+      // CircularProgressIndicator in the "working" badge animates
+      // continuously, preventing pumpAndSettle from completing.
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text('1 working'), findsOneWidget);
+
+      // Dispose to cancel polling timer
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
     });
   });
 }

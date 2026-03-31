@@ -13,6 +13,7 @@ class BaseAgent(ABC):
     """
 
     name: str = "base"
+    description: str = "Base agent"
     default_ui_pattern: UIPattern = UIPattern.CHAT
 
     @property

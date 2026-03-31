@@ -144,6 +144,34 @@ def delete_session(session_id: str):
     return {"status": "deleted", "session_id": session_id}
 
 
+# --- Agent dashboard routes (SCOPE.md Feature 3: See Agents) ---
+
+
+@app.get("/api/agents")
+def list_agents():
+    """List all registered agents with metadata, tools, and aggregate stats.
+
+    Powers the See Agents dashboard - returns each agent as a visual entity
+    with real-time status (idle/working/completed) and activity summary.
+    """
+    return runner.describe_agents()
+
+
+@app.get("/api/agents/activity")
+def agents_activity(limit: int = 50):
+    """Get recent activity across all agents - global activity feed."""
+    return runner.activity_store.get_all_activity(limit=limit)
+
+
+@app.get("/api/agents/{agent_name}")
+def get_agent(agent_name: str):
+    """Get detailed info for a single agent including tool definitions and recent activity."""
+    detail = runner.describe_agent(agent_name)
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+    return detail
+
+
 # --- Auth routes ---
 
 

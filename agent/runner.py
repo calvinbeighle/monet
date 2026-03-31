@@ -25,6 +25,7 @@ from agent.models import (
     RoutedIntent,
     UIPattern,
 )
+from agent.activity_store import ActivityStore
 from agent.router import IntentRouter
 from agent.session_store import SessionStore
 
@@ -57,12 +58,16 @@ class AgentRunner:
         router: Optional[IntentRouter] = None,
         client: Optional[anthropic.Anthropic] = None,
         session_store: Optional[SessionStore] = None,
+        activity_store: Optional[ActivityStore] = None,
     ) -> None:
         self.approval_gate = approval_gate or ApprovalGate()
         self.router = router or IntentRouter()
         self.client = client or anthropic.Anthropic()
         self.agents = _get_agent_registry()
         self.session_store = session_store or SessionStore()
+        self.activity_store = activity_store or ActivityStore(
+            db_path=self.session_store.db_path
+        )
         # In-memory cache of active sessions for fast access during a request
         self._session_cache: dict[str, list[dict]] = {}
         # Flow advancement signals: session_id -> threading.Event
@@ -95,6 +100,44 @@ class AgentRunner:
     def _resolve_agent(self, agent_name: str) -> Optional[BaseAgent]:
         return self.agents.get(agent_name)
 
+    def describe_agents(self) -> list[dict]:
+        """Return metadata for all registered agents - powers the See Agents dashboard."""
+        result = []
+        for name, agent in self.agents.items():
+            stats = self.activity_store.get_agent_stats(name)
+            tool_names = [t["name"] for t in agent.tools] if agent.tools else []
+            result.append(
+                {
+                    "name": name,
+                    "description": agent.description,
+                    "default_ui_pattern": agent.default_ui_pattern.value,
+                    "tools": tool_names,
+                    "approval_required": list(agent.approval_required),
+                    "suggestions": agent.suggestions,
+                    "stats": stats,
+                }
+            )
+        return result
+
+    def describe_agent(self, agent_name: str) -> Optional[dict]:
+        """Return detailed metadata for a single agent including recent activity."""
+        agent = self.agents.get(agent_name)
+        if agent is None:
+            return None
+        stats = self.activity_store.get_agent_stats(agent_name)
+        activity = self.activity_store.get_agent_activity(agent_name, limit=20)
+        tool_details = agent.tools if agent.tools else []
+        return {
+            "name": agent_name,
+            "description": agent.description,
+            "default_ui_pattern": agent.default_ui_pattern.value,
+            "tools": tool_details,
+            "approval_required": list(agent.approval_required),
+            "suggestions": agent.suggestions,
+            "stats": stats,
+            "recent_activity": activity,
+        }
+
     def run_sync(self, intent: str, session_id: Optional[str] = None) -> AgentResult:
         """Run an agent synchronously. Routes intent, executes agent loop, returns result."""
         routed = self.router.route(intent)
@@ -114,6 +157,14 @@ class AgentRunner:
             )
 
         sid, history = self._get_or_create_session(session_id)
+
+        # Track activity
+        activity_id = self.activity_store.record_start(
+            agent_name=routed.agent,
+            intent=intent,
+            session_id=sid,
+            ui_pattern=routed.ui_pattern,
+        )
 
         # Set session context on agents that need it
         if hasattr(agent, "set_session"):
@@ -217,9 +268,11 @@ class AgentRunner:
             for tool_block in tool_use_blocks:
                 tool_name = tool_block.name
                 tool_input = tool_block.input
+                self.activity_store.record_tool_call(activity_id)
 
                 # Check approval gate
                 if tool_name in agent.approval_required:
+                    self.activity_store.record_approval(activity_id)
                     req = self.approval_gate.create(
                         tool_name=tool_name,
                         parameters=tool_input,
@@ -306,6 +359,16 @@ class AgentRunner:
                     )
                 )
 
+        # Record activity completion
+        has_error = any(o.status == "error" for o in outputs)
+        if has_error:
+            error_msgs = [o.content for o in outputs if o.status == "error"]
+            self.activity_store.record_error(activity_id, "; ".join(error_msgs))
+        else:
+            summary_parts = [o.content for o in outputs if o.status == "complete"]
+            summary = summary_parts[0][:200] if summary_parts else None
+            self.activity_store.record_finish(activity_id, summary=summary)
+
         return AgentResult(
             agent=routed.agent,
             ui_pattern=routed.ui_pattern,
@@ -321,6 +384,14 @@ class AgentRunner:
 
         sid, history = self._get_or_create_session(session_id)
 
+        # Track activity
+        activity_id = self.activity_store.record_start(
+            agent_name=routed.agent,
+            intent=intent,
+            session_id=sid,
+            ui_pattern=routed.ui_pattern,
+        )
+
         yield AgentEvent(
             type="routing",
             data=routed.agent,
@@ -332,6 +403,9 @@ class AgentRunner:
         )
 
         if agent is None:
+            self.activity_store.record_error(
+                activity_id, f"No agent for '{routed.agent}'"
+            )
             yield AgentEvent(
                 type="error",
                 data=f"No agent available for '{routed.agent}'",
@@ -357,6 +431,7 @@ class AgentRunner:
 
         # Collect outputs for the done event
         stream_outputs: list[dict] = []
+        stream_had_error: Optional[str] = None
 
         # For agents with no tools, omit tools parameter
         stream_kwargs = {
@@ -422,6 +497,7 @@ class AgentRunner:
                     collected_content = final_message.content
 
             except anthropic.AuthenticationError:
+                stream_had_error = "Authentication failed"
                 yield AgentEvent(
                     type="error",
                     data="Authentication failed. Please check your API key.",
@@ -429,6 +505,7 @@ class AgentRunner:
                 )
                 break
             except anthropic.RateLimitError:
+                stream_had_error = "Rate limit exceeded"
                 yield AgentEvent(
                     type="error",
                     data="Rate limit exceeded. Please try again in a moment.",
@@ -437,6 +514,7 @@ class AgentRunner:
                 break
             except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
                 logger.error("API connection error during stream: %s", e)
+                stream_had_error = f"Connection error: {e}"
                 yield AgentEvent(
                     type="error",
                     data="Failed to connect to AI service. Please check your network.",
@@ -445,6 +523,7 @@ class AgentRunner:
                 break
             except anthropic.APIError as e:
                 logger.error("API error during stream: %s", e)
+                stream_had_error = f"API error: {e.message}"
                 yield AgentEvent(
                     type="error",
                     data=f"AI service error: {e.message}",
@@ -478,8 +557,10 @@ class AgentRunner:
             for tool_block in tool_use_blocks:
                 tool_name = tool_block["name"]
                 tool_input = tool_block["input"]
+                self.activity_store.record_tool_call(activity_id)
 
                 if tool_name in agent.approval_required:
+                    self.activity_store.record_approval(activity_id)
                     req = self.approval_gate.create(
                         tool_name=tool_name,
                         parameters=tool_input,
@@ -576,6 +657,19 @@ class AgentRunner:
         # Include planning node data in done event for whiteboard pattern
         if hasattr(agent, "_nodes") and routed.ui_pattern == UIPattern.WHITEBOARD:
             stream_outputs = list(agent._nodes.values())
+
+        # Record activity completion
+        if stream_had_error:
+            self.activity_store.record_error(activity_id, stream_had_error)
+        else:
+            summary = None
+            if stream_outputs:
+                first = stream_outputs[0]
+                if isinstance(first, dict) and "content" in first:
+                    summary = first["content"][:200]
+                elif isinstance(first, dict) and "title" in first:
+                    summary = first["title"][:200]
+            self.activity_store.record_finish(activity_id, summary=summary)
 
         yield AgentEvent(
             type="done",

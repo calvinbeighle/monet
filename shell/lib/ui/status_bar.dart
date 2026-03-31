@@ -50,6 +50,7 @@ class StatusBar extends StatelessWidget {
   final ValueChanged<int>? onVolumeChanged;
   final ValueChanged<int>? onBrightnessChanged;
   final VoidCallback? onPowerTap;
+  final VoidCallback? onAgentsTap;
 
   const StatusBar({
     super.key,
@@ -63,6 +64,7 @@ class StatusBar extends StatelessWidget {
     this.onVolumeChanged,
     this.onBrightnessChanged,
     this.onPowerTap,
+    this.onAgentsTap,
   });
 
   @override
@@ -79,6 +81,7 @@ class StatusBar extends StatelessWidget {
       child: Row(
         children: [
           ...tools.map(_buildToolIndicator),
+          if (onAgentsTap != null) _buildAgentsButton(),
           const Spacer(),
           _buildWifiIndicator(),
           const SizedBox(width: 12),
@@ -100,6 +103,37 @@ class StatusBar extends StatelessWidget {
             _buildLogoutButton(),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildAgentsButton() {
+    return GestureDetector(
+      onTap: onAgentsTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(4),
+          color: Colors.white.withValues(alpha: 0.06),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.smart_toy_outlined,
+              size: 13,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Agents',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

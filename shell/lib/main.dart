@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 
 import 'services/agent_client.dart';
+import 'ui/agents_dashboard.dart';
 import 'ui/approval_overlay.dart';
 import 'ui/onboarding.dart';
 import 'ui/patterns/chat.dart';
@@ -286,6 +287,23 @@ class MonetShellState extends State<MonetShell> {
         ),
       ),
     );
+  }
+
+  /// Track the pattern we were on before opening the agents dashboard,
+  /// so we can return to it when the user navigates back.
+  String? _preAgentsPattern;
+
+  void _handleAgentsTap() {
+    if (_activePattern == 'agents') {
+      // Toggle off - return to previous pattern
+      setState(() => _activePattern = _preAgentsPattern ?? 'chat');
+    } else {
+      // Toggle on - show agents dashboard
+      setState(() {
+        _preAgentsPattern = _activePattern;
+        _activePattern = 'agents';
+      });
+    }
   }
 
   @override
@@ -721,6 +739,7 @@ class MonetShellState extends State<MonetShell> {
             onVolumeChanged: _handleVolumeChanged,
             onBrightnessChanged: _handleBrightnessChanged,
             onPowerTap: _handlePowerTap,
+            onAgentsTap: _handleAgentsTap,
           ),
         ],
       ),
@@ -862,6 +881,8 @@ class MonetShellState extends State<MonetShell> {
           onNodeTap: _handleNodeTap,
           onNodeMoved: _handleNodeMoved,
         );
+      case 'agents':
+        child = const AgentsDashboard(key: ValueKey('agents'));
       case 'chat':
       default:
         child = ChatPattern(

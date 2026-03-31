@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete - 455 passing tests (355 Python + 100 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete - 517 passing tests (400 Python + 117 Flutter).**
 
 ---
 
@@ -125,6 +125,16 @@ Flutter shell with all 4 UI patterns. Runs on Mac for dev, targets Linux aarch64
 - [x] Wire all 4 pattern widgets into main.dart
 - [x] Wire tinder/diff decision callbacks to backend approval API
 - [x] Animated transitions between patterns
+- [x] "Agents" button in StatusBar to toggle AgentsDashboard
+
+### Task 12a: See Agents Dashboard (SCOPE.md Feature 3)
+
+- [x] `agent/activity_store.py` - ActivityStore class tracks every agent run in SQLite (start time, finish time, status, tool calls count, approvals count, summary)
+- [x] Agent registry API endpoints: GET /api/agents, GET /api/agents/{name}, GET /api/agents/activity
+- [x] Activity tracking wired into AgentRunner (run_sync and stream_sync)
+- [x] Flutter `shell/lib/ui/agents_dashboard.dart` - agent cards with real-time status indicators (idle/working), tool count, run count, and clickable detail views
+- [x] Detail view shows tool listing, stats, and activity history
+- [x] Agent descriptions added to all 4 agents (email, code, planning, general)
 
 ---
 
@@ -335,7 +345,13 @@ Debian VM boots directly into Monet.
 - **Connect Tools onboarding implemented (SCOPE.md Feature 2):** New `agent/nango.py` with `NangoManager` class wraps Nango API for connection status checks (`GET /connection/{connectionId}`) and OAuth session creation (`POST /connect/sessions`). Two new API endpoints: `GET /api/tools/status` returns all tool connection states, `GET /api/tools/connect/{provider}` returns an OAuth URL. Flutter `onboarding.dart` now has a three-step flow: create account -> connect tools -> enter shell. Connect Tools step shows Gmail/GitHub with green/grey status indicators and Connect buttons. Gracefully degrades when Nango is not configured (shows message about setting NANGO_SECRET_KEY).
 - **Real-time tool status in StatusBar:** `main.dart` now polls `/api/tools/status` every 10 seconds (alongside existing system state polling) and feeds real `ConnectedTool` data into the `StatusBar` widget. Previously hardcoded `connected: false` for both tools.
 - **Test count:** 455 total (355 Python + 100 Flutter), all passing.
-- **Remaining gaps:** "See Agents" dashboard from SCOPE.md not implemented. VM testing needed for Tasks 19, 21, 22 boot flow. Writing tool connector not implemented.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Writing tool connector not implemented.
+
+### Implementation Notes (2026-03-31) - Batch 15
+
+- **See Agents dashboard implemented (SCOPE.md Feature 3):** `agent/activity_store.py` with ActivityStore class tracks every agent run in SQLite (start time, finish time, status, tool calls count, approvals count, summary). Three new API endpoints: GET /api/agents returns all agents with metadata and stats, GET /api/agents/{name} returns detail with recent activity, GET /api/agents/activity returns global activity feed. Activity tracking wired into both run_sync and stream_sync in AgentRunner. Flutter `agents_dashboard.dart` renders agents as visual entity cards (not table rows) with real-time status indicators (idle/working), tool count, run count, and clickable detail views with tool listing, stats, and activity history. StatusBar has new "Agents" button that toggles the dashboard. All four agents now have description fields.
+- **Test count:** 517 total (400 Python + 117 Flutter), all passing.
+- **Remaining gaps:** Writing tool connector not implemented. VM testing needed for Tasks 19, 21, 22 boot flow. User-created agents (SCOPE.md mentions "configured through conversation") not implemented.
 
 ---
 

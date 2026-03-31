@@ -96,6 +96,141 @@ class ApprovalRequest {
   }
 }
 
+class AgentStats {
+  final int totalRuns;
+  final int completed;
+  final int errors;
+  final int running;
+  final int totalToolCalls;
+  final int totalApprovals;
+  final double? lastRunAt;
+
+  AgentStats({
+    this.totalRuns = 0,
+    this.completed = 0,
+    this.errors = 0,
+    this.running = 0,
+    this.totalToolCalls = 0,
+    this.totalApprovals = 0,
+    this.lastRunAt,
+  });
+
+  factory AgentStats.fromJson(Map<String, dynamic> json) {
+    return AgentStats(
+      totalRuns: json['total_runs'] as int? ?? 0,
+      completed: json['completed'] as int? ?? 0,
+      errors: json['errors'] as int? ?? 0,
+      running: json['running'] as int? ?? 0,
+      totalToolCalls: json['total_tool_calls'] as int? ?? 0,
+      totalApprovals: json['total_approvals'] as int? ?? 0,
+      lastRunAt: (json['last_run_at'] as num?)?.toDouble(),
+    );
+  }
+
+  /// Current status derived from stats: running > idle
+  String get currentStatus {
+    if (running > 0) return 'working';
+    if (totalRuns == 0) return 'idle';
+    return 'idle';
+  }
+}
+
+class AgentInfo {
+  final String name;
+  final String description;
+  final String defaultUiPattern;
+  final List<String> tools;
+  final List<String> approvalRequired;
+  final List<String> suggestions;
+  final AgentStats stats;
+
+  AgentInfo({
+    required this.name,
+    required this.description,
+    required this.defaultUiPattern,
+    this.tools = const [],
+    this.approvalRequired = const [],
+    this.suggestions = const [],
+    required this.stats,
+  });
+
+  factory AgentInfo.fromJson(Map<String, dynamic> json) {
+    return AgentInfo(
+      name: json['name'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      defaultUiPattern: json['default_ui_pattern'] as String? ?? 'chat',
+      tools: (json['tools'] as List<dynamic>?)
+              ?.map((t) => t.toString())
+              .toList() ??
+          [],
+      approvalRequired: (json['approval_required'] as List<dynamic>?)
+              ?.map((t) => t.toString())
+              .toList() ??
+          [],
+      suggestions: (json['suggestions'] as List<dynamic>?)
+              ?.map((t) => t.toString())
+              .toList() ??
+          [],
+      stats: AgentStats.fromJson(
+          json['stats'] != null
+              ? Map<String, dynamic>.from(json['stats'] as Map)
+              : {}),
+    );
+  }
+}
+
+class AgentActivity {
+  final String id;
+  final String agentName;
+  final String intent;
+  final String? sessionId;
+  final String? uiPattern;
+  final String status;
+  final double startedAt;
+  final double? finishedAt;
+  final String? errorMessage;
+  final int toolCallsCount;
+  final int approvalsCount;
+  final String? summary;
+
+  AgentActivity({
+    required this.id,
+    required this.agentName,
+    required this.intent,
+    this.sessionId,
+    this.uiPattern,
+    required this.status,
+    required this.startedAt,
+    this.finishedAt,
+    this.errorMessage,
+    this.toolCallsCount = 0,
+    this.approvalsCount = 0,
+    this.summary,
+  });
+
+  factory AgentActivity.fromJson(Map<String, dynamic> json) {
+    return AgentActivity(
+      id: json['id'] as String? ?? '',
+      agentName: json['agent_name'] as String? ?? '',
+      intent: json['intent'] as String? ?? '',
+      sessionId: json['session_id'] as String?,
+      uiPattern: json['ui_pattern'] as String?,
+      status: json['status'] as String? ?? 'running',
+      startedAt: (json['started_at'] as num?)?.toDouble() ?? 0,
+      finishedAt: (json['finished_at'] as num?)?.toDouble(),
+      errorMessage: json['error_message'] as String?,
+      toolCallsCount: json['tool_calls_count'] as int? ?? 0,
+      approvalsCount: json['approvals_count'] as int? ?? 0,
+      summary: json['summary'] as String?,
+    );
+  }
+
+  Duration? get duration {
+    if (finishedAt == null) return null;
+    return Duration(milliseconds: ((finishedAt! - startedAt) * 1000).round());
+  }
+}
+
 class AgentClient {
   final String baseUrl;
   final http.Client _client;
@@ -344,6 +479,43 @@ class AgentClient {
         'user_state': userState,
       }),
     );
+  }
+
+  // --- Agent dashboard (SCOPE.md Feature 3: See Agents) ---
+
+  /// List all registered agents with metadata, tools, and stats.
+  Future<List<AgentInfo>> listAgents() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/agents'));
+    if (response.statusCode != 200) {
+      throw Exception('Failed to list agents: ${response.statusCode}');
+    }
+    final list = jsonDecode(response.body) as List<dynamic>;
+    return list
+        .map((j) => AgentInfo.fromJson(j as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Get detailed info for a single agent including recent activity.
+  Future<Map<String, dynamic>> getAgent(String name) async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/agents/$name'));
+    if (response.statusCode != 200) {
+      throw Exception('Failed to get agent: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Get recent activity across all agents.
+  Future<List<AgentActivity>> agentsActivity({int limit = 50}) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/agents/activity?limit=$limit'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to get agent activity: ${response.statusCode}');
+    }
+    final list = jsonDecode(response.body) as List<dynamic>;
+    return list
+        .map((j) => AgentActivity.fromJson(j as Map<String, dynamic>))
+        .toList();
   }
 
   // --- Tool connections ---

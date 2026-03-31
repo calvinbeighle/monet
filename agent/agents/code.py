@@ -31,6 +31,7 @@ class CodeAgent(BaseAgent):
     """
 
     name = "code"
+    description = "Reviews PRs, writes code, and manages your GitHub repos"
     default_ui_pattern = UIPattern.DIFF
 
     @property

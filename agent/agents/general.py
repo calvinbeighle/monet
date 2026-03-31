@@ -17,6 +17,7 @@ class GeneralAgent(BaseAgent):
     """
 
     name = "general"
+    description = "Answers questions and handles general conversation"
     default_ui_pattern = UIPattern.CHAT
 
     @property
