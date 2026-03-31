@@ -1,6 +1,7 @@
 /// Onboarding and login screens for Monet OS.
 ///
-/// First boot: detects no user exists and shows account creation.
+/// First boot: detects no user exists and shows account creation,
+/// then Connect Tools step for Gmail/GitHub OAuth.
 /// Subsequent boots: shows lock screen with username/password login.
 /// Session persists until explicit logout or app restart.
 
@@ -9,8 +10,8 @@ import 'package:provider/provider.dart';
 
 import '../services/agent_client.dart';
 
-/// The three states the onboarding flow can be in.
-enum _OnboardingState { loading, createAccount, login }
+/// The states the onboarding flow can be in.
+enum _OnboardingState { loading, createAccount, connectTools, login }
 
 class OnboardingScreen extends StatefulWidget {
   final VoidCallback onAuthenticated;
@@ -30,6 +31,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _isSubmitting = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
+
+  // Tool connection state for the Connect Tools step
+  List<_ToolInfo> _tools = [];
+  bool _loadingTools = false;
+  bool _nangoConfigured = false;
 
   @override
   void initState() {
@@ -88,7 +94,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final client = context.read<AgentClient>();
     try {
       await client.createUser(username, password);
-      widget.onAuthenticated();
+      // After account creation, show Connect Tools step
+      setState(() {
+        _isSubmitting = false;
+        _state = _OnboardingState.connectTools;
+      });
+      _loadToolStatus();
     } catch (e) {
       setState(() {
         _isSubmitting = false;
@@ -123,6 +134,106 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
+  Future<void> _loadToolStatus() async {
+    setState(() => _loadingTools = true);
+    final client = context.read<AgentClient>();
+    try {
+      final data = await client.toolsStatus();
+      final tools = data['tools'] as List<dynamic>? ?? [];
+      final configured = data['configured'] as bool? ?? false;
+      if (mounted) {
+        setState(() {
+          _nangoConfigured = configured;
+          _tools = tools
+              .map((t) => _ToolInfo(
+                    name: (t as Map<String, dynamic>)['name'] as String? ?? '',
+                    provider: t['provider'] as String? ?? '',
+                    connected: t['connected'] as bool? ?? false,
+                  ))
+              .toList();
+          _loadingTools = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loadingTools = false;
+          _tools = [
+            _ToolInfo(name: 'Gmail', provider: 'gmail', connected: false),
+            _ToolInfo(name: 'GitHub', provider: 'github', connected: false),
+          ];
+        });
+      }
+    }
+  }
+
+  Future<void> _handleConnect(String provider) async {
+    final client = context.read<AgentClient>();
+    try {
+      final data = await client.toolConnectUrl(provider);
+      final url = data['url'] as String?;
+      if (url != null && mounted) {
+        // Show the OAuth URL in a dialog - on the real OS this would
+        // open in a webview. For now, show the URL and a refresh button.
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF12121A),
+            title: Text(
+              'Connect ${provider == 'gmail' ? 'Gmail' : 'GitHub'}',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Complete the OAuth flow in your browser, then tap Refresh to verify the connection.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A0A0F),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: SelectableText(
+                    url,
+                    style: TextStyle(
+                      color: const Color(0xFF7C6EF0),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(
+                  'Close',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                ),
+              ),
+            ],
+          ),
+        );
+        // Refresh tool status after dialog closes
+        _loadToolStatus();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -141,6 +252,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         );
       case _OnboardingState.createAccount:
         return _buildCreateAccountForm();
+      case _OnboardingState.connectTools:
+        return _buildConnectToolsForm();
       case _OnboardingState.login:
         return _buildLoginForm();
     }
@@ -180,6 +293,127 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         const SizedBox(height: 24),
         _buildSubmitButton('Create Account', _handleCreateAccount),
       ],
+    );
+  }
+
+  Widget _buildConnectToolsForm() {
+    return _FormCard(
+      title: 'Connect Your Tools',
+      subtitle: 'Link your accounts so Monet can work with your email and code.',
+      error: _errorMessage,
+      children: [
+        if (_loadingTools)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Center(
+              child: CircularProgressIndicator(color: Color(0xFF7C6EF0)),
+            ),
+          )
+        else
+          ..._tools.map((tool) => _buildToolRow(tool)),
+        if (!_nangoConfigured && !_loadingTools) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Set NANGO_SECRET_KEY to enable OAuth connections.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.3),
+              fontSize: 12,
+            ),
+          ),
+        ],
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () {
+                  _loadToolStatus();
+                },
+                child: Text(
+                  'Refresh',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: _buildSubmitButton('Continue', () {
+                widget.onAuthenticated();
+              }),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildToolRow(_ToolInfo tool) {
+    final icon = tool.provider == 'gmail' ? Icons.email_outlined : Icons.code;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0A0A0F),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: tool.connected
+                ? Colors.green.withValues(alpha: 0.3)
+                : Colors.white.withValues(alpha: 0.08),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: tool.connected
+                  ? Colors.green
+                  : Colors.white.withValues(alpha: 0.4),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    tool.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    tool.connected ? 'Connected' : 'Not connected',
+                    style: TextStyle(
+                      color: tool.connected
+                          ? Colors.green.withValues(alpha: 0.8)
+                          : Colors.white.withValues(alpha: 0.3),
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (tool.connected)
+              Icon(Icons.check_circle, size: 20, color: Colors.green)
+            else
+              SizedBox(
+                height: 32,
+                child: TextButton(
+                  onPressed: _nangoConfigured ? () => _handleConnect(tool.provider) : null,
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF7C6EF0),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  child: const Text('Connect', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -275,6 +509,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ),
     );
   }
+}
+
+/// Tool info for the Connect Tools step.
+class _ToolInfo {
+  final String name;
+  final String provider;
+  final bool connected;
+
+  const _ToolInfo({
+    required this.name,
+    required this.provider,
+    required this.connected,
+  });
 }
 
 /// Shared form card wrapper with title, subtitle, and error display.

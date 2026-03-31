@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete - 420 passing tests (330 Python + 90 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete - 455 passing tests (355 Python + 100 Flutter).**
 
 ---
 
@@ -237,7 +237,7 @@ Debian VM boots directly into Monet.
 - **Done event now carries outputs:** Fixed - `stream_sync` now collects text outputs and includes them in the `done` event metadata along with agent name, ui_pattern, and session_id. This enables pattern population from streaming responses.
 - **Real-time token streaming fixed:** Previously tokens were buffered in a local `streamedContent` string and only rendered on the `done` event. Now tokens stream into the UI on each event via mutable `ChatMessage` updates.
 - **Intent bar hidden on initial load:** The intent bar is hidden when `_activePattern` is null (initial state), relying on chat pattern's built-in input field. This is intentional - chat is the default landing view.
-- **Tool connection status hardcoded:** StatusBar always shows Gmail/GitHub as disconnected. Needs Nango connection state API.
+- **Tool connection status fixed:** StatusBar now polls `/api/tools/status` endpoint every 10 seconds for real Nango connection state. `NangoManager` in `agent/nango.py` queries Nango API for Gmail/GitHub OAuth status.
 - **Auth session persistence:** Resolved - session tokens are now cryptographically random, persisted via shared_preferences, and validated on cold start via /api/auth/verify.
 
 ### Implementation Notes (2026-03-30) - Batch 2
@@ -328,7 +328,14 @@ Debian VM boots directly into Monet.
 - **Image build script implemented (Task 22):** `os/build-image.sh` automates the full pipeline from stock Debian 12 cloud image to bootable Monet .qcow2. Downloads official Debian cloud image (arm64 or amd64), resizes to 8GB, injects Monet source tree via virt-customize, runs strip.sh and install.sh inside the image, compacts the output. Supports --arch, --size, --source, --skip-download, --api-key, --nango-key, --password flags. Requires libguestfs-tools + qemu-utils on a Linux build host. Uses a staging directory + install wrapper script to bridge install.sh's repo-relative path expectations. Final image is compressed qcow2 ready for UTM/QEMU.
 - **Build script tests:** 37 new tests in `test_build_image.py` covering script existence, permissions, shebang, strict mode, root guard, required tool checks, repo file verification, architecture support, download/resize/strip/install pipeline, argument parsing (--help exits 0, unknown flags exit 1), output path construction, safety (no hardcoded keys, operates on copy not base, growpart+resize2fs), and repo file presence.
 - **Test count:** 420 total (330 Python + 90 Flutter), all passing.
-- **Remaining gaps:** Tool connection status hardcoded in StatusBar (needs Nango connection state API). "See Agents" dashboard from SCOPE.md not in implementation plan or codebase. Connect Tools onboarding step not implemented. VM testing needed for Tasks 19, 21, 22 boot flow.
+- **Connect Tools onboarding implemented:** `onboarding.dart` now has a third step after account creation showing Gmail/GitHub connection status with Connect buttons. Backend generates Nango OAuth URLs via `/api/tools/connect/{provider}`.
+
+### Implementation Notes (2026-03-30) - Batch 14
+
+- **Connect Tools onboarding implemented (SCOPE.md Feature 2):** New `agent/nango.py` with `NangoManager` class wraps Nango API for connection status checks (`GET /connection/{connectionId}`) and OAuth session creation (`POST /connect/sessions`). Two new API endpoints: `GET /api/tools/status` returns all tool connection states, `GET /api/tools/connect/{provider}` returns an OAuth URL. Flutter `onboarding.dart` now has a three-step flow: create account -> connect tools -> enter shell. Connect Tools step shows Gmail/GitHub with green/grey status indicators and Connect buttons. Gracefully degrades when Nango is not configured (shows message about setting NANGO_SECRET_KEY).
+- **Real-time tool status in StatusBar:** `main.dart` now polls `/api/tools/status` every 10 seconds (alongside existing system state polling) and feeds real `ConnectedTool` data into the `StatusBar` widget. Previously hardcoded `connected: false` for both tools.
+- **Test count:** 455 total (355 Python + 100 Flutter), all passing.
+- **Remaining gaps:** "See Agents" dashboard from SCOPE.md not implemented. VM testing needed for Tasks 19, 21, 22 boot flow. Writing tool connector not implemented.
 
 ---
 

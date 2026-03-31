@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from agent.approval import ApprovalGate
 from agent.auth import AuthStore, UserExistsError
 from agent.models import ApprovalStatus
+from agent.nango import NangoManager
 from agent.runner import AgentRunner
 from agent.session_store import DEFAULT_DB_PATH
 from agent.system import SystemManager
@@ -27,6 +28,7 @@ approval_gate = ApprovalGate()
 runner = AgentRunner(approval_gate=approval_gate)
 auth_store = AuthStore(db_path=DEFAULT_DB_PATH)
 system_mgr = SystemManager()
+nango_mgr = NangoManager()
 
 
 class RunRequest(BaseModel):
@@ -192,6 +194,41 @@ def logout(token: str):
     if not revoked:
         raise HTTPException(status_code=404, detail="Token not found")
     return {"status": "logged_out"}
+
+
+# --- Tool connection routes ---
+
+
+@app.get("/api/tools/status")
+def tools_status():
+    """Get connection status for all configured tools (Gmail, GitHub).
+
+    Queries Nango to check if each OAuth connection is active.
+    Returns a list of tools with their connection state so the
+    Flutter shell can show real green/grey indicators.
+    """
+    from dataclasses import asdict as _asdict
+
+    statuses = nango_mgr.get_all_statuses()
+    return {"tools": [_asdict(s) for s in statuses], "configured": nango_mgr.configured}
+
+
+@app.get("/api/tools/connect/{provider}")
+def tool_connect_url(provider: str):
+    """Get an OAuth connect URL for a specific provider.
+
+    Creates a Nango connect session and returns a URL the Flutter
+    shell can open in a webview or browser to initiate OAuth.
+    """
+    session = nango_mgr.create_connect_session(provider)
+    if session is None:
+        if provider not in ("gmail", "github"):
+            raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
+        raise HTTPException(
+            status_code=503,
+            detail="Nango is not configured. Set NANGO_SECRET_KEY environment variable.",
+        )
+    return {"url": session.url, "token": session.token, "provider": session.provider}
 
 
 # --- System integration routes ---

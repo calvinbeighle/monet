@@ -346,6 +346,29 @@ class AgentClient {
     );
   }
 
+  // --- Tool connections ---
+
+  /// Get connection status for all configured tools (Gmail, GitHub).
+  Future<Map<String, dynamic>> toolsStatus() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/tools/status'));
+    if (response.statusCode != 200) {
+      throw Exception('Tools status check failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Get an OAuth connect URL for a provider (gmail, github).
+  Future<Map<String, dynamic>> toolConnectUrl(String provider) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/tools/connect/$provider'),
+    );
+    if (response.statusCode != 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      throw Exception(body['detail'] ?? 'Failed to get connect URL');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   // --- System integration ---
 
   /// Get full system state (WiFi, volume, brightness).

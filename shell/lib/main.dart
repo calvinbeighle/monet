@@ -143,14 +143,24 @@ class MonetShellState extends State<MonetShell> {
   SystemStatus _systemStatus = const SystemStatus();
   Timer? _systemPollTimer;
 
+  // Tool connection state (Gmail, GitHub via Nango)
+  List<ConnectedTool> _connectedTools = const [
+    ConnectedTool(name: 'Gmail', connected: false),
+    ConnectedTool(name: 'GitHub', connected: false),
+  ];
+
   @override
   void initState() {
     super.initState();
     _pollSystemState();
+    _pollToolStatus();
     // Poll system state every 10 seconds
     _systemPollTimer = Timer.periodic(
       const Duration(seconds: 10),
-      (_) => _pollSystemState(),
+      (_) {
+        _pollSystemState();
+        _pollToolStatus();
+      },
     );
   }
 
@@ -161,6 +171,26 @@ class MonetShellState extends State<MonetShell> {
       if (mounted) {
         setState(() {
           _systemStatus = SystemStatus.fromJson(state);
+        });
+      }
+    } catch (_) {
+      // Backend unreachable - keep last known state
+    }
+  }
+
+  Future<void> _pollToolStatus() async {
+    try {
+      final client = context.read<AgentClient>();
+      final data = await client.toolsStatus();
+      final tools = data['tools'] as List<dynamic>? ?? [];
+      if (mounted) {
+        setState(() {
+          _connectedTools = tools
+              .map((t) => ConnectedTool(
+                    name: (t as Map<String, dynamic>)['name'] as String? ?? '',
+                    connected: t['connected'] as bool? ?? false,
+                  ))
+              .toList();
         });
       }
     } catch (_) {
@@ -681,10 +711,7 @@ class MonetShellState extends State<MonetShell> {
           _buildFlowProgress(),
           Expanded(child: _buildActivePattern()),
           StatusBar(
-            tools: const [
-              ConnectedTool(name: 'Gmail', connected: false),
-              ConnectedTool(name: 'GitHub', connected: false),
-            ],
+            tools: _connectedTools,
             activeAgent: _isRunning ? _activeAgent : null,
             activePattern: _activePattern,
             onLogout: widget.onLogout,
