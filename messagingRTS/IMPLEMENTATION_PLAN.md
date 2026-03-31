@@ -2,6 +2,15 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
+**Current state**: Project scaffolded and core systems implemented. 216 tests passing.
+Tags: rts-v0.0.1 through rts-v0.0.7. Build, typecheck, lint all clean.
+
+**Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.2 Map Rendering,
+2.4 Zone System, 2.5 Drift Engine, 2.6 Clustering, 3.1-3.4 Game Mechanics, 4.1 Agent Units.
+
+**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 2.3 Navigation (keyboard/search),
+4.2 Agent AI Backend, 4.3 Agent Deployment UI.
+
 ---
 
 ## Tech Stack Decisions
@@ -118,17 +127,17 @@ These must be resolved before implementation begins:
 
 ### 2.2 Map Rendering Engine
 
-- [ ] PixiJS canvas setup within React viewport
-- [ ] Layer system: background (zones) -> mid (connections) -> foreground (threads/clusters) -> overlay (agents, minimap)
-- [ ] Thread entity rendering: position, urgency glow, value-driven size, age opacity
-- [ ] Urgency pulse animation (rate proportional to urgency level)
-- [ ] Drift animation (slow organic positional movement)
-- [ ] Agent-occupied visual indicator on threads
-- [ ] Archived thread fade to minimum opacity
+- [x] PixiJS canvas setup within React viewport
+- [x] Layer system: background (zones) -> mid (connections) -> foreground (threads/clusters) -> overlay (agents, minimap)
+- [x] Thread entity rendering: position, urgency glow, value-driven size, age opacity
+- [x] Urgency pulse animation (rate proportional to urgency level)
+- [x] Drift animation (slow organic positional movement)
+- [x] Agent-occupied visual indicator on threads
+- [x] Archived thread fade to minimum opacity
 - [ ] Performance target: smooth rendering with 500+ entities
-- [ ] Viewport responsiveness on resize
-- [ ] **Spec**: 02-map-rendering
-- [ ] **Tests**: Layer ordering, entity state-driven appearance, 500-entity performance benchmark, resize behavior
+- [x] Viewport responsiveness on resize
+- [x] **Spec**: 02-map-rendering
+- [x] **Tests**: Layer ordering, entity state-driven appearance, 500-entity performance benchmark, resize behavior
 
 ### 2.3 Navigation (Pan, Zoom, Levels)
 
@@ -181,18 +190,18 @@ These must be resolved before implementation begins:
 
 ### 2.6 Thread Clustering
 
-- [ ] Affinity calculation: shared participants (strongest), topic keywords, labels, temporal proximity
-- [ ] Cluster formation when 2+ threads exceed affinity threshold
-- [ ] Dynamic membership: threads join/leave as data changes
-- [ ] One cluster per thread maximum
-- [ ] Cluster centroid from member positions
-- [ ] Cluster label from common subject/participants
-- [ ] Cluster dissolves when fewer than 2 members
+- [x] Affinity calculation: shared participants (strongest), topic keywords, labels, temporal proximity
+- [x] Cluster formation when 2+ threads exceed affinity threshold
+- [x] Dynamic membership: threads join/leave as data changes
+- [x] One cluster per thread maximum
+- [x] Cluster centroid from member positions
+- [x] Cluster label from common subject/participants
+- [x] Cluster dissolves when fewer than 2 members
 - [ ] Visual: cluster boundary, aggregate representation at low zoom
-- [ ] Manual override: drag thread out of cluster
-- [ ] New thread evaluated for cluster membership on arrival
-- [ ] **Spec**: 11-thread-clustering
-- [ ] **Tests**: Formation on shared participants, dissolution below 2 members, one-cluster-per-thread, manual override persistence, new thread assignment
+- [x] Manual override: drag thread out of cluster
+- [x] New thread evaluated for cluster membership on arrival
+- [x] **Spec**: 11-thread-clustering
+- [x] **Tests**: Formation on shared participants, dissolution below 2 members, one-cluster-per-thread, manual override persistence, new thread assignment
 
 ---
 
@@ -200,50 +209,50 @@ These must be resolved before implementation begins:
 
 ### 3.1 Response Latency & Risk Scoring
 
-- [ ] Latency tolerance table per thread type (cold-outreach, warm-intro, existing-relationship, internal, transactional)
-- [ ] Thread type assignment (by agent layer, default to existing-relationship after 60s)
-- [ ] Continuous risk scoring: monotonic increase with time, tier thresholds (safe -> elevated -> critical -> lost)
-- [ ] Visual: color shift at elevated, pulsing at critical, drift to lost zone at lost
-- [ ] Risk reset to safe + clock restart on reply (user or agent)
-- [ ] Risk scoring cadence: at minimum every 5 minutes
-- [ ] **Spec**: 07-game-mechanics (Thread Ingestion, Continuous Risk Scoring, Risk Reset)
-- [ ] **Tests**: Monotonic risk increase, tier threshold transitions, reset on reply, default type fallback
+- [x] Latency tolerance table per thread type (cold-outreach, warm-intro, existing-relationship, internal, transactional)
+- [x] Thread type assignment (by agent layer, default to existing-relationship after 60s)
+- [x] Continuous risk scoring: monotonic increase with time, tier thresholds (safe -> elevated -> critical -> lost)
+- [x] Visual: color shift at elevated, pulsing at critical, drift to lost zone at lost
+- [x] Risk reset to safe + clock restart on reply (user or agent)
+- [x] Risk scoring cadence: at minimum every 5 minutes
+- [x] **Spec**: 07-game-mechanics (Thread Ingestion, Continuous Risk Scoring, Risk Reset)
+- [x] **Tests**: Monotonic risk increase, tier threshold transitions, reset on reply, default type fallback
 
 ### 3.2 Trust System
 
-- [ ] Trust score per contact (0-100)
-- [ ] Trust tiers: new (0-19), building (20-49), established (50-79), high-trust (80-100)
-- [ ] Trust increase on on-time reply (within elevated threshold)
-- [ ] Consecutive response streak tracking
-- [ ] Trust decay when no reply for 2x critical threshold duration
-- [ ] Decay floor: established contacts with 30+ days at tier don't drop below established
-- [ ] Visual indicators on contact threads
-- [ ] **Spec**: 07-game-mechanics (Trust Score Update, Trust Decay)
-- [ ] **Tests**: Trust tier transitions, streak increment, decay activation/deactivation, floor protection
+- [x] Trust score per contact (0-100)
+- [x] Trust tiers: new (0-19), building (20-49), established (50-79), high-trust (80-100)
+- [x] Trust increase on on-time reply (within elevated threshold)
+- [x] Consecutive response streak tracking
+- [x] Trust decay when no reply for 2x critical threshold duration
+- [x] Decay floor: established contacts with 30+ days at tier don't drop below established
+- [x] Visual indicators on contact threads
+- [x] **Spec**: 07-game-mechanics (Trust Score Update, Trust Decay)
+- [x] **Tests**: Trust tier transitions, streak increment, decay activation/deactivation, floor protection
 
 ### 3.3 Opportunity System
 
-- [ ] Opportunity flag set by agent layer
-- [ ] Opportunity window with configurable duration
-- [ ] States: none -> ripe -> fading -> expired / captured
-- [ ] Ripe: pulse visual, > 50% window remaining
-- [ ] Fading: distinct visual, < 50% window remaining
-- [ ] Expired: visual elevation drops, counted as missed
-- [ ] Captured: reply while window open, counted in session stats
-- [ ] **Spec**: 07-game-mechanics (Opportunity Detection, Pulse and Fade, Capture)
-- [ ] **Tests**: State transitions, visual state at 50% threshold, capture on reply, missed count
+- [x] Opportunity flag set by agent layer
+- [x] Opportunity window with configurable duration
+- [x] States: none -> ripe -> fading -> expired / captured
+- [x] Ripe: pulse visual, > 50% window remaining
+- [x] Fading: distinct visual, < 50% window remaining
+- [x] Expired: visual elevation drops, counted as missed
+- [x] Captured: reply while window open, counted in session stats
+- [x] **Spec**: 07-game-mechanics (Opportunity Detection, Pulse and Fade, Capture)
+- [x] **Tests**: State transitions, visual state at 50% threshold, capture on reply, missed count
 
 ### 3.4 Front Health, Streaks & Session Summary
 
-- [ ] Front health score (0-100): risk load, trust average, opportunity capture rate, loss rate
-- [ ] Health tiers: healthy (>=75), degraded (<50), critical (<25)
-- [ ] Always-visible health display with tier-driven visual state
-- [ ] Streak counters: inbox-zero days, zero-lost-thread days
-- [ ] Streak evaluation at midnight local time
-- [ ] Lost thread tally: permanent per session, even after re-engagement
-- [ ] Session summary panel: threads handled, opportunities captured/missed, risks mitigated, agents deployed, net health change
-- [ ] **Spec**: 07-game-mechanics (Front Health, Streaks, Lost Thread Marking, Session Summary)
-- [ ] **Tests**: Health computation, tier transitions, streak increment/reset, session counter accuracy
+- [x] Front health score (0-100): risk load, trust average, opportunity capture rate, loss rate
+- [x] Health tiers: healthy (>=75), degraded (<50), critical (<25)
+- [x] Always-visible health display with tier-driven visual state
+- [x] Streak counters: inbox-zero days, zero-lost-thread days
+- [x] Streak evaluation at midnight local time
+- [x] Lost thread tally: permanent per session, even after re-engagement
+- [x] Session summary panel: threads handled, opportunities captured/missed, risks mitigated, agents deployed, net health change
+- [x] **Spec**: 07-game-mechanics (Front Health, Streaks, Lost Thread Marking, Session Summary)
+- [x] **Tests**: Health computation, tier transitions, streak increment/reset, session counter accuracy
 
 ### 3.5 Map Alerts
 
@@ -262,14 +271,14 @@ These must be resolved before implementation begins:
 
 ### 4.1 Agent Unit Definitions
 
-- [ ] Six agent types with fixed definitions: Closer (amber, cap 5, 10min CD), Researcher (teal, cap 8, 5min CD), Scheduler (blue, cap 4, 8min CD), Cleaner (gray, cap 20, 15min CD), Drafter (green, cap 6, 5min CD), Escalation Bot (red, cap 15, 2min CD)
-- [ ] Agent instance lifecycle: idle -> deployed -> working -> completed/failed -> cooldown -> idle
-- [ ] Proposal model: per-thread output with pending/approved/rejected states
-- [ ] Capacity enforcement: threads beyond capacity queued in batches
-- [ ] Cooldown enforcement: no bypass, no redeployment until expired
-- [ ] Output types per agent (drafts, enrichment, time proposals, archive batches, escalation flags)
-- [ ] **Spec**: 05-agent-units
-- [ ] **Tests**: State machine transitions (all valid paths, reject invalid), capacity limits, cooldown timer, proposal lifecycle
+- [x] Six agent types with fixed definitions: Closer (amber, cap 5, 10min CD), Researcher (teal, cap 8, 5min CD), Scheduler (blue, cap 4, 8min CD), Cleaner (gray, cap 20, 15min CD), Drafter (green, cap 6, 5min CD), Escalation Bot (red, cap 15, 2min CD)
+- [x] Agent instance lifecycle: idle -> deployed -> working -> completed/failed -> cooldown -> idle
+- [x] Proposal model: per-thread output with pending/approved/rejected states
+- [x] Capacity enforcement: threads beyond capacity queued in batches
+- [x] Cooldown enforcement: no bypass, no redeployment until expired
+- [x] Output types per agent (drafts, enrichment, time proposals, archive batches, escalation flags)
+- [x] **Spec**: 05-agent-units
+- [x] **Tests**: State machine transitions (all valid paths, reject invalid), capacity limits, cooldown timer, proposal lifecycle
 
 ### 4.2 Agent AI Backend
 
