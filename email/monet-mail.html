@@ -13,19 +13,34 @@ canvas{display:block;position:fixed;inset:0}
 #world{z-index:1}
 #fx{z-index:3;pointer-events:none}
 
-/* HUD - top */
+#camPreview{position:fixed;bottom:16px;right:16px;width:240px;height:180px;z-index:45;border-radius:12px;border:1px solid rgba(255,255,255,0.12);object-fit:cover;opacity:0.7;transition:opacity 0.3s;transform:scaleX(-1)}
+#camPreview:hover{opacity:0.9}
+#camPreview.hidden{display:none}
+
+.hand-dot{position:fixed;width:40px;height:40px;border-radius:50%;border:3px solid #5cfca8;pointer-events:none;z-index:44;transform:translate(-50%,-50%);display:none;box-shadow:0 0 20px rgba(100,255,160,0.4);transition:transform 0.1s ease,border-color 0.15s,box-shadow 0.15s}
+.hand-dot.vis{display:block}
+.hand-dot::after{content:'';position:absolute;inset:8px;border-radius:50%;background:rgba(100,255,160,0.5);transition:background 0.15s}
+.hand-dot.hovering{border-color:#fcd85c;box-shadow:0 0 24px rgba(252,216,92,0.5);transform:translate(-50%,-50%) scale(1.2)}
+.hand-dot.hovering::after{background:rgba(252,216,92,0.5)}
+.hand-dot.pinch{border-color:#fc5c78;box-shadow:0 0 24px rgba(252,92,120,0.5);transform:translate(-50%,-50%) scale(0.7)}
+.hand-dot.pinch::after{background:rgba(252,92,120,0.6)}
+
+.hand-debug{position:fixed;bottom:200px;right:16px;z-index:46;background:rgba(0,0,0,0.8);border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:12px 16px;font-size:11px;font-family:monospace;color:rgba(255,255,255,0.7);pointer-events:none;min-width:200px;display:none}
+.hand-debug.vis{display:block}
+.hand-debug .val{color:#5cfca8;font-weight:bold}
+.hand-debug .warn{color:#fcd85c}
+.hand-debug .fire{color:#fc5c78}
+
 .hud{position:fixed;z-index:10;pointer-events:none}
 .hud-top{top:24px;left:0;right:0;display:flex;justify-content:center;gap:40px}
 .hud-item{display:flex;flex-direction:column;align-items:center;gap:2px}
 .hud-val{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
 .hud-lbl{font-size:9px;text-transform:uppercase;letter-spacing:0.2em;color:rgba(255,255,255,0.25)}
 
-/* Combo */
 .combo-text{position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);z-index:20;pointer-events:none;font-size:100px;font-weight:700;opacity:0;letter-spacing:-0.04em}
 .combo-text.pop{animation:comboPop 0.7s cubic-bezier(0.16,1,0.3,1) forwards}
 @keyframes comboPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.3);filter:blur(16px)}35%{opacity:1;transform:translate(-50%,-50%) scale(1.15);filter:blur(0)}100%{opacity:0;transform:translate(-50%,-55%) scale(1);filter:blur(6px)}}
 
-/* Level up flash */
 .lvl-flash{position:fixed;inset:0;z-index:25;pointer-events:none;background:#fff;opacity:0}
 .lvl-flash.go{animation:lFlash 0.5s ease forwards}
 @keyframes lFlash{0%{opacity:0.7}100%{opacity:0}}
@@ -33,32 +48,30 @@ canvas{display:block;position:fixed;inset:0}
 .lvl-text.go{animation:lText 1.4s cubic-bezier(0.16,1,0.3,1) forwards}
 @keyframes lText{0%{opacity:0;transform:translate(-50%,-50%) scale(0.5);filter:blur(16px)}15%{opacity:1;transform:translate(-50%,-50%) scale(1);filter:blur(0)}65%{opacity:1}100%{opacity:0;transform:translate(-50%,-55%);filter:blur(8px)}}
 
-/* Email detail panel - slides up when clicking a creature */
-.detail{position:fixed;bottom:0;left:50%;transform:translateX(-50%);z-index:15;width:min(560px,90vw);background:rgba(12,12,20,0.92);backdrop-filter:blur(40px);-webkit-backdrop-filter:blur(40px);border:1px solid rgba(255,255,255,0.08);border-bottom:none;border-radius:20px 20px 0 0;padding:28px 32px 24px;pointer-events:auto;transition:transform 0.4s cubic-bezier(0.16,1,0.3,1),opacity 0.3s ease;transform:translateX(-50%) translateY(100%);opacity:0}
-.detail.open{transform:translateX(-50%) translateY(0);opacity:1}
-.detail-from{font-size:12px;color:rgba(255,255,255,0.35);margin-bottom:6px;letter-spacing:0.02em}
-.detail-subject{font-family:'Instrument Serif',serif;font-size:24px;line-height:1.3;margin-bottom:14px;letter-spacing:-0.01em;color:rgba(255,255,255,0.9)}
-.detail-body{font-size:14px;line-height:1.7;color:rgba(255,255,255,0.4);max-height:160px;overflow-y:auto;margin-bottom:20px;mask-image:linear-gradient(#000 70%,transparent);-webkit-mask-image:linear-gradient(#000 70%,transparent)}
-.detail-body::-webkit-scrollbar{width:3px}
-.detail-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
-.detail-actions{display:flex;gap:10px;flex-wrap:wrap}
-.detail-btn{padding:10px 22px;border-radius:100px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7);font-size:13px;font-weight:500;letter-spacing:0.03em;cursor:pointer;transition:all 0.2s ease;display:flex;align-items:center;gap:6px}
-.detail-btn:hover{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.18);color:#fff;transform:translateY(-1px)}
-.detail-btn kbd{font-size:10px;opacity:0.4;font-family:inherit}
-.detail-btn.green{border-color:rgba(100,255,160,0.2);color:rgba(100,255,160,0.8)}
-.detail-btn.green:hover{background:rgba(100,255,160,0.08);border-color:rgba(100,255,160,0.3);color:rgba(100,255,160,1)}
-.detail-btn.red{border-color:rgba(255,100,120,0.2);color:rgba(255,100,120,0.8)}
-.detail-btn.red:hover{background:rgba(255,100,120,0.08);border-color:rgba(255,100,120,0.3)}
-.detail-btn.gold{border-color:rgba(255,215,100,0.2);color:rgba(255,215,100,0.8)}
-.detail-btn.gold:hover{background:rgba(255,215,100,0.08);border-color:rgba(255,215,100,0.3)}
-.detail-close{position:absolute;top:12px;right:16px;width:28px;height:28px;border-radius:50%;border:none;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.4);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s}
-.detail-close:hover{background:rgba(255,255,255,0.12);color:#fff}
+.popup-overlay{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,0.6);opacity:0;pointer-events:none;transition:opacity 0.2s ease}
+.popup-overlay.open{opacity:1;pointer-events:auto}
 
-/* Streak bar */
+.popup{position:fixed;top:50%;left:50%;z-index:16;width:min(460px,85vw);max-height:60vh;transform:translate(-50%,-50%) scale(0.95);opacity:0;pointer-events:none;transition:transform 0.25s cubic-bezier(0.16,1,0.3,1),opacity 0.2s ease;background:#000;border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:24px;overflow-y:auto;display:flex;flex-direction:column;-webkit-user-select:none;user-select:none}
+.popup.open{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto}
+.popup::-webkit-scrollbar{width:3px}
+.popup::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px}
+.popup *{-webkit-user-select:none;user-select:none}
+.popup-actions{display:flex;gap:8px;margin-top:auto;padding-top:8px}
+.popup-btn{flex:1;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:none;color:rgba(255,255,255,0.4);font-size:13px;font-weight:500;cursor:pointer;transition:all 0.15s;font-family:'Space Grotesk',sans-serif;text-align:center}
+.popup-btn:hover{border-color:rgba(255,255,255,0.25);color:#fff}
+
+.swipe-hint{position:fixed;top:50%;z-index:17;pointer-events:none;font-size:16px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;opacity:0;transition:opacity 0.2s;padding:14px 28px;border-radius:14px}
+.swipe-hint.left{left:40px;transform:translateY(-50%);color:rgba(255,100,120,0.9);background:rgba(255,100,120,0.06);border:1px solid rgba(255,100,120,0.15)}
+.swipe-hint.right{right:40px;transform:translateY(-50%);color:rgba(100,255,160,0.9);background:rgba(100,255,160,0.06);border:1px solid rgba(100,255,160,0.15)}
+.swipe-hint.vis{opacity:1}
+
+.swipe-progress{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:18;pointer-events:none;width:min(640px,88vw);height:4px;border-radius:2px;background:rgba(255,255,255,0.05);opacity:0;transition:opacity 0.2s}
+.swipe-progress.vis{opacity:1}
+.swipe-progress-fill{height:100%;border-radius:2px;width:50%;transition:width 0.08s ease,background 0.15s}
+
 .streak-bar{position:fixed;bottom:0;left:0;right:0;height:3px;z-index:30;pointer-events:none}
 .streak-fill{height:100%;width:0%;transition:width 0.3s ease}
 
-/* Start screen */
 .start{position:fixed;inset:0;z-index:100;background:rgba(10,10,18,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.8s ease}
 .start.gone{opacity:0;pointer-events:none}
 .start h1{font-family:'Instrument Serif',serif;font-size:clamp(56px,12vw,120px);font-style:italic;letter-spacing:-0.04em;background:linear-gradient(180deg,rgba(255,255,255,0.95),rgba(255,255,255,0.3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
@@ -66,8 +79,8 @@ canvas{display:block;position:fixed;inset:0}
 .start .count{font-size:14px;color:rgba(255,255,255,0.35);margin-bottom:28px;font-variant-numeric:tabular-nums}
 .start button{padding:16px 52px;border-radius:100px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.7);font-size:14px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;transition:all 0.3s ease;backdrop-filter:blur(12px)}
 .start button:hover{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.2);transform:scale(1.03)}
+.start .cam-note{font-size:11px;color:rgba(255,255,255,0.2);margin-top:20px;letter-spacing:0.03em}
 
-/* Inbox Zero */
 .zero{position:fixed;inset:0;z-index:100;background:#0a0a12;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 1s ease}
 .zero.vis{opacity:1;pointer-events:auto}
 .zero h1{font-family:'Instrument Serif',serif;font-size:clamp(40px,9vw,80px);font-style:italic;background:linear-gradient(180deg,rgba(255,255,255,0.95),rgba(255,255,255,0.3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
@@ -77,7 +90,6 @@ canvas{display:block;position:fixed;inset:0}
 .zero-sv{font-size:32px;font-weight:700;margin-bottom:4px;font-variant-numeric:tabular-nums}
 .zero-sl{font-size:9px;text-transform:uppercase;letter-spacing:0.15em;color:rgba(255,255,255,0.2)}
 
-/* Tooltip on hover */
 .tooltip{position:fixed;z-index:12;pointer-events:none;padding:6px 14px;border-radius:10px;background:rgba(12,12,20,0.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.06);font-size:12px;color:rgba(255,255,255,0.7);white-space:nowrap;opacity:0;transition:opacity 0.15s;transform:translateY(-8px)}
 .tooltip.vis{opacity:1}
 .tooltip-sub{font-size:10px;color:rgba(255,255,255,0.3);margin-top:2px}
@@ -87,8 +99,17 @@ canvas{display:block;position:fixed;inset:0}
 
 <canvas id="world"></canvas>
 <canvas id="fx"></canvas>
+<video id="camPreview" class="hidden" autoplay playsinline muted></video>
+<div class="hand-dot" id="handDot"></div>
+<div class="hand-debug" id="handDebug">
+  <div>Status: <span class="val" id="dbStatus">Initializing...</span></div>
+  <div>Hand: <span class="val" id="dbHand">--</span></div>
+  <div>Palm X: <span class="val" id="dbX">--</span></div>
+  <div>Displacement: <span class="val" id="dbVel">--</span></div>
+  <div>Pinch: <span class="val" id="dbPinch">--</span></div>
+  <div>Swipe: <span class="val" id="dbSwipe">--</span></div>
+</div>
 
-<!-- HUD -->
 <div class="hud hud-top">
   <div class="hud-item"><div class="hud-val" id="hHandled">0</div><div class="hud-lbl">Handled</div></div>
   <div class="hud-item"><div class="hud-val" id="hLevel">1</div><div class="hud-lbl">Level</div></div>
@@ -100,33 +121,23 @@ canvas{display:block;position:fixed;inset:0}
 <div class="lvl-text" id="lvlText"></div>
 <div class="streak-bar"><div class="streak-fill" id="streakFill"></div></div>
 
-<!-- Tooltip -->
 <div class="tooltip" id="tooltip"><div id="tooltipName"></div><div class="tooltip-sub" id="tooltipSub"></div></div>
 
-<!-- Detail panel -->
-<div class="detail" id="detail">
-  <button class="detail-close" id="detailClose">x</button>
-  <div class="detail-from" id="detFrom"></div>
-  <div class="detail-subject" id="detSubject"></div>
-  <div class="detail-body" id="detBody"></div>
-  <div class="detail-actions">
-    <button class="detail-btn green" onclick="act('reply')">Reply <kbd>R</kbd></button>
-    <button class="detail-btn red" onclick="act('archive')">Archive <kbd>A</kbd></button>
-    <button class="detail-btn gold" onclick="act('star')">Star <kbd>F</kbd></button>
-    <button class="detail-btn" onclick="act('snooze')">Snooze <kbd>S</kbd></button>
-    <button class="detail-btn" onclick="act('delete')">Delete <kbd>D</kbd></button>
-  </div>
-</div>
+<div class="swipe-hint left" id="swipeLeft">Archive</div>
+<div class="swipe-hint right" id="swipeRight">Reply</div>
+<div class="swipe-progress" id="swipeProgress"><div class="swipe-progress-fill" id="swipeProgressFill"></div></div>
 
-<!-- Start -->
+<div class="popup-overlay" id="popupOverlay"></div>
+<div class="popup" id="popup"></div>
+
 <div class="start" id="startScreen">
   <h1>Monet</h1>
   <p>Your inbox is alive</p>
   <div class="count" id="startCount">Loading...</div>
   <button id="startBtn">Begin</button>
+  <div class="cam-note">Camera hand tracking will activate for swipe gestures</div>
 </div>
 
-<!-- Zero -->
 <div class="zero" id="zeroScreen">
   <h1>Inbox Zero</h1>
   <p>Every last one. Beautifully done.</p>
@@ -139,12 +150,96 @@ canvas{display:block;position:fixed;inset:0}
 </div>
 
 <script>
-// ============ CANVAS SETUP ============
-const wC = document.getElementById('world');
-const wX = wC.getContext('2d');
-const fC = document.getElementById('fx');
-const fX = fC.getContext('2d');
-let W, H;
+// -----------------------------------------------
+// 1. State variables (all var)
+// -----------------------------------------------
+var wC = document.getElementById('world');
+var wX = wC.getContext('2d');
+var fC = document.getElementById('fx');
+var fX = fC.getContext('2d');
+var W = window.innerWidth;
+var H = window.innerHeight;
+
+var emails = [];
+var creatures = [];
+var handled = new Set();
+var selected = -1;
+var frozen = false;
+var streak = 0, bestStreak = 0;
+var xp = 0, level = 1, xpNeeded = 60;
+var startTime = 0, lastAction = 0;
+var started = false;
+var mouseX = W / 2, mouseY = H / 2;
+var hoveredIdx = -1;
+var hoveredAgent = null;
+var MAX_VISIBLE = 12;
+var nextSpawnIdx = 0;
+var particles = [];
+var lastFrame = 0;
+
+var AGENT_API = 'http://localhost:9001';
+var agentCreatures = [];
+var agentData = {};
+var selectedAgent = null;
+var agentPollTimer = 0;
+
+var AGENT_SHAPES = { code: 'hexagon', email: 'circle', research: 'diamond', planning: 'star' };
+
+// Hand tracking state
+var handLandmarker = null;
+var handActive = false;
+var handScreenX = 0, handScreenY = 0;
+var pinching = false;
+var pinchCooldown = 0;
+var smoothX = null;
+var SMOOTH = 0.35;
+var swipeStartX = null;
+var swipeStartTime = null;
+var lastSwipeTime = 0;
+var SWIPE_DIST = 0.25;
+var SWIPE_WINDOW = 500;
+var SWIPE_COOLDOWN = 800;
+
+// -----------------------------------------------
+// 2. Utility functions
+// -----------------------------------------------
+var palette = [
+  '#7c5cfc','#5c8afc','#5cfca8','#fc5c78','#fcd85c',
+  '#fc985c','#c17767','#5cc8fc','#a8fc5c','#fc5cb8',
+  '#8b7355','#6b8f71','#4a6fa5','#5f7d8e','#c85cfc'
+];
+
+function hashClr(s) {
+  var h = 0;
+  for (var i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h);
+  return palette[Math.abs(h) % palette.length];
+}
+
+function extractName(f) {
+  var m = f.match(/^"?([^"<]+)"?\s*</);
+  return m ? m[1].trim() : f.split('@')[0];
+}
+
+function initials(n) {
+  var p = n.replace(/<[^>]+>/g, '').replace(/"/g, '').trim().split(/\s+/);
+  return p.length >= 2 ? (p[0][0] + p[1][0]).toUpperCase() : (p[0] || '??').substring(0, 2).toUpperCase();
+}
+
+function relTime(d) {
+  try {
+    var ms = Date.now() - new Date(d).getTime();
+    if (ms < 3600000) return Math.max(1, Math.floor(ms / 60000)) + 'm ago';
+    if (ms < 86400000) return Math.floor(ms / 3600000) + 'h ago';
+    if (ms < 604800000) return Math.floor(ms / 86400000) + 'd ago';
+    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  } catch (e) { return ''; }
+}
+
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
 
 function resize() {
   W = wC.width = fC.width = window.innerWidth;
@@ -153,505 +248,801 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// ============ STATE ============
-let emails = [];
-let creatures = [];
-let handled = new Set();
-let selected = -1; // index of selected creature
-let streak = 0, bestStreak = 0;
-let xp = 0, level = 1, xpNeeded = 60;
-let startTime = 0, lastAction = 0;
-let started = false;
-let mouseX = W/2, mouseY = H/2;
-let hoveredIdx = -1;
-const MAX_VISIBLE = 12; // only this many creatures on screen at once
-let nextSpawnIdx = 0; // next email index to spawn
+// -----------------------------------------------
+// 3. Sound engine
+// -----------------------------------------------
+var AC = new (window.AudioContext || window.webkitAudioContext)();
 
-// ============ COLORS ============
-const palette = [
-  '#7c5cfc','#5c8afc','#5cfca8','#fc5c78','#fcd85c',
-  '#fc985c','#c17767','#5cc8fc','#a8fc5c','#fc5cb8',
-  '#8b7355','#6b8f71','#4a6fa5','#5f7d8e','#c85cfc',
-];
-function hashClr(s) { let h=0; for(let i=0;i<s.length;i++) h=s.charCodeAt(i)+((h<<5)-h); return palette[Math.abs(h)%palette.length]; }
-function extractName(f) { const m=f.match(/^"?([^"<]+)"?\s*</); return m?m[1].trim():f.split('@')[0]; }
-function initials(n) { const p=n.replace(/<[^>]+>/g,'').replace(/"/g,'').trim().split(/\s+/); return p.length>=2?(p[0][0]+p[1][0]).toUpperCase():(p[0]||'??').substring(0,2).toUpperCase(); }
-function relTime(d) { try{const ms=Date.now()-new Date(d).getTime();if(ms<3600000)return Math.max(1,Math.floor(ms/60000))+'m';if(ms<86400000)return Math.floor(ms/3600000)+'h';if(ms<604800000)return Math.floor(ms/86400000)+'d';return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch{return'';} }
+function snd(type) {
+  if (AC.state === 'suspended') AC.resume();
+  var t = AC.currentTime;
+  var g = AC.createGain();
+  g.connect(AC.destination);
 
-// ============ CREATURE CLASS ============
-// Each email becomes a little floating creature - a soft blob with eyes that wanders around
-class Creature {
-  constructor(email, index) {
-    this.email = email;
-    this.index = index;
-    this.name = extractName(email.from);
-    this.color = hashClr(this.name);
-    this.ini = initials(this.name);
+  if (type === 'pop') {
+    var o = AC.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(500 + Math.random() * 200, t);
+    o.frequency.exponentialRampToValueAtTime(150, t + 0.15);
+    g.gain.setValueAtTime(0.06, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    o.connect(g); o.start(t); o.stop(t + 0.15);
+  } else if (type === 'combo') {
+    var base = 400 + streak * 40;
+    var o = AC.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(base, t);
+    o.frequency.exponentialRampToValueAtTime(base * 1.5, t + 0.2);
+    g.gain.setValueAtTime(0.07, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    o.connect(g); o.start(t); o.stop(t + 0.25);
+  } else if (type === 'level') {
+    [1, 1.25, 1.5, 2].forEach(function(m, i) {
+      var o = AC.createOscillator(); var g2 = AC.createGain();
+      o.type = 'sine'; o.frequency.value = 440 * m;
+      g2.gain.setValueAtTime(0, t + i * 0.1);
+      g2.gain.linearRampToValueAtTime(0.05, t + i * 0.1 + 0.04);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 1);
+      o.connect(g2); g2.connect(AC.destination); o.start(t + i * 0.1); o.stop(t + 1);
+    });
+  } else if (type === 'zero') {
+    [1, 1.25, 1.5, 1.75, 2, 2.5].forEach(function(m, i) {
+      var o = AC.createOscillator(); var g2 = AC.createGain();
+      o.type = 'sine'; o.frequency.value = 330 * m;
+      g2.gain.setValueAtTime(0, t + i * 0.15);
+      g2.gain.linearRampToValueAtTime(0.06, t + i * 0.15 + 0.05);
+      g2.gain.exponentialRampToValueAtTime(0.001, t + 2);
+      o.connect(g2); g2.connect(AC.destination); o.start(t + i * 0.15); o.stop(t + 2);
+    });
+  } else if (type === 'click') {
+    var o = AC.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(800, t);
+    g.gain.setValueAtTime(0.03, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    o.connect(g); o.start(t); o.stop(t + 0.05);
+  } else if (type === 'open') {
+    var o = AC.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(300, t);
+    o.frequency.exponentialRampToValueAtTime(600, t + 0.15);
+    g.gain.setValueAtTime(0.04, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    o.connect(g); o.start(t); o.stop(t + 0.2);
+  }
+}
 
-    // Size based on importance/unread - big and characterful
-    this.baseR = 44 + (email.isImportant ? 16 : 0) + (email.isUnread ? 8 : 0);
-    this.r = this.baseR;
+// -----------------------------------------------
+// 4. Particle system
+// -----------------------------------------------
+function Particle(x, y, c, vx, vy, sz) {
+  this.x = x; this.y = y; this.c = c; this.vx = vx; this.vy = vy;
+  this.life = 1; this.decay = 0.01 + Math.random() * 0.015;
+  this.sz = sz || 2 + Math.random() * 4;
+}
+Particle.prototype.update = function() {
+  this.x += this.vx; this.y += this.vy;
+  this.vy += 0.06; this.vx *= 0.99;
+  this.life -= this.decay;
+  return this.life > 0;
+};
+Particle.prototype.draw = function(ctx) {
+  ctx.globalAlpha = this.life * 0.6;
+  ctx.fillStyle = this.c;
+  ctx.beginPath();
+  ctx.arc(this.x, this.y, this.sz * this.life, 0, Math.PI * 2);
+  ctx.fill();
+};
 
-    // Position - spread across screen
-    this.x = 100 + Math.random() * (W - 200);
-    this.y = 120 + Math.random() * (H - 280);
+function emit(x, y, c, n, s) {
+  for (var i = 0; i < n; i++) {
+    var a = Math.random() * Math.PI * 2;
+    var sp = (s || 5) * (0.4 + Math.random());
+    particles.push(new Particle(x, y, c, Math.cos(a) * sp, Math.sin(a) * sp - 1));
+  }
+}
 
-    // Velocity - gentle wandering
-    this.vx = (Math.random() - 0.5) * 0.8;
-    this.vy = (Math.random() - 0.5) * 0.8;
+// -----------------------------------------------
+// 5. Creature class
+// -----------------------------------------------
+function Creature(email, index) {
+  this.email = email;
+  this.index = index;
+  this.name = extractName(email.from);
+  this.color = hashClr(this.name);
+  this.ini = initials(this.name);
+  this.baseR = 44 + (email.isImportant ? 16 : 0) + (email.isUnread ? 8 : 0);
+  this.r = this.baseR;
+  this.x = 100 + Math.random() * (W - 200);
+  this.y = 120 + Math.random() * (H - 280);
+  this.vx = (Math.random() - 0.5) * 0.8;
+  this.vy = (Math.random() - 0.5) * 0.8;
+  this.phase = Math.random() * Math.PI * 2;
+  this.wobbleSpeed = 0.01 + Math.random() * 0.01;
+  this.wobbleAmp = 0.08 + Math.random() * 0.04;
+  this.eyeDir = 0;
+  this.blinkTimer = 100 + Math.random() * 200;
+  this.blinking = false;
+  this.blinkFrame = 0;
+  this.alive = true;
+  this.dying = false;
+  this.deathTimer = 0;
+  this.deathDir = { x: 0, y: 0 };
+  this.hoverScale = 0;
+  this.selectScale = 0;
+  this.trail = [];
+  this.energy = 0.1 + Math.random() * 0.25;
+  this.wanderAngle = Math.random() * Math.PI * 2;
+  this.wanderSpeed = 0.02 + Math.random() * 0.02;
+  this.dimAlpha = 1;
+}
 
-    // Wobble / breathing
-    this.phase = Math.random() * Math.PI * 2;
-    this.wobbleSpeed = 0.01 + Math.random() * 0.01;
-    this.wobbleAmp = 0.08 + Math.random() * 0.04;
-
-    // Eyes
-    this.eyeDir = 0; // angle eyes are looking
-    this.blinkTimer = 100 + Math.random() * 200;
-    this.blinking = false;
-    this.blinkFrame = 0;
-
-    // State
-    this.alive = true;
-    this.dying = false;
-    this.deathTimer = 0;
-    this.deathDir = { x: 0, y: 0 };
-
-    // Hover / selection
-    this.hoverScale = 0;
-    this.selectScale = 0;
-
-    // Trail
-    this.trail = [];
-
-    // Personality: some are bouncier, some calmer
-    this.energy = 0.3 + Math.random() * 0.7;
-    this.wanderAngle = Math.random() * Math.PI * 2;
-    this.wanderSpeed = 0.02 + Math.random() * 0.02;
+Creature.prototype.update = function(dt, mx, my) {
+  if (this.dying) {
+    this.deathTimer += dt;
+    this.x += this.deathDir.x * dt * 0.5;
+    this.y += this.deathDir.y * dt * 0.5;
+    this.r = this.baseR * Math.max(0, 1 - this.deathTimer / 600);
+    if (this.deathTimer > 600) this.alive = false;
+    return;
   }
 
-  update(dt, mx, my) {
-    if (this.dying) {
-      this.deathTimer += dt;
-      this.x += this.deathDir.x * dt * 0.5;
-      this.y += this.deathDir.y * dt * 0.5;
-      this.r = this.baseR * Math.max(0, 1 - this.deathTimer / 600);
-      if (this.deathTimer > 600) this.alive = false;
-      return;
-    }
+  this.dimAlpha += (1 - this.dimAlpha) * 0.08;
 
-    // Wander
-    this.wanderAngle += (Math.random() - 0.5) * this.wanderSpeed * dt;
-    this.vx += Math.cos(this.wanderAngle) * this.energy * 0.01 * dt;
-    this.vy += Math.sin(this.wanderAngle) * this.energy * 0.01 * dt;
-
-    // Damping
-    this.vx *= 0.995;
-    this.vy *= 0.995;
-
-    // Soft repel from mouse (if not selected)
-    if (selected !== this.index) {
-      const dx = this.x - mx;
-      const dy = this.y - my;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 150 && dist > 1) {
-        const force = (150 - dist) * 0.003;
-        this.vx += (dx / dist) * force;
-        this.vy += (dy / dist) * force;
-      }
-    }
-
-    // Attract to center gently
-    const cx = W / 2, cy = H / 2;
-    this.vx += (cx - this.x) * 0.00004;
-    this.vy += (cy - this.y) * 0.00004;
-
-    // Repel from other creatures
-    for (const other of creatures) {
-      if (other === this || !other.alive || other.dying) continue;
-      const dx = this.x - other.x;
-      const dy = this.y - other.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const minDist = this.r + other.r + 10;
-      if (dist < minDist && dist > 0.1) {
-        const force = (minDist - dist) * 0.02;
-        this.vx += (dx / dist) * force;
-        this.vy += (dy / dist) * force;
-      }
-    }
-
-    // Move
-    this.x += this.vx;
-    this.y += this.vy;
-
-    // Boundary bounce
-    const pad = 60;
-    if (this.x < pad) { this.x = pad; this.vx *= -0.5; }
-    if (this.x > W - pad) { this.x = W - pad; this.vx *= -0.5; }
-    if (this.y < 90) { this.y = 90; this.vy *= -0.5; }
-    if (this.y > H - 90) { this.y = H - 90; this.vy *= -0.5; }
-
-    // Wobble
-    this.phase += this.wobbleSpeed * dt;
-
-    // Eyes follow mouse
-    const edx = mx - this.x;
-    const edy = my - this.y;
-    this.eyeDir = Math.atan2(edy, edx);
-
-    // Blink
+  if (frozen) {
+    this.vx = 0; this.vy = 0;
+    this.phase += this.wobbleSpeed * dt * 0.3;
+    this.eyeDir = Math.atan2(my - this.y, mx - this.x);
     this.blinkTimer -= dt;
-    if (this.blinkTimer <= 0 && !this.blinking) {
-      this.blinking = true;
-      this.blinkFrame = 0;
-    }
-    if (this.blinking) {
-      this.blinkFrame += dt;
-      if (this.blinkFrame > 150) {
-        this.blinking = false;
-        this.blinkTimer = 150 + Math.random() * 400;
-      }
-    }
-
-    // Hover/select animation
-    const isHov = hoveredIdx === this.index;
-    const isSel = selected === this.index;
-    this.hoverScale += ((isHov ? 1 : 0) - this.hoverScale) * 0.1;
-    this.selectScale += ((isSel ? 1 : 0) - this.selectScale) * 0.1;
-
-    // Trail
-    if (Math.random() < 0.15) {
-      this.trail.push({ x: this.x, y: this.y, life: 1 });
-    }
-    this.trail = this.trail.filter(t => { t.life -= 0.008; return t.life > 0; });
+    if (this.blinkTimer <= 0 && !this.blinking) { this.blinking = true; this.blinkFrame = 0; }
+    if (this.blinking) { this.blinkFrame += dt; if (this.blinkFrame > 150) { this.blinking = false; this.blinkTimer = 150 + Math.random() * 400; } }
+    this.hoverScale += ((hoveredIdx === this.index ? 1 : 0) - this.hoverScale) * 0.1;
+    this.selectScale += ((selected === this.index ? 1 : 0) - this.selectScale) * 0.1;
+    return;
   }
 
-  draw(ctx) {
-    if (!this.alive) return;
+  this.wanderAngle += (Math.random() - 0.5) * this.wanderSpeed * dt;
+  this.vx += Math.cos(this.wanderAngle) * this.energy * 0.01 * dt;
+  this.vy += Math.sin(this.wanderAngle) * this.energy * 0.01 * dt;
+  this.vx *= 0.98; this.vy *= 0.98;
 
-    const wobble = Math.sin(this.phase) * this.wobbleAmp;
-    const scale = 1 + wobble + this.hoverScale * 0.15 + this.selectScale * 0.1;
-    const r = this.r * scale;
-
-    const alpha = this.dying ? Math.max(0, 1 - this.deathTimer / 600) : 1;
-
-    // Trail
-    for (const t of this.trail) {
-      ctx.globalAlpha = t.life * 0.08 * alpha;
-      ctx.fillStyle = this.color;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, r * 0.3 * t.life, 0, Math.PI * 2);
-      ctx.fill();
+  if (selected !== this.index) {
+    var dx = this.x - mx, dy = this.y - my;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 150 && dist > 1) {
+      var force = (150 - dist) * 0.003;
+      this.vx += (dx / dist) * force;
+      this.vy += (dy / dist) * force;
     }
+  }
 
-    ctx.globalAlpha = alpha;
+  this.vx += (W / 2 - this.x) * 0.00004;
+  this.vy += (H / 2 - this.y) * 0.00004;
 
-    // Glow
-    if (this.hoverScale > 0.01 || this.selectScale > 0.01) {
-      const glowR = r * (1.5 + this.selectScale * 0.5);
-      const glow = ctx.createRadialGradient(this.x, this.y, r * 0.5, this.x, this.y, glowR);
-      glow.addColorStop(0, this.color + '20');
-      glow.addColorStop(1, 'transparent');
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, glowR, 0, Math.PI * 2);
-      ctx.fill();
+  for (var j = 0; j < creatures.length; j++) {
+    var other = creatures[j];
+    if (other === this || !other.alive || other.dying) continue;
+    var dx = this.x - other.x, dy = this.y - other.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var minDist = this.r + other.r + 10;
+    if (dist < minDist && dist > 0.1) {
+      var force = (minDist - dist) * 0.02;
+      this.vx += (dx / dist) * force;
+      this.vy += (dy / dist) * force;
     }
+  }
 
-    // Body - soft blob shape
+  this.x += this.vx; this.y += this.vy;
+  var pad = 60;
+  if (this.x < pad) { this.x = pad; this.vx *= -0.5; }
+  if (this.x > W - pad) { this.x = W - pad; this.vx *= -0.5; }
+  if (this.y < 90) { this.y = 90; this.vy *= -0.5; }
+  if (this.y > H - 90) { this.y = H - 90; this.vy *= -0.5; }
+
+  this.phase += this.wobbleSpeed * dt;
+  this.eyeDir = Math.atan2(my - this.y, mx - this.x);
+
+  this.blinkTimer -= dt;
+  if (this.blinkTimer <= 0 && !this.blinking) { this.blinking = true; this.blinkFrame = 0; }
+  if (this.blinking) { this.blinkFrame += dt; if (this.blinkFrame > 150) { this.blinking = false; this.blinkTimer = 150 + Math.random() * 400; } }
+
+  this.hoverScale += ((hoveredIdx === this.index ? 1 : 0) - this.hoverScale) * 0.1;
+  this.selectScale += ((selected === this.index ? 1 : 0) - this.selectScale) * 0.1;
+
+  if (Math.random() < 0.15) this.trail.push({ x: this.x, y: this.y, life: 1 });
+  this.trail = this.trail.filter(function(t) { t.life -= 0.008; return t.life > 0; });
+};
+
+Creature.prototype.draw = function(ctx) {
+  if (!this.alive) return;
+  var wobble = Math.sin(this.phase) * this.wobbleAmp;
+  var scale = 1 + wobble + this.hoverScale * 0.15 + this.selectScale * 0.1;
+  var r = this.r * scale;
+  var alpha = this.dying ? Math.max(0, 1 - this.deathTimer / 600) : this.dimAlpha;
+
+  for (var ti = 0; ti < this.trail.length; ti++) {
+    var t = this.trail[ti];
+    ctx.globalAlpha = t.life * 0.08 * alpha;
     ctx.fillStyle = this.color;
     ctx.beginPath();
-    const points = 60;
-    for (let i = 0; i < points; i++) {
-      const a = (Math.PI * 2 * i) / points;
-      const blobR = r * (1 + Math.sin(a * 3 + this.phase * 2) * 0.04 + Math.sin(a * 5 + this.phase * 3) * 0.02);
-      const px = this.x + Math.cos(a) * blobR;
-      const py = this.y + Math.sin(a) * blobR;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
+    ctx.arc(t.x, t.y, r * 0.3 * t.life, 0, Math.PI * 2);
     ctx.fill();
+  }
 
-    // Inner highlight
-    const hl = ctx.createRadialGradient(this.x - r * 0.25, this.y - r * 0.3, 0, this.x, this.y, r);
-    hl.addColorStop(0, 'rgba(255,255,255,0.18)');
-    hl.addColorStop(1, 'transparent');
-    ctx.fillStyle = hl;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
-    ctx.fill();
+  ctx.globalAlpha = alpha;
 
-    // Eyes
-    const eyeOffX = Math.cos(this.eyeDir) * r * 0.15;
-    const eyeOffY = Math.sin(this.eyeDir) * r * 0.15;
-    const eyeSpacing = r * 0.28;
-    const eyeR = r * 0.16;
-    const pupilR = eyeR * 0.55;
+  if (this.hoverScale > 0.01 || this.selectScale > 0.01) {
+    var glowR = r * (1.5 + this.selectScale * 0.5);
+    var glow = ctx.createRadialGradient(this.x, this.y, r * 0.5, this.x, this.y, glowR);
+    glow.addColorStop(0, this.color + '20');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(this.x, this.y, glowR, 0, Math.PI * 2); ctx.fill();
+  }
 
-    const blinkSqueeze = this.blinking ? Math.max(0.1, 1 - Math.sin(this.blinkFrame / 150 * Math.PI) * 0.9) : 1;
+  ctx.fillStyle = this.color;
+  ctx.beginPath();
+  var points = 60;
+  for (var i = 0; i < points; i++) {
+    var a = (Math.PI * 2 * i) / points;
+    var blobR = r * (1 + Math.sin(a * 3 + this.phase * 2) * 0.04 + Math.sin(a * 5 + this.phase * 3) * 0.02);
+    var px = this.x + Math.cos(a) * blobR;
+    var py = this.y + Math.sin(a) * blobR;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath(); ctx.fill();
 
-    for (const side of [-1, 1]) {
-      const ex = this.x + side * eyeSpacing + eyeOffX * 0.3;
-      const ey = this.y - r * 0.1 + eyeOffY * 0.3;
+  var hl = ctx.createRadialGradient(this.x - r * 0.25, this.y - r * 0.3, 0, this.x, this.y, r);
+  hl.addColorStop(0, 'rgba(255,255,255,0.18)');
+  hl.addColorStop(1, 'transparent');
+  ctx.fillStyle = hl;
+  ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
 
-      // White
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.ellipse(ex, ey, eyeR, eyeR * blinkSqueeze, 0, 0, Math.PI * 2);
-      ctx.fill();
+  var eyeOffX = Math.cos(this.eyeDir) * r * 0.15;
+  var eyeOffY = Math.sin(this.eyeDir) * r * 0.15;
+  var eyeSpacing = r * 0.28;
+  var eyeR = r * 0.16;
+  var pupilR = eyeR * 0.55;
+  var blinkSqueeze = this.blinking ? Math.max(0.1, 1 - Math.sin(this.blinkFrame / 150 * Math.PI) * 0.9) : 1;
 
-      // Pupil
-      if (blinkSqueeze > 0.3) {
-        ctx.fillStyle = '#111';
-        ctx.beginPath();
-        ctx.arc(ex + eyeOffX * 0.4, ey + eyeOffY * 0.4, pupilR, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Shine
-        ctx.fillStyle = 'rgba(255,255,255,0.8)';
-        ctx.beginPath();
-        ctx.arc(ex + eyeOffX * 0.2 + pupilR * 0.3, ey + eyeOffY * 0.2 - pupilR * 0.3, pupilR * 0.3, 0, Math.PI * 2);
-        ctx.fill();
-      }
+  var sides = [-1, 1];
+  for (var si = 0; si < 2; si++) {
+    var side = sides[si];
+    var ex = this.x + side * eyeSpacing + eyeOffX * 0.3;
+    var ey = this.y - r * 0.1 + eyeOffY * 0.3;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.ellipse(ex, ey, eyeR, eyeR * blinkSqueeze, 0, 0, Math.PI * 2); ctx.fill();
+    if (blinkSqueeze > 0.3) {
+      ctx.fillStyle = '#111';
+      ctx.beginPath(); ctx.arc(ex + eyeOffX * 0.4, ey + eyeOffY * 0.4, pupilR, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath(); ctx.arc(ex + eyeOffX * 0.2 + pupilR * 0.3, ey + eyeOffY * 0.2 - pupilR * 0.3, pupilR * 0.3, 0, Math.PI * 2); ctx.fill();
     }
+  }
 
-    // Mouth - small happy curve
-    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(this.x + eyeOffX * 0.2, this.y + r * 0.25, r * 0.15, 0.1, Math.PI - 0.1);
-    ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,' + (0.2 * alpha) + ')';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(this.x + eyeOffX * 0.2, this.y + r * 0.25, r * 0.15, 0.1, Math.PI - 0.1);
+  ctx.stroke();
 
-    // Initials below (subtle)
-    if (this.hoverScale > 0.3 || this.selectScale > 0.3) {
-      ctx.globalAlpha = alpha * Math.max(this.hoverScale, this.selectScale) * 0.8;
-      ctx.fillStyle = '#fff';
-      ctx.font = `600 ${Math.floor(r * 0.3)}px 'Space Grotesk', sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillText(this.name, this.x, this.y + r + 8);
+  if (this.hoverScale > 0.3 || this.selectScale > 0.3) {
+    ctx.globalAlpha = alpha * Math.max(this.hoverScale, this.selectScale) * 0.8;
+    ctx.fillStyle = '#fff';
+    ctx.font = '600 ' + Math.floor(r * 0.3) + "px 'Space Grotesk', sans-serif";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(this.name, this.x, this.y + r + 8);
+  }
+
+  ctx.globalAlpha = 1;
+};
+
+Creature.prototype.hitTest = function(mx, my) {
+  var dx = mx - this.x, dy = my - this.y;
+  return Math.sqrt(dx * dx + dy * dy) < this.r * 1.6;
+};
+
+Creature.prototype.die = function(dirX, dirY) {
+  this.dying = true;
+  this.deathTimer = 0;
+  this.deathDir = { x: dirX * 0.5, y: dirY * 0.5 };
+};
+
+// -----------------------------------------------
+// 6. AgentCreature class
+// -----------------------------------------------
+function AgentCreature(agentId, data) {
+  this.agentId = agentId;
+  this.data = data;
+  this.shape = AGENT_SHAPES[data.kind] || 'hexagon';
+  this.baseColor = data.color || '#7c5cfc';
+  this.color = this.baseColor;
+  this.baseR = 52;
+  this.r = this.baseR;
+  this.x = W * 0.15 + Math.random() * W * 0.7;
+  this.y = -100;
+  this.vx = (Math.random() - 0.5) * 0.3;
+  this.vy = 0.8;
+  this.phase = Math.random() * Math.PI * 2;
+  this.alive = true;
+  this.hoverScale = 0;
+  this.selectScale = 0;
+  this.energy = 0.15 + Math.random() * 0.15;
+  this.wanderAngle = Math.random() * Math.PI * 2;
+  this.eyeDir = 0;
+  this.blinkTimer = 100 + Math.random() * 200;
+  this.blinking = false;
+  this.blinkFrame = 0;
+  this.pulsePhase = 0;
+}
+
+AgentCreature.prototype.update = function(dt, mx, my) {
+  this.pulsePhase += dt * 0.005;
+  var state = this.data.state;
+  var stateColors = { suggesting: '#fcd85c', executing: '#5cfca8', done: '#666', error: '#fc5c78' };
+  if (stateColors[state]) {
+    this.color = stateColors[state];
+  } else {
+    this.color = this.baseColor;
+    this.r = this.baseR * (0.95 + Math.sin(this.pulsePhase * 2) * 0.05);
+  }
+
+  if (frozen && selectedAgent !== this.agentId) {
+    this.phase += 0.003 * dt;
+    this.eyeDir = Math.atan2(my - this.y, mx - this.x);
+    this.blinkTimer -= dt;
+    if (this.blinkTimer <= 0 && !this.blinking) { this.blinking = true; this.blinkFrame = 0; }
+    if (this.blinking) { this.blinkFrame += dt; if (this.blinkFrame > 150) { this.blinking = false; this.blinkTimer = 200 + Math.random() * 300; } }
+    return;
+  }
+
+  this.wanderAngle += (Math.random() - 0.5) * 0.015 * dt;
+  this.vx += Math.cos(this.wanderAngle) * this.energy * 0.008 * dt;
+  this.vy += Math.sin(this.wanderAngle) * this.energy * 0.008 * dt;
+  this.vx *= 0.98; this.vy *= 0.98;
+
+  this.vx += (W / 2 - this.x) * 0.00003;
+  this.vy += (H / 2 - this.y) * 0.00003;
+
+  var all = creatures.concat(agentCreatures);
+  for (var j = 0; j < all.length; j++) {
+    var other = all[j];
+    if (other === this || !other.alive) continue;
+    var dx = this.x - other.x, dy = this.y - other.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    var minDist = this.r + (other.r || other.baseR || 40) + 12;
+    if (dist < minDist && dist > 0.1) {
+      var force = (minDist - dist) * 0.018;
+      this.vx += (dx / dist) * force; this.vy += (dy / dist) * force;
     }
-
-    ctx.globalAlpha = 1;
   }
 
-  hitTest(mx, my) {
-    const dx = mx - this.x;
-    const dy = my - this.y;
-    return Math.sqrt(dx * dx + dy * dy) < this.r * 1.2;
+  this.x += this.vx; this.y += this.vy;
+  var pad = 70;
+  if (this.x < pad) { this.x = pad; this.vx *= -0.5; }
+  if (this.x > W - pad) { this.x = W - pad; this.vx *= -0.5; }
+  if (this.y < 90) { this.y = 90; this.vy *= -0.5; }
+  if (this.y > H - 90) { this.y = H - 90; this.vy *= -0.5; }
+
+  this.phase += 0.008 * dt;
+  this.eyeDir = Math.atan2(my - this.y, mx - this.x);
+  this.blinkTimer -= dt;
+  if (this.blinkTimer <= 0 && !this.blinking) { this.blinking = true; this.blinkFrame = 0; }
+  if (this.blinking) { this.blinkFrame += dt; if (this.blinkFrame > 150) { this.blinking = false; this.blinkTimer = 200 + Math.random() * 300; } }
+
+  this.hoverScale += ((hoveredAgent === this.agentId ? 1 : 0) - this.hoverScale) * 0.1;
+  this.selectScale += ((selectedAgent === this.agentId ? 1 : 0) - this.selectScale) * 0.1;
+};
+
+AgentCreature.prototype.draw = function(ctx) {
+  if (!this.alive) return;
+  var wobble = Math.sin(this.phase) * 0.05;
+  var scale = 1 + wobble + this.hoverScale * 0.12 + this.selectScale * 0.08;
+  var r = this.r * scale;
+  ctx.globalAlpha = 1;
+
+  if (this.data.state === 'suggesting' || this.hoverScale > 0.01) {
+    var glowR = r * 1.8;
+    var glow = ctx.createRadialGradient(this.x, this.y, r * 0.5, this.x, this.y, glowR);
+    glow.addColorStop(0, this.color + '25');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(this.x, this.y, glowR, 0, Math.PI * 2); ctx.fill();
   }
 
-  die(dirX, dirY) {
-    this.dying = true;
-    this.deathTimer = 0;
-    this.deathDir = { x: dirX * 0.5, y: dirY * 0.5 };
+  ctx.fillStyle = this.color;
+  ctx.beginPath();
+  if (this.shape === 'hexagon') {
+    for (var i = 0; i < 6; i++) {
+      var a = (Math.PI * 2 * i) / 6 - Math.PI / 6;
+      var sr = r * (1 + Math.sin(a * 2 + this.phase) * 0.03);
+      var px = this.x + Math.cos(a) * sr, py = this.y + Math.sin(a) * sr;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+  } else if (this.shape === 'diamond') {
+    var dr = r * 1.1;
+    ctx.moveTo(this.x, this.y - dr);
+    ctx.lineTo(this.x + dr * 0.7, this.y);
+    ctx.lineTo(this.x, this.y + dr);
+    ctx.lineTo(this.x - dr * 0.7, this.y);
+  } else if (this.shape === 'star') {
+    for (var i = 0; i < 10; i++) {
+      var a = (Math.PI * 2 * i) / 10 - Math.PI / 2;
+      var sr = i % 2 === 0 ? r : r * 0.55;
+      ctx.lineTo(this.x + Math.cos(a) * sr, this.y + Math.sin(a) * sr);
+    }
+  } else {
+    for (var i = 0; i < 40; i++) {
+      var a = (Math.PI * 2 * i) / 40;
+      var br = r * (1 + Math.sin(a * 3 + this.phase * 2) * 0.04);
+      var px = this.x + Math.cos(a) * br, py = this.y + Math.sin(a) * br;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
   }
+  ctx.closePath(); ctx.fill();
+
+  var hl = ctx.createRadialGradient(this.x - r * 0.2, this.y - r * 0.25, 0, this.x, this.y, r);
+  hl.addColorStop(0, 'rgba(255,255,255,0.2)'); hl.addColorStop(1, 'transparent');
+  ctx.fillStyle = hl;
+  ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
+
+  var eyeOffX = Math.cos(this.eyeDir) * r * 0.12;
+  var eyeOffY = Math.sin(this.eyeDir) * r * 0.12;
+  var eyeSpacing = r * 0.25, eyeR = r * 0.14, pupilR = eyeR * 0.55;
+  var blinkSqueeze = this.blinking ? Math.max(0.1, 1 - Math.sin(this.blinkFrame / 150 * Math.PI) * 0.9) : 1;
+  var sides = [-1, 1];
+  for (var si = 0; si < 2; si++) {
+    var side = sides[si];
+    var ex = this.x + side * eyeSpacing + eyeOffX * 0.3;
+    var ey = this.y - r * 0.08 + eyeOffY * 0.3;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.ellipse(ex, ey, eyeR, eyeR * blinkSqueeze, 0, 0, Math.PI * 2); ctx.fill();
+    if (blinkSqueeze > 0.3) {
+      ctx.fillStyle = '#111';
+      ctx.beginPath(); ctx.arc(ex + eyeOffX * 0.4, ey + eyeOffY * 0.4, pupilR, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath(); ctx.arc(ex + eyeOffX * 0.2 + pupilR * 0.3, ey + eyeOffY * 0.2 - pupilR * 0.3, pupilR * 0.3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(this.x + eyeOffX * 0.2, this.y + r * 0.22, r * 0.12, 0.1, Math.PI - 0.1); ctx.stroke();
+
+  if (this.hoverScale > 0.2 || this.selectScale > 0.2) {
+    var a2 = Math.max(this.hoverScale, this.selectScale) * 0.9;
+    ctx.globalAlpha = a2;
+    ctx.fillStyle = '#fff';
+    ctx.font = '600 ' + Math.floor(r * 0.28) + "px 'Space Grotesk', sans-serif";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(this.data.name, this.x, this.y + r + 6);
+    ctx.font = '400 ' + Math.floor(r * 0.2) + "px 'Space Grotesk', sans-serif";
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillText(this.data.state, this.x, this.y + r + 6 + r * 0.32);
+  }
+
+  if (this.data.state === 'suggesting') {
+    ctx.globalAlpha = 0.3 + Math.sin(this.pulsePhase * 3) * 0.2;
+    ctx.strokeStyle = '#fcd85c';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(this.x, this.y, r + 8 + Math.sin(this.pulsePhase * 2) * 4, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1;
+};
+
+AgentCreature.prototype.hitTest = function(mx, my) {
+  var dx = mx - this.x, dy = my - this.y;
+  return Math.sqrt(dx * dx + dy * dy) < this.r * 1.6;
+};
+
+// -----------------------------------------------
+// 7. Popup system
+// -----------------------------------------------
+function openPopup(idx) {
+  selected = idx;
+  frozen = true;
+  swipeStartX = null;
+  smoothX = null;
+  var e = emails[idx];
+  var name = extractName(e.from);
+  var popup = document.getElementById('popup');
+  popup.style.width = '';
+  popup.style.maxHeight = '';
+  popup.innerHTML =
+    '<div style="font-size:12px;color:rgba(255,255,255,0.3);margin-bottom:10px">' + esc(name) + ' &middot; ' + relTime(e.date) + '</div>' +
+    '<div style="font-size:17px;font-weight:500;color:#fff;line-height:1.4;margin-bottom:14px">' + esc(e.subject || '(no subject)') + '</div>' +
+    '<div style="font-size:14px;line-height:1.65;color:rgba(255,255,255,0.5);margin-bottom:20px;max-height:180px;overflow-y:auto">' + esc(e.body || e.snippet || '') + '</div>' +
+    '<div class="popup-actions"><button class="popup-btn" data-action="archive">Archive</button><button class="popup-btn" data-action="reply">Reply</button></div>';
+  document.getElementById('popupOverlay').classList.add('open');
+  popup.classList.add('open');
+  snd('open');
 }
 
-// ============ PARTICLES ============
-let particles = [];
-class P {
-  constructor(x,y,c,vx,vy,sz){this.x=x;this.y=y;this.c=c;this.vx=vx;this.vy=vy;this.life=1;this.decay=0.01+Math.random()*0.015;this.sz=sz||2+Math.random()*4}
-  update(){this.x+=this.vx;this.y+=this.vy;this.vy+=0.06;this.vx*=0.99;this.life-=this.decay;return this.life>0}
-  draw(ctx){ctx.globalAlpha=this.life*0.6;ctx.fillStyle=this.c;ctx.beginPath();ctx.arc(this.x,this.y,this.sz*this.life,0,Math.PI*2);ctx.fill()}
-}
-function emit(x,y,c,n,s){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2;const sp=(s||5)*(0.4+Math.random());particles.push(new P(x,y,c,Math.cos(a)*sp,Math.sin(a)*sp-1))}}
-function emitDir(x,y,c,n,dx,dy){for(let i=0;i<n;i++){particles.push(new P(x,y,c,dx*(2+Math.random()*4)+(Math.random()-0.5)*2,dy*(2+Math.random()*4)+(Math.random()-0.5)*2))}}
+function openAgentPopup(agentId) {
+  var a = agentData[agentId];
+  if (!a) return;
+  selectedAgent = agentId;
+  selected = -1;
+  frozen = true;
+  swipeStartX = null;
 
-// ============ SOUND ============
-const AC = new (window.AudioContext || window.webkitAudioContext)();
-function snd(type){
-  if(AC.state==='suspended')AC.resume();
-  const t=AC.currentTime;const g=AC.createGain();g.connect(AC.destination);
-  if(type==='pop'){const o=AC.createOscillator();o.type='sine';o.frequency.setValueAtTime(500+Math.random()*200,t);o.frequency.exponentialRampToValueAtTime(150,t+0.15);g.gain.setValueAtTime(0.06,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.15);o.connect(g);o.start(t);o.stop(t+0.15)}
-  else if(type==='combo'){const base=400+streak*40;const o=AC.createOscillator();o.type='sine';o.frequency.setValueAtTime(base,t);o.frequency.exponentialRampToValueAtTime(base*1.5,t+0.2);g.gain.setValueAtTime(0.07,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.25);o.connect(g);o.start(t);o.stop(t+0.25)}
-  else if(type==='level'){[1,1.25,1.5,2].forEach((m,i)=>{const o=AC.createOscillator();const g2=AC.createGain();o.type='sine';o.frequency.value=440*m;g2.gain.setValueAtTime(0,t+i*0.1);g2.gain.linearRampToValueAtTime(0.05,t+i*0.1+0.04);g2.gain.exponentialRampToValueAtTime(0.001,t+1);o.connect(g2);g2.connect(AC.destination);o.start(t+i*0.1);o.stop(t+1)})}
-  else if(type==='zero'){[1,1.25,1.5,1.75,2,2.5].forEach((m,i)=>{const o=AC.createOscillator();const g2=AC.createGain();o.type='sine';o.frequency.value=330*m;g2.gain.setValueAtTime(0,t+i*0.15);g2.gain.linearRampToValueAtTime(0.06,t+i*0.15+0.05);g2.gain.exponentialRampToValueAtTime(0.001,t+2);o.connect(g2);g2.connect(AC.destination);o.start(t+i*0.15);o.stop(t+2)})}
-  else if(type==='click'){const o=AC.createOscillator();o.type='sine';o.frequency.setValueAtTime(800,t);g.gain.setValueAtTime(0.03,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.05);o.connect(g);o.start(t);o.stop(t+0.05)}
+  var popup = document.getElementById('popup');
+  popup.style.width = 'min(520px, 88vw)';
+  popup.style.maxHeight = '70vh';
+
+  var stateColor = a.state === 'suggesting' ? 'rgba(100,255,160,0.7)' : a.state === 'working' ? 'rgba(255,255,255,0.3)' : a.state === 'error' ? 'rgba(255,100,120,0.7)' : 'rgba(255,255,255,0.2)';
+
+  var sugsHtml = '';
+  if (a.suggestions && a.suggestions.length && a.state === 'suggesting') {
+    sugsHtml = a.suggestions.map(function(s) {
+      return '<div style="display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px solid rgba(255,255,255,0.05)">' +
+        '<div style="flex:1;font-size:13px;color:rgba(255,255,255,0.6);line-height:1.5">' + esc(s.text) + '</div>' +
+        '<button class="popup-btn" data-agent="' + agentId + '" data-sug="' + s.id + '" data-approve="true" style="flex:none;padding:8px 16px">Yes</button>' +
+        '<button class="popup-btn" data-agent="' + agentId + '" data-sug="' + s.id + '" data-approve="false" style="flex:none;padding:8px 12px">No</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  popup.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
+      '<div style="font-size:15px;font-weight:600;color:#fff;flex:1">' + esc(a.name) + '</div>' +
+      '<div style="font-size:11px;color:' + stateColor + '">' + a.state + (a.state === 'working' ? '...' : '') + '</div>' +
+    '</div>' +
+    '<div style="font-size:13px;color:rgba(255,255,255,0.25);margin-bottom:12px">' + esc(a.task) + '</div>' +
+    (a.progress ? '<div style="font-size:14px;color:rgba(255,255,255,0.5);line-height:1.6;margin-bottom:14px;max-height:200px;overflow-y:auto">' + esc(a.progress) + '</div>' : '') +
+    sugsHtml +
+    '<div style="display:flex;gap:8px;margin-top:12px">' +
+      '<input id="agentMsg" type="text" placeholder="Tell the agent what to do..." ' +
+        'style="flex:1;padding:10px 14px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#fff;font-size:13px;font-family:inherit;outline:none">' +
+      '<button class="popup-btn" data-agent-send="' + agentId + '" style="flex:none;padding:10px 16px">Send</button>' +
+    '</div>';
+
+  document.getElementById('popupOverlay').classList.add('open');
+  popup.classList.add('open');
+  snd('open');
 }
 
-// ============ GAME LOGIC ============
+function closePopup() {
+  if (selectedAgent) {
+    selectedAgent = null;
+    frozen = false;
+    document.getElementById('popupOverlay').classList.remove('open');
+    var popup = document.getElementById('popup');
+    popup.classList.remove('open');
+    popup.style.width = '';
+    popup.style.maxHeight = '';
+    return;
+  }
+  selected = -1;
+  frozen = false;
+  document.getElementById('popupOverlay').classList.remove('open');
+  document.getElementById('popup').classList.remove('open');
+  document.getElementById('swipeProgress').classList.remove('vis');
+  document.getElementById('swipeLeft').classList.remove('vis');
+  document.getElementById('swipeRight').classList.remove('vis');
+}
+
+// Event delegation for popup buttons and overlay
+document.addEventListener('click', function(e) {
+  var target = e.target;
+
+  // Overlay closes popup
+  if (target.id === 'popupOverlay') { closePopup(); return; }
+
+  // Email action buttons
+  var action = target.getAttribute('data-action');
+  if (action) { act(action); return; }
+
+  // Agent suggestion buttons
+  var agentId = target.getAttribute('data-agent');
+  var sugId = target.getAttribute('data-sug');
+  if (agentId && sugId) {
+    var approved = target.getAttribute('data-approve') === 'true';
+    agentRespond(agentId, sugId, approved);
+    return;
+  }
+
+  // Agent send button
+  var agentSend = target.getAttribute('data-agent-send');
+  if (agentSend) { sendAgentMsg(agentSend); return; }
+
+  // Start button
+  if (target.id === 'startBtn') { beginGame(); return; }
+
+  // Clicks on canvas / creatures
+  if (!started) return;
+  if (target.closest('.popup, .start, .zero, .hand-debug, #camPreview')) return;
+  if (frozen) { closePopup(); return; }
+  handleCreatureClick(e.clientX, e.clientY);
+});
+
+// Enter key in agent message input
+document.addEventListener('keydown', function(e) {
+  if (e.target.id === 'agentMsg' && e.key === 'Enter') {
+    e.preventDefault();
+    var agentSendBtn = document.querySelector('[data-agent-send]');
+    if (agentSendBtn) sendAgentMsg(agentSendBtn.getAttribute('data-agent-send'));
+    return;
+  }
+});
+
+// -----------------------------------------------
+// 8. Game actions
+// -----------------------------------------------
 function act(action) {
-  if (selected < 0 || selected >= creatures.length) return;
-  const c = creatures[selected];
-  if (!c || !c.alive || c.dying) return;
-  if (handled.has(c.index)) return;
+  if (selected < 0) return;
+  var c = null;
+  for (var i = 0; i < creatures.length; i++) {
+    if (creatures[i].index === selected) { c = creatures[i]; break; }
+  }
+  if (!c || !c.alive || c.dying || handled.has(c.index)) return;
 
   handled.add(c.index);
 
-  // Death animation direction
-  const dirs = {
-    archive: [-3, 0], reply: [3, 0], star: [0, -3],
-    snooze: [0, 3], delete: [-2, -2]
-  };
-  const [dx, dy] = dirs[action] || [0, -2];
-  c.die(dx, dy);
-
-  // Particles from creature
+  var dirs = { archive: [-3, 0], reply: [3, 0], star: [0, -3], snooze: [0, 3], delete: [-2, -2] };
+  var dir = dirs[action] || [0, -2];
+  c.die(dir[0], dir[1]);
   emit(c.x, c.y, c.color, 30, 6);
   emit(c.x, c.y, '#fff', 10, 4);
 
-  // Speed / streak
-  const now = Date.now();
-  const dt = now - lastAction;
+  var now = Date.now();
+  var dt = now - lastAction;
   lastAction = now;
   if (dt < 6000) { streak++; if (streak > bestStreak) bestStreak = streak; }
   else streak = 0;
 
-  // XP
-  let xpGain = 10;
-  if (dt < 1500) xpGain = 30;
-  else if (dt < 3000) xpGain = 20;
-  else if (dt < 6000) xpGain = 15;
-  if (streak >= 15) xpGain *= 3;
-  else if (streak >= 10) xpGain *= 2.5;
-  else if (streak >= 5) xpGain *= 1.5;
+  var xpGain = 10;
+  if (dt < 1500) xpGain = 30; else if (dt < 3000) xpGain = 20; else if (dt < 6000) xpGain = 15;
+  if (streak >= 15) xpGain *= 3; else if (streak >= 10) xpGain *= 2.5; else if (streak >= 5) xpGain *= 1.5;
 
   xp += Math.floor(xpGain);
-  while (xp >= xpNeeded) {
-    xp -= xpNeeded;
-    level++;
-    xpNeeded = Math.floor(xpNeeded * 1.3);
-    doLevelUp();
-  }
+  while (xp >= xpNeeded) { xp -= xpNeeded; level++; xpNeeded = Math.floor(xpNeeded * 1.3); doLevelUp(); }
 
-  // Combo display
   if (streak >= 3) {
-    const ct = document.getElementById('comboText');
+    var ct = document.getElementById('comboText');
     ct.textContent = streak + 'x';
     if (streak >= 15) ct.style.color = 'rgba(255,100,120,0.9)';
     else if (streak >= 10) ct.style.color = 'rgba(255,200,60,0.9)';
     else if (streak >= 5) ct.style.color = 'rgba(100,255,160,0.8)';
     else ct.style.color = 'rgba(255,255,255,0.5)';
-    ct.className = 'combo-text';
-    void ct.offsetWidth;
-    ct.className = 'combo-text pop';
+    ct.className = 'combo-text'; void ct.offsetWidth; ct.className = 'combo-text pop';
     snd('combo');
-  } else {
-    snd('pop');
-  }
+  } else { snd('pop'); }
 
-  // HUD
   document.getElementById('hHandled').textContent = handled.size;
   document.getElementById('hStreak').textContent = streak;
   document.getElementById('hLevel').textContent = level;
 
-  // Streak bar
-  const sf = document.getElementById('streakFill');
+  var sf = document.getElementById('streakFill');
   sf.style.width = Math.min(streak / 20, 1) * 100 + '%';
   if (streak >= 15) sf.style.background = 'linear-gradient(90deg, #fc5c78, #fcd85c)';
   else if (streak >= 10) sf.style.background = '#fcd85c';
   else if (streak >= 5) sf.style.background = '#5cfca8';
   else sf.style.background = 'rgba(255,255,255,0.12)';
 
-  // Close detail
-  closeDetail();
-  selected = -1;
+  closePopup();
 
-  // Spawn replacements after death animation, then check zero
-  setTimeout(() => {
+  setTimeout(function() {
     spawnBatch();
-    // Check inbox zero - all emails handled and no more to spawn
     if (handled.size >= emails.length) showZero();
   }, 700);
 }
 
+function agentRespond(agentId, suggestionId, approved) {
+  fetch(AGENT_API + '/agents/' + agentId + '/respond', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ suggestion_id: suggestionId, approved: approved })
+  }).then(function() {
+    setTimeout(function() { if (selectedAgent === agentId) openAgentPopup(agentId); }, 500);
+  }).catch(function() {});
+  emit(W / 2, H / 2, approved ? '#5cfca8' : '#fc5c78', 15, 4);
+  snd('pop');
+}
+
+function sendAgentMsg(agentId) {
+  var input = document.getElementById('agentMsg');
+  if (!input) return;
+  var msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  fetch(AGENT_API + '/agents/' + agentId + '/respond', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ suggestion_id: 'custom', approved: true, feedback: msg })
+  }).catch(function() {});
+}
+
 function doLevelUp() {
   snd('level');
-  const f = document.getElementById('lvlFlash');
+  var f = document.getElementById('lvlFlash');
   f.className = 'lvl-flash'; void f.offsetWidth; f.className = 'lvl-flash go';
-  const t = document.getElementById('lvlText');
+  var t = document.getElementById('lvlText');
   t.textContent = 'Level ' + level;
   t.className = 'lvl-text'; void t.offsetWidth; t.className = 'lvl-text go';
-  emit(W/2, H/2, '#fff', 40, 7);
+  emit(W / 2, H / 2, '#fff', 40, 7);
 }
 
 function showZero() {
-  const el = Math.floor((Date.now() - startTime) / 1000);
+  var el = Math.floor((Date.now() - startTime) / 1000);
   document.getElementById('z0').textContent = handled.size;
-  document.getElementById('z1').textContent = Math.floor(el/60) + ':' + String(el%60).padStart(2,'0');
+  document.getElementById('z1').textContent = Math.floor(el / 60) + ':' + String(el % 60).padStart(2, '0');
   document.getElementById('z2').textContent = bestStreak;
   document.getElementById('z3').textContent = level;
   document.getElementById('zeroScreen').classList.add('vis');
   snd('zero');
-  for (let i = 0; i < 8; i++) setTimeout(() => {
-    emit(W*0.2+Math.random()*W*0.6, H*0.3+Math.random()*H*0.4, `hsl(${Math.random()*360},70%,65%)`, 25, 6);
-  }, i * 200);
+  for (var i = 0; i < 8; i++) {
+    (function(idx) {
+      setTimeout(function() {
+        emit(W * 0.2 + Math.random() * W * 0.6, H * 0.3 + Math.random() * H * 0.4, 'hsl(' + Math.random() * 360 + ',70%,65%)', 25, 6);
+      }, idx * 200);
+    })(i);
+  }
 }
 
-// ============ DETAIL PANEL ============
-function openDetail(idx) {
-  const e = emails[idx];
-  document.getElementById('detFrom').textContent = extractName(e.from) + ' - ' + relTime(e.date);
-  document.getElementById('detSubject').textContent = e.subject || '(no subject)';
-  document.getElementById('detBody').textContent = e.body || e.snippet || '';
-  document.getElementById('detail').classList.add('open');
+// -----------------------------------------------
+// 9. Mouse/keyboard handlers
+// -----------------------------------------------
+function handleCreatureClick(clientX, clientY) {
+  if (!started || frozen) return false;
+  for (var i = agentCreatures.length - 1; i >= 0; i--) {
+    var c = agentCreatures[i];
+    if (c.alive && c.hitTest(clientX, clientY)) {
+      openAgentPopup(c.agentId);
+      snd('click');
+      return true;
+    }
+  }
+  for (var i = creatures.length - 1; i >= 0; i--) {
+    var c = creatures[i];
+    if (c.alive && !c.dying && !handled.has(c.index) && c.hitTest(clientX, clientY)) {
+      openPopup(c.index);
+      document.getElementById('tooltip').classList.remove('vis');
+      snd('click');
+      return true;
+    }
+  }
+  return false;
 }
-function closeDetail() { document.getElementById('detail').classList.remove('open'); }
-document.getElementById('detailClose').addEventListener('click', () => { closeDetail(); selected = -1; });
 
-// ============ MOUSE ============
-wC.addEventListener('mousemove', e => {
+document.addEventListener('mousemove', function(e) {
   mouseX = e.clientX; mouseY = e.clientY;
+  if (frozen) return;
 
-  // Hover detection
+  hoveredAgent = null;
   hoveredIdx = -1;
-  for (let i = creatures.length - 1; i >= 0; i--) {
-    const c = creatures[i];
-    if (c.alive && !c.dying && !handled.has(c.index) && c.hitTest(mouseX, mouseY)) {
-      hoveredIdx = c.index;
-      break;
+
+  for (var i = agentCreatures.length - 1; i >= 0; i--) {
+    var c = agentCreatures[i];
+    if (c.alive && c.hitTest(mouseX, mouseY)) { hoveredAgent = c.agentId; break; }
+  }
+
+  if (!hoveredAgent) {
+    for (var i = creatures.length - 1; i >= 0; i--) {
+      var c = creatures[i];
+      if (c.alive && !c.dying && !handled.has(c.index) && c.hitTest(mouseX, mouseY)) { hoveredIdx = c.index; break; }
     }
   }
 
-  // Tooltip
-  const tt = document.getElementById('tooltip');
-  if (hoveredIdx >= 0 && selected < 0) {
-    const e = emails[hoveredIdx];
-    document.getElementById('tooltipName').textContent = extractName(e.from);
-    document.getElementById('tooltipSub').textContent = (e.subject || '').substring(0, 50);
-    tt.style.left = (mouseX + 16) + 'px';
-    tt.style.top = (mouseY - 40) + 'px';
+  var tt = document.getElementById('tooltip');
+  if (hoveredAgent) {
+    var ad = agentData[hoveredAgent];
+    if (ad) {
+      document.getElementById('tooltipName').textContent = ad.name;
+      document.getElementById('tooltipSub').textContent = ad.state + ' - ' + ad.kind;
+    }
+    tt.style.left = (mouseX + 16) + 'px'; tt.style.top = (mouseY - 40) + 'px';
     tt.classList.add('vis');
-    wC.style.cursor = 'pointer';
+    document.body.style.cursor = 'pointer';
+  } else if (hoveredIdx >= 0) {
+    var e2 = emails[hoveredIdx];
+    document.getElementById('tooltipName').textContent = extractName(e2.from);
+    document.getElementById('tooltipSub').textContent = (e2.subject || '').substring(0, 50);
+    tt.style.left = (mouseX + 16) + 'px'; tt.style.top = (mouseY - 40) + 'px';
+    tt.classList.add('vis');
+    document.body.style.cursor = 'pointer';
   } else {
     tt.classList.remove('vis');
-    wC.style.cursor = 'default';
+    document.body.style.cursor = 'default';
   }
 });
 
-wC.addEventListener('click', e => {
-  if (!started) return;
-
-  // Find clicked creature
-  for (let i = creatures.length - 1; i >= 0; i--) {
-    const c = creatures[i];
-    if (c.alive && !c.dying && !handled.has(c.index) && c.hitTest(e.clientX, e.clientY)) {
-      if (selected === c.index) {
-        // Deselect
-        selected = -1;
-        closeDetail();
-      } else {
-        selected = c.index;
-        openDetail(c.index);
-        snd('click');
-      }
-      return;
-    }
-  }
-
-  // Clicked empty space - deselect
-  if (selected >= 0) {
-    selected = -1;
-    closeDetail();
-  }
-});
-
-// ============ KEYBOARD ============
-document.addEventListener('keydown', e => {
+document.addEventListener('keydown', function(e) {
+  if (e.target.id === 'agentMsg') return;
   if (!started) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); beginGame(); } return; }
-  if (e.key === 'Escape') { selected = -1; closeDetail(); return; }
+  if (e.key === 'Escape') { closePopup(); return; }
   if (selected >= 0) {
     switch (e.key.toLowerCase()) {
       case 'a': act('archive'); break;
@@ -663,64 +1054,78 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// ============ MAIN LOOP ============
-let lastFrame = 0;
-
+// -----------------------------------------------
+// 10. Main loop
+// -----------------------------------------------
 function loop(ts) {
-  const dt = Math.min(ts - lastFrame, 50);
+  var dt = Math.min(ts - lastFrame, 50);
   lastFrame = ts;
 
-  // Clear
   wX.fillStyle = '#0a0a12';
   wX.fillRect(0, 0, W, H);
 
-  // Subtle ambient bg
-  const time = ts * 0.0003;
-  for (let i = 0; i < 3; i++) {
-    const ox = W * 0.3 + Math.sin(time + i * 2) * W * 0.2;
-    const oy = H * 0.4 + Math.cos(time * 0.7 + i * 3) * H * 0.2;
-    const gr = wX.createRadialGradient(ox, oy, 0, ox, oy, 300);
-    gr.addColorStop(0, `hsla(${(time * 30 + i * 120) % 360}, 50%, 40%, 0.025)`);
+  var time = ts * 0.0003;
+  for (var i = 0; i < 3; i++) {
+    var ox = W * 0.3 + Math.sin(time + i * 2) * W * 0.2;
+    var oy = H * 0.4 + Math.cos(time * 0.7 + i * 3) * H * 0.2;
+    var gr = wX.createRadialGradient(ox, oy, 0, ox, oy, 300);
+    gr.addColorStop(0, 'hsla(' + ((time * 30 + i * 120) % 360) + ', 50%, 40%, 0.025)');
     gr.addColorStop(1, 'transparent');
     wX.fillStyle = gr;
     wX.fillRect(0, 0, W, H);
   }
 
   if (started) {
-    // Update creatures
-    for (const c of creatures) {
+    for (var i = 0; i < creatures.length; i++) {
+      var c = creatures[i];
       if (c.alive && !handled.has(c.index)) c.update(dt, mouseX, mouseY);
     }
-
-    // Draw creatures (unselected first, selected last)
-    for (const c of creatures) {
+    for (var i = 0; i < creatures.length; i++) {
+      var c = creatures[i];
       if (c.alive && !handled.has(c.index) && c.index !== selected) c.draw(wX);
     }
-    // Selected on top
     if (selected >= 0) {
-      const sc = creatures.find(c => c.index === selected);
-      if (sc && sc.alive) sc.draw(wX);
+      for (var i = 0; i < creatures.length; i++) {
+        if (creatures[i].index === selected && creatures[i].alive) { creatures[i].draw(wX); break; }
+      }
+    }
+
+    for (var i = 0; i < agentCreatures.length; i++) {
+      if (agentCreatures[i].alive) agentCreatures[i].update(dt, mouseX, mouseY);
+    }
+    for (var i = 0; i < agentCreatures.length; i++) {
+      var c = agentCreatures[i];
+      if (c.alive && c.agentId !== selectedAgent) c.draw(wX);
+    }
+    if (selectedAgent) {
+      for (var i = 0; i < agentCreatures.length; i++) {
+        if (agentCreatures[i].agentId === selectedAgent) { agentCreatures[i].draw(wX); break; }
+      }
     }
   }
 
-  // FX particles
+  agentPollTimer += dt;
+  if (agentPollTimer > 2000) { agentPollTimer = 0; pollAgents(); }
+
   fX.clearRect(0, 0, W, H);
-  particles = particles.filter(p => { p.draw(fX); return p.update(); });
+  particles = particles.filter(function(p) { p.draw(fX); return p.update(); });
   fX.globalAlpha = 1;
 
   requestAnimationFrame(loop);
 }
 
-// ============ LOAD & START ============
-async function loadEmails() {
-  try {
-    const res = await fetch('inbox.json');
-    const data = await res.json();
+// -----------------------------------------------
+// 11. Load and start
+// -----------------------------------------------
+function loadEmails() {
+  fetch('inbox.json').then(function(res) {
+    return res.json();
+  }).then(function(data) {
     emails = data.emails || [];
     document.getElementById('startCount').textContent = emails.length + ' emails waiting';
-  } catch {
+  }).catch(function() {
     document.getElementById('startCount').textContent = 'Failed to load inbox.json';
-  }
+  });
 }
 
 function beginGame() {
@@ -729,42 +1134,242 @@ function beginGame() {
   startTime = Date.now();
   lastAction = Date.now();
   document.getElementById('startScreen').classList.add('gone');
-
-  // Spawn initial batch
   spawnBatch();
+  initHandTracking();
 }
 
 function spawnBatch() {
-  // Count alive creatures on screen
-  const aliveCount = creatures.filter(c => c.alive && !c.dying && !handled.has(c.index)).length;
-  const toSpawn = Math.min(MAX_VISIBLE - aliveCount, emails.length - nextSpawnIdx);
+  var aliveCount = 0;
+  for (var i = 0; i < creatures.length; i++) {
+    var c = creatures[i];
+    if (c.alive && !c.dying && !handled.has(c.index)) aliveCount++;
+  }
+  var toSpawn = Math.min(MAX_VISIBLE - aliveCount, emails.length - nextSpawnIdx);
 
-  for (let i = 0; i < toSpawn; i++) {
-    const ei = nextSpawnIdx++;
-    const c = new Creature(emails[ei], ei);
-    // Fly in from random edge with stagger
-    const edge = Math.floor(Math.random() * 3); // 0=top, 1=left, 2=right
-    if (edge === 0) {
-      c.x = 150 + Math.random() * (W - 300);
-      c.y = -80 - i * 60;
-      c.vy = 1.5 + Math.random() * 1.5;
-    } else if (edge === 1) {
-      c.x = -80 - i * 60;
-      c.y = 150 + Math.random() * (H - 300);
-      c.vx = 1.5 + Math.random() * 1.5;
-    } else {
-      c.x = W + 80 + i * 60;
-      c.y = 150 + Math.random() * (H - 300);
-      c.vx = -(1.5 + Math.random() * 1.5);
-    }
+  for (var i = 0; i < toSpawn; i++) {
+    var ei = nextSpawnIdx++;
+    var c = new Creature(emails[ei], ei);
+    var edge = Math.floor(Math.random() * 3);
+    if (edge === 0) { c.x = 150 + Math.random() * (W - 300); c.y = -80 - i * 60; c.vy = 0.6 + Math.random() * 0.6; }
+    else if (edge === 1) { c.x = -80 - i * 60; c.y = 150 + Math.random() * (H - 300); c.vx = 0.6 + Math.random() * 0.6; }
+    else { c.x = W + 80 + i * 60; c.y = 150 + Math.random() * (H - 300); c.vx = -(0.6 + Math.random() * 0.6); }
     creatures.push(c);
   }
 }
 
-document.getElementById('startBtn').addEventListener('click', beginGame);
-
 loadEmails();
 requestAnimationFrame(loop);
+
+// -----------------------------------------------
+// 12. Hand tracking (async, non-blocking)
+// -----------------------------------------------
+function dbg(id, val) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function updateSwipeProgress(displacement) {
+  var bar = document.getElementById('swipeProgress');
+  var fill = document.getElementById('swipeProgressFill');
+  var leftHint = document.getElementById('swipeLeft');
+  var rightHint = document.getElementById('swipeRight');
+
+  if (selected < 0 && !selectedAgent) {
+    bar.classList.remove('vis'); leftHint.classList.remove('vis'); rightHint.classList.remove('vis');
+    return;
+  }
+  bar.classList.add('vis');
+  var pct = Math.max(0, Math.min(100, 50 + (displacement / SWIPE_DIST) * 50));
+  fill.style.width = pct + '%';
+
+  if (pct > 75) {
+    fill.style.background = 'rgba(255,100,120,0.8)';
+    leftHint.classList.add('vis'); rightHint.classList.remove('vis');
+  } else if (pct < 25) {
+    fill.style.background = 'rgba(100,255,160,0.8)';
+    rightHint.classList.add('vis'); leftHint.classList.remove('vis');
+  } else {
+    fill.style.background = 'rgba(255,255,255,0.15)';
+    leftHint.classList.remove('vis'); rightHint.classList.remove('vis');
+  }
+}
+
+function initHandTracking() {
+  var debugPanel = document.getElementById('handDebug');
+  debugPanel.classList.add('vis');
+  dbg('dbStatus', 'Loading MediaPipe...');
+
+  import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs').then(function(mp) {
+    var FilesetResolver = mp.FilesetResolver;
+    var HandLandmarker = mp.HandLandmarker;
+    var video = document.getElementById('camPreview');
+
+    navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, frameRate: { ideal: 30 } } }).then(function(stream) {
+      video.srcObject = stream;
+      video.play().then(function() {
+        video.classList.remove('hidden');
+        dbg('dbStatus', 'Loading hand model...');
+
+        FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm').then(function(vision) {
+          HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+              delegate: 'GPU'
+            },
+            runningMode: 'VIDEO',
+            numHands: 1
+          }).then(function(lm) {
+            handLandmarker = lm;
+            dbg('dbStatus', 'Ready - show your hand');
+            var lastVideoTime = -1;
+
+            function detect() {
+              if (video.readyState < 2 || video.currentTime === lastVideoTime) {
+                requestAnimationFrame(detect);
+                return;
+              }
+              lastVideoTime = video.currentTime;
+              var result = handLandmarker.detectForVideo(video, performance.now());
+
+              if (result.landmarks && result.landmarks.length > 0) {
+                var lm = result.landmarks[0];
+                var rawX = (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5;
+                var rawY = (lm[0].y + lm[5].y + lm[9].y + lm[13].y + lm[17].y) / 5;
+
+                if (smoothX === null) smoothX = rawX;
+                else smoothX = SMOOTH * rawX + (1 - SMOOTH) * smoothX;
+
+                handActive = true;
+                handScreenX = (1 - smoothX) * window.innerWidth;
+                handScreenY = rawY * window.innerHeight;
+
+                var dot = document.getElementById('handDot');
+                dot.classList.add('vis');
+                dot.style.left = handScreenX + 'px';
+                dot.style.top = handScreenY + 'px';
+
+                var thumb = lm[4], idx8 = lm[8];
+                var px = Math.abs(thumb.x - idx8.x);
+                var py = Math.abs(thumb.y - idx8.y);
+                var wasPinching = pinching;
+                var isPinched = px < 0.08 && py < 0.08;
+                if (isPinched && !pinching) pinching = true;
+                else if (!isPinched && px > 0.12 && py > 0.12) pinching = false;
+
+                dbg('dbPinch', pinching ? 'PINCH' : 'open (x:' + px.toFixed(3) + ' y:' + py.toFixed(3) + ')');
+
+                var now = performance.now();
+                if (pinching && !wasPinching && now - pinchCooldown > 400) {
+                  pinchCooldown = now;
+                  handleCreatureClick(handScreenX, handScreenY);
+                }
+
+                var popupOpen = selected >= 0 || selectedAgent;
+                if (popupOpen) {
+                  if (swipeStartX === null) { swipeStartX = smoothX; swipeStartTime = now; }
+                  var elapsed = now - swipeStartTime;
+                  var displacement = smoothX - swipeStartX;
+                  var ad = Math.abs(displacement);
+
+                  dbg('dbVel', 'disp: ' + displacement.toFixed(3) + ' / ' + SWIPE_DIST.toFixed(2) + ' (' + Math.floor(elapsed) + 'ms)');
+
+                  var velEl = document.getElementById('dbVel');
+                  if (ad > SWIPE_DIST) velEl.className = 'fire';
+                  else if (ad > SWIPE_DIST * 0.5) velEl.className = 'warn';
+                  else velEl.className = 'val';
+
+                  updateSwipeProgress(displacement);
+
+                  if (elapsed > SWIPE_WINDOW) { swipeStartX = smoothX; swipeStartTime = now; }
+                  else if (now - lastSwipeTime > SWIPE_COOLDOWN && ad > SWIPE_DIST) {
+                    if (displacement > 0) {
+                      dbg('dbSwipe', 'LEFT -> Archive');
+                      if (selected >= 0) act('archive'); else closePopup();
+                    } else {
+                      dbg('dbSwipe', 'RIGHT -> Reply');
+                      if (selected >= 0) act('reply'); else closePopup();
+                    }
+                    lastSwipeTime = now;
+                    swipeStartX = null; smoothX = null;
+                  } else {
+                    dbg('dbSwipe', ad > SWIPE_DIST * 0.3 ? 'keep going...' : 'ready');
+                  }
+                } else {
+                  swipeStartX = null;
+                  dbg('dbSwipe', '--'); dbg('dbVel', '--');
+                  updateSwipeProgress(0);
+                }
+
+                if (!frozen) {
+                  dot.classList.toggle('hovering', false);
+                  for (var i = agentCreatures.length - 1; i >= 0; i--) {
+                    if (agentCreatures[i].alive && agentCreatures[i].hitTest(handScreenX, handScreenY)) {
+                      hoveredAgent = agentCreatures[i].agentId;
+                      dot.classList.toggle('hovering', true);
+                      break;
+                    }
+                  }
+                  if (!dot.classList.contains('hovering')) {
+                    for (var i = creatures.length - 1; i >= 0; i--) {
+                      var c = creatures[i];
+                      if (c.alive && !c.dying && !handled.has(c.index) && c.hitTest(handScreenX, handScreenY)) {
+                        hoveredIdx = c.index;
+                        dot.classList.toggle('hovering', true);
+                        break;
+                      }
+                    }
+                  }
+                }
+                dot.classList.toggle('pinch', pinching);
+                dbg('dbHand', 'DETECTED');
+                dbg('dbX', smoothX.toFixed(4));
+              } else {
+                handActive = false;
+                document.getElementById('handDot').classList.remove('vis');
+                dbg('dbHand', 'No hand visible');
+                smoothX = null; swipeStartX = null;
+              }
+
+              requestAnimationFrame(detect);
+            }
+            detect();
+          });
+        });
+      });
+    }).catch(function(err) { dbg('dbStatus', 'Camera failed: ' + err.message); });
+  }).catch(function(err) { dbg('dbStatus', 'MediaPipe failed: ' + err.message); });
+}
+
+// -----------------------------------------------
+// 13. Agent polling
+// -----------------------------------------------
+function pollAgents() {
+  fetch(AGENT_API + '/agents').then(function(res) {
+    return res.json();
+  }).then(function(data) {
+    for (var i = 0; i < data.agents.length; i++) {
+      var a = data.agents[i];
+      agentData[a.id] = a;
+      var existing = null;
+      for (var j = 0; j < agentCreatures.length; j++) {
+        if (agentCreatures[j].agentId === a.id) { existing = agentCreatures[j]; break; }
+      }
+      if (!existing) {
+        agentCreatures.push(new AgentCreature(a.id, a));
+      } else {
+        existing.data = a;
+      }
+    }
+    agentCreatures = agentCreatures.filter(function(c) {
+      for (var k = 0; k < data.agents.length; k++) {
+        if (data.agents[k].id === c.agentId) return true;
+      }
+      return false;
+    });
+  }).catch(function() {});
+}
+
+pollAgents();
 </script>
 </body>
 </html>
