@@ -16,3 +16,4 @@ export type {
   CameraState,
   SearchState,
 } from "../../features/navigation/navigation-store";
+export { useSyncStore } from "./sync-store";

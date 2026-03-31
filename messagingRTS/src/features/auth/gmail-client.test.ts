@@ -22,10 +22,10 @@ import {
 } from "./gmail-client";
 import { useAuthStore } from "./auth-store";
 
-// Create a mock proxy function
+// Create a mock proxy function that matches nangoProxy signature
 function createMockProxy(responses: Array<Partial<Response>>) {
   let callIndex = 0;
-  return vi.fn(async () => {
+  return vi.fn(async (_path: string, _options?: RequestInit): Promise<Response> => {
     const resp = responses[callIndex] ?? responses[responses.length - 1];
     callIndex++;
     return resp as Response;
@@ -132,8 +132,8 @@ describe("Gmail client (Nango proxy)", () => {
 
       const [path, opts] = proxy.mock.calls[0];
       expect(path).toBe("/messages/send");
-      expect(opts.method).toBe("POST");
-      const body = JSON.parse(opts.body);
+      expect(opts!.method).toBe("POST");
+      const body = JSON.parse(opts!.body as string);
       expect(body.threadId).toBe("t1");
       expect(body.raw).toBeTruthy();
     });
@@ -156,7 +156,7 @@ describe("Gmail client (Nango proxy)", () => {
       expect(result.id).toBe("draft-1");
       const [path, opts] = proxy.mock.calls[0];
       expect(path).toBe("/drafts");
-      expect(opts.method).toBe("POST");
+      expect(opts!.method).toBe("POST");
     });
   });
 
@@ -176,7 +176,7 @@ describe("Gmail client (Nango proxy)", () => {
 
       const [path, opts] = proxy.mock.calls[0];
       expect(path).toContain("/drafts/draft-1");
-      expect(opts.method).toBe("PUT");
+      expect(opts!.method).toBe("PUT");
     });
   });
 
@@ -189,7 +189,7 @@ describe("Gmail client (Nango proxy)", () => {
 
       const [path, opts] = proxy.mock.calls[0];
       expect(path).toContain("/drafts/draft-1");
-      expect(opts.method).toBe("DELETE");
+      expect(opts!.method).toBe("DELETE");
     });
   });
 
@@ -202,8 +202,8 @@ describe("Gmail client (Nango proxy)", () => {
 
       const [path, opts] = proxy.mock.calls[0];
       expect(path).toContain("/threads/t1/modify");
-      expect(opts.method).toBe("POST");
-      const body = JSON.parse(opts.body);
+      expect(opts!.method).toBe("POST");
+      const body = JSON.parse(opts!.body as string);
       expect(body.removeLabelIds).toEqual(["INBOX"]);
     });
   });

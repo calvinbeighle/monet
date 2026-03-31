@@ -21,6 +21,7 @@ import {
   stopPeriodicPersist,
   flushPersist,
 } from "./features/sync/persistence-manager";
+import { startInitialLoad, startPolling, stopPolling } from "./features/sync/sync-engine";
 import { useThreadStore } from "./lib/stores";
 import { useAgentStore } from "./lib/stores/agent-store";
 import { useAuthStore } from "./features/auth/auth-store";
@@ -95,7 +96,7 @@ export function App() {
         return;
       }
 
-      // Step 2: Load persisted threads
+      // Step 2: Load persisted threads for immediate display
       try {
         const persisted = await loadPersistedThreads();
         if (cancelled) return;
@@ -105,13 +106,21 @@ export function App() {
         }
 
         startPeriodicPersist();
-        setShellState("active");
       } catch (err) {
         console.warn("[App] Failed to load persisted threads:", err);
-        if (!cancelled) {
-          setShellState("active"); // proceed without persisted data
-        }
       }
+
+      if (cancelled) return;
+
+      // Step 3: Fetch fresh threads from Gmail via Nango proxy (Spec 10 initial load).
+      // This transitions shell to active/empty/degraded based on result.
+      // Persisted threads show immediately while fresh data loads in background.
+      setShellState("loading");
+      await startInitialLoad();
+      if (cancelled) return;
+
+      // Step 4: Start incremental sync polling (Spec 10)
+      startPolling();
     };
 
     init();
@@ -125,6 +134,7 @@ export function App() {
     return () => {
       cancelled = true;
       stopPeriodicPersist();
+      stopPolling();
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [shellState, setShellState]);

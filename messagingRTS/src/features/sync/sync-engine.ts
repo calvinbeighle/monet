@@ -1,0 +1,393 @@
+// Sync engine per Spec 10 - Real-Time Sync
+// Orchestrates initial load, incremental polling, change event processing,
+// history ID expiry recovery, and offline action queue replay.
+// The sync engine is the single coordinator between Gmail and local state.
+
+import {
+  fetchThreadDetail,
+  fetchHistoryChanges,
+  sendReply,
+  archiveThread,
+} from "../auth/gmail-client";
+import type { GmailHistoryResponse, SendReplyPayload } from "../auth/gmail-client";
+import { performInitialLoad, convertGmailThread } from "./thread-fetcher";
+import { useThreadStore } from "../../lib/stores";
+import { useSyncStore } from "../../lib/stores/sync-store";
+import { useAppStore } from "../../lib/stores";
+import type { ThreadChangeEvent, ThreadChangeType, ActionQueueEntry } from "../../lib/types";
+import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
+
+// Injectable fetch functions for testing
+let _fetchHistoryChanges = fetchHistoryChanges;
+let _fetchThreadDetail = fetchThreadDetail;
+let _performInitialLoad = performInitialLoad;
+let _sendReply = sendReply;
+let _archiveThread = archiveThread;
+
+export function _setEngineFetchFns(fns: {
+  fetchHistoryChanges?: typeof fetchHistoryChanges;
+  fetchThreadDetail?: typeof fetchThreadDetail;
+  performInitialLoad?: typeof performInitialLoad;
+  sendReply?: typeof sendReply;
+  archiveThread?: typeof archiveThread;
+}): void {
+  if (fns.fetchHistoryChanges) _fetchHistoryChanges = fns.fetchHistoryChanges;
+  if (fns.fetchThreadDetail) _fetchThreadDetail = fns.fetchThreadDetail;
+  if (fns.performInitialLoad) _performInitialLoad = fns.performInitialLoad;
+  if (fns.sendReply) _sendReply = fns.sendReply;
+  if (fns.archiveThread) _archiveThread = fns.archiveThread;
+}
+
+export function _resetEngineFetchFns(): void {
+  _fetchHistoryChanges = fetchHistoryChanges;
+  _fetchThreadDetail = fetchThreadDetail;
+  _performInitialLoad = performInitialLoad;
+  _sendReply = sendReply;
+  _archiveThread = archiveThread;
+}
+
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let isPolling = false;
+
+// --- Initial Load ---
+// Per Spec 10: fetch all inbox threads within lookback window, progressive loading,
+// record history ID, transition from initial-load to incremental mode.
+
+export async function startInitialLoad(): Promise<void> {
+  const syncStore = useSyncStore.getState();
+  const threadStore = useThreadStore.getState();
+  const appStore = useAppStore.getState();
+
+  useSyncStore.setState({ syncMode: "initial-load" });
+  appStore.setSyncStatus("syncing");
+
+  try {
+    const result = await _performInitialLoad(syncStore.lookbackDays, (thread) => {
+      // Progressive: add each thread to store as it loads
+      threadStore.setThread(thread);
+    });
+
+    useSyncStore.getState().setHistoryId(result.historyId);
+    useSyncStore.getState().setSyncMode("incremental");
+    useSyncStore.getState().recordSyncSuccess();
+    useAppStore.getState().setSyncStatus("connected");
+
+    // Transition shell state based on thread count
+    const threadCount = useThreadStore.getState().getThreadCount();
+    if (threadCount === 0) {
+      useAppStore.getState().setShellState("empty");
+    } else {
+      useAppStore.getState().setShellState("active");
+    }
+  } catch (err) {
+    console.error("[SyncEngine] Initial load failed:", err);
+    useSyncStore.getState().recordSyncFailure();
+    useAppStore.getState().setSyncStatus("error");
+    useAppStore.getState().setShellState("degraded");
+    useAppStore.getState().addNotification({
+      message: "Failed to load inbox. Will retry automatically.",
+      severity: "critical",
+    });
+  }
+}
+
+// --- Incremental Sync ---
+// Per Spec 10: poll for changes using history API, process change events,
+// handle history ID expiry with backfill.
+
+export async function performIncrementalSync(): Promise<void> {
+  const syncState = useSyncStore.getState();
+
+  if (!syncState.lastHistoryId) {
+    // No history ID - need initial load first
+    await startInitialLoad();
+    return;
+  }
+
+  useSyncStore.setState({ connectivityStatus: "syncing" });
+
+  try {
+    const changeEvents = await fetchAllHistoryChanges(syncState.lastHistoryId);
+
+    if (changeEvents.length > 0) {
+      await processChangeEvents(changeEvents);
+    }
+
+    useSyncStore.getState().recordSyncSuccess();
+  } catch (err) {
+    if (isHistoryExpiredError(err)) {
+      // Per Spec 10: history ID expired - fall back to full re-fetch (backfill)
+      console.warn("[SyncEngine] History ID expired, performing backfill");
+      useSyncStore.setState({ syncMode: "backfill" });
+      useAppStore.getState().addNotification({
+        message: "Sync cursor expired. Performing full inbox refresh.",
+        severity: "warning",
+      });
+      await startInitialLoad();
+      return;
+    }
+
+    if (isNetworkError(err)) {
+      useSyncStore.setState({ connectivityStatus: "offline" });
+      useAppStore.getState().setSyncStatus("offline");
+      useAppStore.getState().setShellState("degraded");
+      return;
+    }
+
+    console.error("[SyncEngine] Incremental sync failed:", err);
+    useSyncStore.getState().recordSyncFailure();
+  }
+}
+
+// Fetch all history changes, paginating through results
+async function fetchAllHistoryChanges(startHistoryId: string): Promise<ThreadChangeEvent[]> {
+  const events: ThreadChangeEvent[] = [];
+  let pageToken: string | undefined;
+  let latestHistoryId = startHistoryId;
+
+  do {
+    const response: GmailHistoryResponse = await _fetchHistoryChanges(startHistoryId, pageToken);
+
+    // Process history entries into change events
+    if (response.history) {
+      for (const entry of response.history) {
+        const historyId = entry.id;
+
+        if (entry.messagesAdded) {
+          for (const added of entry.messagesAdded) {
+            events.push({
+              threadId: added.message.threadId,
+              changeType: determineChangeType(added.message.labelIds ?? [], "added"),
+              historyId,
+              timestamp: Date.now(),
+            });
+          }
+        }
+
+        if (entry.labelsAdded) {
+          for (const labelChange of entry.labelsAdded) {
+            events.push({
+              threadId: labelChange.message.threadId,
+              changeType: "label-change",
+              historyId,
+              timestamp: Date.now(),
+            });
+          }
+        }
+
+        if (entry.labelsRemoved) {
+          for (const labelChange of entry.labelsRemoved) {
+            events.push({
+              threadId: labelChange.message.threadId,
+              changeType: "label-change",
+              historyId,
+              timestamp: Date.now(),
+            });
+          }
+        }
+      }
+    }
+
+    // Advance cursor
+    if (response.historyId > latestHistoryId) {
+      latestHistoryId = response.historyId;
+    }
+
+    pageToken = response.nextPageToken;
+  } while (pageToken);
+
+  // Update the stored history ID
+  useSyncStore.getState().setHistoryId(latestHistoryId);
+
+  // Deduplicate: if multiple events reference the same thread, keep the most significant
+  return deduplicateEvents(events);
+}
+
+function determineChangeType(labelIds: string[], _action: "added" | "deleted"): ThreadChangeType {
+  // A message added to a thread we already know about = new-message
+  // A message in a thread we don't know about = new-thread
+  // This distinction is made during processChangeEvents when we check the thread store
+  return labelIds.includes("UNREAD") ? "new-message" : "new-message";
+}
+
+// Deduplicate events per thread - keep latest event per thread
+function deduplicateEvents(events: ThreadChangeEvent[]): ThreadChangeEvent[] {
+  const byThread = new Map<string, ThreadChangeEvent>();
+  for (const event of events) {
+    const existing = byThread.get(event.threadId);
+    if (!existing || event.timestamp >= existing.timestamp) {
+      byThread.set(event.threadId, event);
+    }
+  }
+  return [...byThread.values()];
+}
+
+// Process change events by re-fetching affected threads
+async function processChangeEvents(events: ThreadChangeEvent[]): Promise<void> {
+  const threadStore = useThreadStore.getState();
+  const now = Date.now();
+
+  for (const event of events) {
+    try {
+      const detail = await _fetchThreadDetail(event.threadId);
+      const thread = convertGmailThread(detail);
+
+      const existingThread = threadStore.getThread(event.threadId);
+
+      if (existingThread) {
+        // Merge: preserve computed position/scores/zone from existing, update Gmail data
+        const merged = {
+          ...existingThread,
+          // Gmail-sourced fields overwritten
+          subject: thread.subject,
+          participants: thread.participants,
+          messages: thread.messages,
+          messageCount: thread.messageCount,
+          latestMessageTimestamp: thread.latestMessageTimestamp,
+          firstMessageTimestamp: thread.firstMessageTimestamp,
+          gmailLabels: thread.gmailLabels,
+          unread: thread.unread,
+          snippet: thread.snippet,
+          // Recompute scores with updated data
+          urgencyScore: computeUrgencyScore(
+            { ...existingThread, ...thread, position: existingThread.position },
+            now,
+          ),
+          valueScore: computeValueScore({
+            ...existingThread,
+            ...thread,
+            position: existingThread.position,
+          }),
+          lastModified: now,
+        };
+
+        // Check if thread was archived (INBOX label removed)
+        if (!thread.gmailLabels.includes("INBOX") && existingThread.gmailLabels.includes("INBOX")) {
+          merged.visualState = "archived";
+        }
+
+        threadStore.setThread(merged as typeof existingThread);
+
+        // If new message arrived, evaluate lifecycle transition
+        if (event.changeType === "new-message" && existingThread.lifecycleState !== "handled") {
+          // Inbound message can transition waiting/at-risk/lost -> active
+          const validTransitions = ["waiting", "at-risk", "lost"];
+          if (validTransitions.includes(existingThread.lifecycleState)) {
+            threadStore.transitionState(event.threadId, "active", "inbound-message");
+          }
+        }
+      } else {
+        // New thread - set lifecycle to "new"
+        thread.lifecycleState = "new";
+        threadStore.setThread(thread);
+      }
+    } catch (err) {
+      // If we can't fetch a specific thread (deleted?), remove it from store
+      console.warn(`[SyncEngine] Failed to fetch thread ${event.threadId}:`, err);
+      threadStore.removeThread(event.threadId);
+    }
+  }
+}
+
+// --- Polling Control ---
+
+export function startPolling(): void {
+  if (isPolling) return;
+  isPolling = true;
+  schedulePoll();
+}
+
+export function stopPolling(): void {
+  isPolling = false;
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+}
+
+function schedulePoll(): void {
+  if (!isPolling) return;
+  const interval = useSyncStore.getState().pollIntervalMs;
+  pollTimer = setTimeout(async () => {
+    await performIncrementalSync();
+    schedulePoll();
+  }, interval);
+}
+
+// --- Action Queue Replay ---
+// Per Spec 10: when connectivity is restored, replay queued actions in order.
+
+export async function replayActionQueue(): Promise<void> {
+  const syncStore = useSyncStore.getState();
+  const pendingActions = syncStore.getPendingActions();
+
+  for (const action of pendingActions) {
+    syncStore.updateActionStatus(action.id, "in-flight");
+
+    try {
+      await executeAction(action);
+      useSyncStore.getState().updateActionStatus(action.id, "succeeded");
+    } catch (err) {
+      const retryable = isRetryableError(err);
+      if (retryable && action.retryCount < 3) {
+        useSyncStore.getState().updateActionStatus(action.id, "pending");
+        useSyncStore.getState().incrementRetryCount(action.id);
+      } else {
+        useSyncStore.getState().updateActionStatus(action.id, "failed");
+        // Per Spec 10: every failure surfaced to user, no silent drops
+        useAppStore.getState().addNotification({
+          message: `Failed to ${action.type} thread. The action was discarded.`,
+          severity: "warning",
+        });
+        useSyncStore.getState().removeAction(action.id);
+      }
+    }
+  }
+}
+
+async function executeAction(action: ActionQueueEntry): Promise<void> {
+  switch (action.type) {
+    case "reply": {
+      const payload = action.payload as SendReplyPayload;
+      await _sendReply(payload);
+      break;
+    }
+    case "archive": {
+      await _archiveThread(action.threadId);
+      break;
+    }
+    default:
+      console.warn(`[SyncEngine] Unhandled action type: ${action.type}`);
+  }
+}
+
+// --- Error Classification ---
+
+function isHistoryExpiredError(err: unknown): boolean {
+  if (err instanceof Error) {
+    // Gmail returns 404 when history ID is no longer valid
+    return err.message.includes("404") || err.message.includes("historyId");
+  }
+  return false;
+}
+
+function isNetworkError(err: unknown): boolean {
+  if (err instanceof Error) {
+    return (
+      err.message.includes("fetch") ||
+      err.message.includes("network") ||
+      err.message.includes("ECONNREFUSED") ||
+      err.name === "TypeError" // fetch throws TypeError on network failure
+    );
+  }
+  return false;
+}
+
+function isRetryableError(err: unknown): boolean {
+  if (err instanceof Error) {
+    return (
+      err.message.includes("429") || err.message.includes("500") || err.message.includes("503")
+    );
+  }
+  return false;
+}

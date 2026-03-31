@@ -87,13 +87,14 @@ export interface DraftPayload {
 }
 
 class GmailApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-    public retryable: boolean,
-  ) {
+  status: number;
+  retryable: boolean;
+
+  constructor(message: string, status: number, retryable: boolean) {
     super(message);
     this.name = "GmailApiError";
+    this.status = status;
+    this.retryable = retryable;
   }
 }
 

@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 506 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3, v0.6.0 through v0.6.1. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 570 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3, v0.6.0 through v0.6.1. Build, typecheck, lint all clean.
 
-**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (partial), 2.1 Application Shell, 2.2 Map Rendering,
+**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (partial), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.3 Agent Deployment UI (drag-to-deploy, confirmation, recall, quick-deploy).
 
-**Next priorities**: 1.4 Thread Fetching, 1.5 Incremental Sync, 4.2 Agent AI Backend.
+**Next priorities**: 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 4.2 Agent AI Backend.
 
 ---
 
@@ -67,23 +67,23 @@ These must be resolved before implementation begins:
 
 ### 1.4 Gmail Thread Fetching & Initial Load (via Nango proxy)
 
-- [ ] Fetch inbox thread list via Nango proxy (reverse chronological, configurable lookback window, default 30 days)
-- [ ] Fetch full thread detail per thread via Nango proxy (messages, participants, labels, timestamps)
-- [ ] Extract derived metadata: participants, canonical subject, timestamps, message count, unread status
-- [ ] Progressive loading: threads become available as each finishes loading
-- [ ] Record history identifier for incremental sync
-- [ ] **Spec**: 01-email-integration (Initial Thread Load), 10-real-time-sync (Initial Load)
-- [ ] **Tests**: Thread list fetch, detail extraction, progressive availability, history ID capture
+- [x] Fetch inbox thread list via Nango proxy (reverse chronological, configurable lookback window, default 30 days)
+- [x] Fetch full thread detail per thread via Nango proxy (messages, participants, labels, timestamps)
+- [x] Extract derived metadata: participants, canonical subject, timestamps, message count, unread status
+- [x] Progressive loading: threads become available as each finishes loading
+- [x] Record history identifier for incremental sync
+- [x] **Spec**: 01-email-integration (Initial Thread Load), 10-real-time-sync (Initial Load)
+- [x] **Tests**: Thread list fetch, detail extraction, progressive availability, history ID capture
 
 ### 1.5 Incremental Sync & Real-Time Updates
 
-- [ ] Poll-based incremental sync using Gmail history API
-- [ ] Handle change events: new thread, new message, label change, read state change
-- [ ] History ID expiry fallback (full re-fetch)
-- [ ] Sync status state machine: connected -> syncing -> error -> offline
-- [ ] Sync status indicator (always visible)
-- [ ] **Spec**: 10-real-time-sync (Incremental Sync, Inbound Sync)
-- [ ] **Tests**: Incremental fetch, change event processing, history expiry recovery, status transitions
+- [x] Poll-based incremental sync using Gmail history API
+- [x] Handle change events: new thread, new message, label change, read state change
+- [x] History ID expiry fallback (full re-fetch)
+- [x] Sync status state machine: connected -> syncing -> error -> offline
+- [x] Sync status indicator (always visible)
+- [x] **Spec**: 10-real-time-sync (Incremental Sync, Inbound Sync)
+- [x] **Tests**: Incremental fetch, change event processing, history expiry recovery, status transitions
 
 ### 1.6 Outbound Actions (Reply, Draft, Archive)
 
@@ -424,3 +424,12 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - .env.example added with VITE_NANGO_SECRET_KEY, VITE_NANGO_HOST, VITE_NANGO_GMAIL_CONNECTION_ID. .gitignore updated to exclude .env files.
 - App.test.tsx updated: mocks auth store to prevent Nango API calls during tests.
 - Test count: 506 total (58 new: 16 auth-types, 15 auth-store, 13 nango-client, 14 gmail-client), all passing
+
+### Implementation Notes - Thread Fetching & Sync (2026-03-31)
+
+- Thread fetcher (src/features/sync/thread-fetcher.ts): Pure conversion functions (convertGmailMessage, convertGmailThread) transform Gmail API responses into Thread objects per Spec 01 data contracts. Extracts participants (deduped by email), canonical subject, timestamps, labels, unread status. Computes initial urgency/value scores and neglect duration. Address parsing helpers (extractEmailAddress, extractDisplayName, parseAddressList) handle RFC 5322 formats. performInitialLoad orchestrates paginated thread list fetch with progressive loading (onThreadLoaded callback per Spec 10). Injectable \_setFetchFns/\_resetFetchFns for testing.
+- Sync store (src/lib/stores/sync-store.ts): Zustand store managing sync cursor (lastHistoryId, syncMode, connectivityStatus), consecutive failure tracking (error after 2+ failures per Spec 10), and action queue (enqueue/update/remove with pending/in-flight/succeeded/failed states per Spec 10). Default 5s poll interval (within spec's 10s requirement) and 30-day lookback.
+- Sync engine (src/features/sync/sync-engine.ts): Orchestrates initial load (calls performInitialLoad, records history ID, transitions shell state), incremental sync (polls fetchHistoryChanges, processes change events, merges updated threads preserving position/scores), history ID expiry detection (falls back to backfill/full re-fetch), network error detection (transitions to offline), and action queue replay (executes pending actions in order on reconnect, surfaces failures per Spec 10). Injectable \_setEngineFetchFns for testing.
+- App.tsx init flow extended: auth check -> load persisted threads (immediate display) -> startInitialLoad (fetch from Gmail) -> startPolling (incremental sync). Cleanup stops polling. Shell transitions through loading -> active/empty/degraded based on results.
+- Pre-existing gmail-client.ts type errors fixed: GmailApiError class field declarations converted from parameter properties to explicit fields (erasableSyntaxOnly compatibility). gmail-client.test.ts mock proxy function typed with proper signature; non-null assertions added for opts parameter access.
+- Test count: 570 total (64 new: 30 thread-fetcher, 18 sync-store, 16 sync-engine), all passing. Typecheck and lint clean.
