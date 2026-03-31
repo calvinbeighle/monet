@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 334 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 361 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9. Build, typecheck, lint all clean.
 
 **Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
-2.6 Clustering, 3.1-3.4 Game Mechanics, 4.1 Agent Units.
+2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units.
 
-**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 4.2 Agent AI Backend, 4.3 Agent Deployment UI, 3.5 Map Alerts.
+**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 4.2 Agent AI Backend, 4.3 Agent Deployment UI.
 
 ---
 
@@ -255,14 +255,14 @@ These must be resolved before implementation begins:
 
 ### 3.5 Map Alerts
 
-- [ ] Alert types: new high-value thread, thread about to be lost, agent task completed, streak at risk
-- [ ] Alerts appear without user action
-- [ ] Visually distinct per type
-- [ ] Acknowledge to dismiss (no action on underlying thread)
-- [ ] Auto-dismiss when condition resolves (e.g., user replied)
-- [ ] Multiple alerts stack without obscuring critical content
-- [ ] **Spec**: 07-game-mechanics (Map Alert Notifications)
-- [ ] **Tests**: Alert trigger conditions, dismiss behavior, auto-dismiss, stacking
+- [x] Alert types: new high-value thread, thread about to be lost, agent task completed, streak at risk
+- [x] Alerts appear without user action (evaluateAlerts runs on tick)
+- [x] Visually distinct per type (severity-coded via notification area)
+- [x] Acknowledge to dismiss (no action on underlying thread)
+- [x] Auto-dismiss when condition resolves (e.g., user replied)
+- [x] Multiple alerts stack without obscuring critical content (notification area bottom-left)
+- [x] **Spec**: 07-game-mechanics (Map Alert Notifications)
+- [x] **Tests**: Alert trigger conditions (about-to-be-lost, high-value-urgent, streak-at-risk, agent-completed), acknowledge, auto-resolve, dedup, countActiveAlerts (27 tests)
 
 ---
 
@@ -359,3 +359,9 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - App.tsx fully wired: 6 shell lifecycle states (initializing/unauthenticated/loading/empty/active/degraded), responsive layout (panels overlay below 768px breakpoint), focus zone management (status-bar/map/agent-dock/right-panel with tab order), degraded mode banner, status bar triggers for summary and deployment history
 - StatusBar updated: onSummaryClick and onHistoryClick callback props for shell triggers
 - Test count: 334 total (57 new tests for shell components), all passing
+
+### Implementation Notes - Map Alerts & Detail Panel Metadata (2026-03-31)
+
+- Map alerts engine (Spec 07): src/features/game-mechanics/map-alerts.ts with pure functions: isAboutToBeLost (30 min window before lost threshold per thread type latency table), isHighValueUrgent (value > 0.7, opportunity window < 30 min), isStreakAtRisk (within 2h of midnight, unsafe threads, streak > 0), evaluateAlerts (dedup, auto-resolve, preserve existing), createAgentCompletedAlert, acknowledgeAlert, countActiveAlerts
+- Detail panel enhanced: thread metadata grid showing zone, lifecycle state, risk tier (color-coded), opportunity state (color-coded), urgency %, value %. ARIA attributes for accessibility (role=complementary, aria-label on panel and close button). Message timestamps displayed.
+- Test count: 361 total (27 new map alert tests + 3 new detail panel tests), all passing
