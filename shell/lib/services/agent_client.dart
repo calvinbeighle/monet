@@ -329,6 +329,23 @@ class AgentClient {
     );
   }
 
+  /// Signal the backend that the user is ready for the next flow step.
+  Future<void> advanceFlow(
+    String sessionId,
+    int stepIndex,
+    Map<String, dynamic> userState,
+  ) async {
+    await _client.post(
+      Uri.parse('$baseUrl/api/flow/advance'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'session_id': sessionId,
+        'step_index': stepIndex,
+        'user_state': userState,
+      }),
+    );
+  }
+
   void dispose() {
     _client.close();
   }

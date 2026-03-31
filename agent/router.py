@@ -1,7 +1,72 @@
 """Intent router - maps user intents to agents and UI patterns via keyword matching."""
 
 import re
-from agent.models import RoutedIntent, UIPattern
+from agent.models import FlowPlan, FlowStep, RoutedIntent, UIPattern
+
+
+# Multi-step flow rules: checked first. Each is (regex, list[FlowStep]).
+FLOW_RULES: list[tuple[re.Pattern, list[FlowStep]]] = [
+    # "plan and prioritize my emails" -> whiteboard -> tinder -> chat
+    (
+        re.compile(r"\b(plan|organize|triage)\b.*\b(emails|inbox)\b", re.IGNORECASE),
+        [
+            FlowStep(
+                agent="planning",
+                ui_pattern=UIPattern.WHITEBOARD.value,
+                label="Plan on whiteboard",
+            ),
+            FlowStep(
+                agent="email",
+                ui_pattern=UIPattern.TINDER.value,
+                label="Review decisions",
+                carry_map={"nodes": "cards"},
+            ),
+            FlowStep(
+                agent="email",
+                ui_pattern=UIPattern.CHAT.value,
+                label="Execute actions",
+                carry_map={"decisions": "context"},
+            ),
+        ],
+    ),
+    # "review and fix PR" -> diff -> chat
+    (
+        re.compile(r"\b(review|look at)\b.*\b(fix|implement|address)\b", re.IGNORECASE),
+        [
+            FlowStep(
+                agent="code",
+                ui_pattern=UIPattern.DIFF.value,
+                label="Review changes",
+            ),
+            FlowStep(
+                agent="code",
+                ui_pattern=UIPattern.CHAT.value,
+                label="Implement fixes",
+                carry_map={"diff_decisions": "context"},
+            ),
+        ],
+    ),
+    # "brainstorm then prioritize" -> whiteboard -> tinder
+    (
+        re.compile(
+            r"\b(brainstorm|plan)\b.*\b(then|and)\b.*\b(prioritize|rank|decide)\b",
+            re.IGNORECASE,
+        ),
+        [
+            FlowStep(
+                agent="planning",
+                ui_pattern=UIPattern.WHITEBOARD.value,
+                label="Brainstorm ideas",
+            ),
+            FlowStep(
+                agent="planning",
+                ui_pattern=UIPattern.TINDER.value,
+                label="Prioritize items",
+                carry_map={"nodes": "cards"},
+            ),
+        ],
+    ),
+]
 
 
 ROUTING_RULES: list[tuple[re.Pattern, str, UIPattern]] = [
@@ -60,4 +125,27 @@ class IntentRouter:
         # Default: general agent with chat UI
         return RoutedIntent(
             agent="general", ui_pattern=UIPattern.CHAT.value, original=intent
+        )
+
+    def route_flow(self, intent: str) -> FlowPlan:
+        """Route an intent, detecting multi-step flows.
+
+        Checks flow rules first (multi-step). Falls back to single-step
+        via the existing route() method.
+        """
+        for pattern, steps in FLOW_RULES:
+            if pattern.search(intent):
+                return FlowPlan(steps=list(steps), original=intent)
+
+        # Single-step fallback
+        routed = self.route(intent)
+        return FlowPlan(
+            steps=[
+                FlowStep(
+                    agent=routed.agent,
+                    ui_pattern=routed.ui_pattern,
+                    label=f"Run {routed.agent}",
+                )
+            ],
+            original=intent,
         )

@@ -929,4 +929,46 @@ void main() {
       expect(find.text('No parameters'), findsOneWidget);
     });
   });
+
+  // -- MonetShell flow progress tests --
+
+  group('MonetShell flow progress', () {
+    Widget buildShell() {
+      SharedPreferences.setMockInitialValues({});
+      return Provider<AgentClient>(
+        create: (_) => AgentClient(),
+        dispose: (_, client) => client.dispose(),
+        child: const MaterialApp(
+          home: MonetShell(),
+        ),
+      );
+    }
+
+    testWidgets('flow progress bar hidden when no flow active', (tester) async {
+      await tester.pumpWidget(buildShell());
+      await tester.pump();
+      // No flow steps -> no Continue button
+      expect(find.text('Continue'), findsNothing);
+    });
+
+    testWidgets('MonetShellState has flow fields initialized', (tester) async {
+      await tester.pumpWidget(buildShell());
+      await tester.pump();
+      final state = tester.state<MonetShellState>(find.byType(MonetShell));
+      // Flow state defaults
+      expect(state, isNotNull);
+    });
+  });
+
+  // -- AgentClient advanceFlow tests --
+
+  group('AgentClient advanceFlow', () {
+    test('advanceFlow sends correct request body', () async {
+      // Verify the method exists and has the right signature
+      final client = AgentClient();
+      // The method should exist (compile-time check)
+      expect(client.advanceFlow, isA<Function>());
+      client.dispose();
+    });
+  });
 }

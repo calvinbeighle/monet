@@ -50,6 +50,30 @@ class AgentEvent:
 
 
 @dataclass
+class FlowStep:
+    """One step in a cross-pattern flow."""
+
+    agent: str
+    ui_pattern: str
+    label: str  # human-readable, e.g. "Plan tasks on whiteboard"
+    # Maps previous step output keys to this step's context keys.
+    # Example: {"nodes": "cards"} means whiteboard nodes become tinder cards.
+    carry_map: dict = field(default_factory=dict)
+
+
+@dataclass
+class FlowPlan:
+    """A multi-step intent decomposed into ordered pattern steps."""
+
+    steps: list[FlowStep] = field(default_factory=list)
+    original: str = ""
+
+    @property
+    def is_single(self) -> bool:
+        return len(self.steps) <= 1
+
+
+@dataclass
 class RoutedIntent:
     agent: str
     ui_pattern: str

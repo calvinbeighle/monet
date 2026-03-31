@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 in progress - 277 passing tests (219 Python + 58 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete - 308 passing tests (247 Python + 61 Flutter).**
 
 ---
 
@@ -162,10 +162,10 @@ Full flows: intent -> agent -> UI -> approve -> execute.
 
 ### Task 17: Cross-Pattern Flow
 
-- [ ] Multi-step intents decompose across patterns
-- [ ] Example: Whiteboard -> Tinder -> Chat
-- [ ] State carries forward between patterns
-- [ ] Smooth animated transitions
+- [x] Multi-step intents decompose across patterns
+- [x] Example: Whiteboard -> Tinder -> Chat
+- [x] State carries forward between patterns
+- [x] Smooth animated transitions
 
 ### Task 18: Error Handling
 

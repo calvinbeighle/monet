@@ -88,7 +88,7 @@ class TestStreamEndpoint:
     def test_stream_returns_ndjson(self, mock_runner, client):
         from agent.models import AgentEvent
 
-        mock_runner.stream_sync.return_value = iter(
+        mock_runner.stream_flow.return_value = iter(
             [
                 AgentEvent(
                     type="routing",

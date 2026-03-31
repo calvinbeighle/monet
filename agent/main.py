@@ -52,17 +52,46 @@ def run_agent(request: RunRequest):
 
 @app.post("/api/stream")
 def stream_agent(request: RunRequest):
-    """Run an agent with NDJSON streaming of events."""
+    """Run an agent with NDJSON streaming of events.
+
+    Uses stream_flow() which transparently handles both single-step
+    and multi-step cross-pattern flows.
+    """
     logger.info("Streaming agent for intent: %s", request.intent)
 
     def event_generator():
-        for event in runner.stream_sync(request.intent, session_id=request.session_id):
+        for event in runner.stream_flow(request.intent, session_id=request.session_id):
             yield json.dumps(event.to_dict()) + "\n"
 
     return StreamingResponse(
         event_generator(),
         media_type="application/x-ndjson",
     )
+
+
+class FlowAdvanceRequest(BaseModel):
+    session_id: str
+    step_index: int
+    user_state: dict = {}
+
+
+@app.post("/api/flow/advance")
+def advance_flow(request: FlowAdvanceRequest):
+    """Signal that the user has finished interacting with the current
+    pattern and is ready for the next flow step."""
+    logger.info(
+        "Advancing flow for session %s to step %d",
+        request.session_id,
+        request.step_index,
+    )
+    found = runner.signal_advance(
+        request.session_id, request.step_index, request.user_state
+    )
+    if not found:
+        raise HTTPException(
+            status_code=404, detail="No active flow found for this session"
+        )
+    return {"status": "advancing", "step_index": request.step_index}
 
 
 @app.get("/api/approvals")

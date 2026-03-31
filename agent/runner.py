@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import threading
 import uuid
 from typing import Generator, Optional
 
@@ -20,6 +21,8 @@ from agent.models import (
     AgentOutput,
     AgentResult,
     ApprovalStatus,
+    FlowPlan,
+    RoutedIntent,
     UIPattern,
 )
 from agent.router import IntentRouter
@@ -62,6 +65,9 @@ class AgentRunner:
         self.session_store = session_store or SessionStore()
         # In-memory cache of active sessions for fast access during a request
         self._session_cache: dict[str, list[dict]] = {}
+        # Flow advancement signals: session_id -> threading.Event
+        self._flow_advance_events: dict[str, threading.Event] = {}
+        self._flow_user_state: dict[str, dict] = {}
 
     def _get_or_create_session(
         self, session_id: Optional[str]
@@ -581,3 +587,474 @@ class AgentRunner:
                 "suggestions": agent.suggestions if agent else [],
             },
         )
+
+    def stream_flow(
+        self, intent: str, session_id: Optional[str] = None
+    ) -> Generator[AgentEvent, None, None]:
+        """Stream a multi-step flow. Each step runs its agent, then emits
+        a pattern_transition event before the next step begins.
+
+        For single-step plans, delegates to stream_sync (zero overhead).
+        For multi-step plans, orchestrates each step with user-advance gates.
+        """
+        plan = self.router.route_flow(intent)
+
+        if plan.is_single:
+            yield from self.stream_sync(intent, session_id=session_id)
+            return
+
+        sid, history = self._get_or_create_session(session_id)
+        carried_state: dict = {}
+
+        yield AgentEvent(
+            type="flow_start",
+            data=plan.original,
+            metadata={
+                "total_steps": len(plan.steps),
+                "steps": [
+                    {
+                        "agent": s.agent,
+                        "ui_pattern": s.ui_pattern,
+                        "label": s.label,
+                    }
+                    for s in plan.steps
+                ],
+                "session_id": sid,
+            },
+        )
+
+        for i, step in enumerate(plan.steps):
+            step_intent = (
+                intent
+                if i == 0
+                else self._build_step_intent(intent, step, carried_state)
+            )
+
+            forced_routed = RoutedIntent(
+                agent=step.agent,
+                ui_pattern=step.ui_pattern,
+                original=step_intent,
+            )
+
+            step_outputs: list = []
+            step_had_error = False
+            for event in self._stream_step(forced_routed, step_intent, sid, history):
+                if event.type == "done":
+                    step_outputs = event.metadata.get("outputs", [])
+                    event.metadata["flow_step"] = i
+                    event.metadata["flow_total"] = len(plan.steps)
+                    event.metadata["is_flow_step_done"] = True
+                    yield event
+                elif event.type == "error":
+                    step_had_error = True
+                    yield event
+                else:
+                    yield event
+
+            if step_had_error:
+                yield AgentEvent(
+                    type="flow_done",
+                    data="Flow stopped due to error",
+                    metadata={
+                        "stopped_at_step": i,
+                        "total_steps": len(plan.steps),
+                        "session_id": sid,
+                    },
+                )
+                return
+
+            # Apply carry_map to transform outputs for next step
+            if step.carry_map:
+                for source_key, target_key in step.carry_map.items():
+                    carried_state[target_key] = self._extract_carry(
+                        source_key, step_outputs, step.ui_pattern
+                    )
+            else:
+                carried_state["previous_outputs"] = step_outputs
+
+            # Emit transition and wait for user advance (except after last step)
+            if i < len(plan.steps) - 1:
+                next_step = plan.steps[i + 1]
+                advance_event = threading.Event()
+                self._flow_advance_events[sid] = advance_event
+
+                yield AgentEvent(
+                    type="pattern_transition",
+                    data=next_step.label,
+                    metadata={
+                        "step_index": i + 1,
+                        "total_steps": len(plan.steps),
+                        "next_pattern": next_step.ui_pattern,
+                        "next_agent": next_step.agent,
+                        "carried_state": carried_state,
+                        "awaiting_advance": True,
+                    },
+                )
+
+                if not advance_event.wait(timeout=600):
+                    yield AgentEvent(
+                        type="error",
+                        data="Flow timed out waiting for user to advance.",
+                    )
+                    yield AgentEvent(
+                        type="flow_done",
+                        data="Flow timed out",
+                        metadata={
+                            "stopped_at_step": i,
+                            "total_steps": len(plan.steps),
+                            "session_id": sid,
+                        },
+                    )
+                    self._flow_advance_events.pop(sid, None)
+                    return
+
+                # Merge user modifications into carried state
+                user_mods = self._flow_user_state.pop(sid, {})
+                carried_state.update(user_mods)
+                self._flow_advance_events.pop(sid, None)
+
+        yield AgentEvent(
+            type="flow_done",
+            data="Flow complete",
+            metadata={
+                "total_steps": len(plan.steps),
+                "session_id": sid,
+            },
+        )
+
+    def _stream_step(
+        self,
+        routed: RoutedIntent,
+        intent: str,
+        session_id: str,
+        history: list[dict],
+    ) -> Generator[AgentEvent, None, None]:
+        """Run a single step within a flow. Uses the same core logic as stream_sync
+        but with pre-resolved routing and shared session state."""
+        agent = self._resolve_agent(routed.agent)
+
+        yield AgentEvent(
+            type="routing",
+            data=routed.agent,
+            metadata={
+                "ui_pattern": routed.ui_pattern,
+                "agent": routed.agent,
+                "session_id": session_id,
+            },
+        )
+
+        if agent is None:
+            yield AgentEvent(
+                type="error",
+                data=f"No agent available for '{routed.agent}'",
+            )
+            yield AgentEvent(
+                type="done",
+                metadata={
+                    "agent": routed.agent,
+                    "ui_pattern": routed.ui_pattern,
+                    "session_id": session_id,
+                    "outputs": [],
+                    "suggestions": [],
+                },
+            )
+            return
+
+        if hasattr(agent, "set_session"):
+            agent.set_session(session_id)
+
+        history.append({"role": "user", "content": intent})
+        self._persist_message(session_id, "user", intent)
+
+        tools = [
+            {
+                "name": t["name"],
+                "description": t["description"],
+                "input_schema": t["input_schema"],
+            }
+            for t in agent.tools
+        ]
+
+        stream_outputs: list[dict] = []
+        stream_kwargs = {
+            "model": AGENT_MODEL,
+            "max_tokens": 4096,
+            "system": agent.system_prompt,
+            "messages": history,
+        }
+        if tools:
+            stream_kwargs["tools"] = tools
+
+        for _round in range(MAX_TOOL_ROUNDS):
+            collected_content = []
+            tool_use_blocks = []
+
+            try:
+                with self.client.messages.stream(**stream_kwargs) as stream:
+                    current_tool: Optional[dict] = None
+
+                    for event in stream:
+                        if event.type == "content_block_start":
+                            if event.content_block.type == "tool_use":
+                                current_tool = {
+                                    "id": event.content_block.id,
+                                    "name": event.content_block.name,
+                                    "input": "",
+                                }
+                        elif event.type == "content_block_delta":
+                            if hasattr(event.delta, "text"):
+                                yield AgentEvent(type="token", data=event.delta.text)
+                            elif hasattr(event.delta, "partial_json"):
+                                if current_tool:
+                                    current_tool["input"] += event.delta.partial_json
+                        elif event.type == "content_block_stop":
+                            if current_tool:
+                                try:
+                                    parsed_input = (
+                                        json.loads(current_tool["input"])
+                                        if current_tool["input"]
+                                        else {}
+                                    )
+                                except json.JSONDecodeError:
+                                    parsed_input = {}
+                                tool_use_blocks.append(
+                                    {
+                                        "id": current_tool["id"],
+                                        "name": current_tool["name"],
+                                        "input": parsed_input,
+                                    }
+                                )
+                                yield AgentEvent(
+                                    type="tool_call",
+                                    data=current_tool["name"],
+                                    metadata={"parameters": parsed_input},
+                                )
+                                current_tool = None
+
+                    final_message = stream.get_final_message()
+                    collected_content = final_message.content
+
+            except anthropic.AuthenticationError:
+                yield AgentEvent(
+                    type="error",
+                    data="Authentication failed. Please check your API key.",
+                    metadata={"error_type": "auth_error", "retryable": False},
+                )
+                break
+            except anthropic.RateLimitError:
+                yield AgentEvent(
+                    type="error",
+                    data="Rate limit exceeded. Please try again in a moment.",
+                    metadata={"error_type": "rate_limit", "retryable": True},
+                )
+                break
+            except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+                logger.error("API connection error during stream step: %s", e)
+                yield AgentEvent(
+                    type="error",
+                    data="Failed to connect to AI service. Please check your network.",
+                    metadata={"error_type": "connection_error", "retryable": True},
+                )
+                break
+            except anthropic.APIError as e:
+                logger.error("API error during stream step: %s", e)
+                yield AgentEvent(
+                    type="error",
+                    data=f"AI service error: {e.message}",
+                    metadata={"error_type": "api_error", "retryable": True},
+                )
+                break
+
+            text_parts = [
+                block.text
+                for block in collected_content
+                if hasattr(block, "type")
+                and block.type == "text"
+                and hasattr(block, "text")
+            ]
+            if text_parts:
+                stream_outputs.append(
+                    {"content": "\n".join(text_parts), "status": "complete"}
+                )
+
+            if not tool_use_blocks:
+                history.append({"role": "assistant", "content": collected_content})
+                self._persist_message(session_id, "assistant", collected_content)
+                break
+
+            history.append({"role": "assistant", "content": collected_content})
+            self._persist_message(session_id, "assistant", collected_content)
+            tool_results = []
+
+            for tool_block in tool_use_blocks:
+                tool_name = tool_block["name"]
+                tool_input = tool_block["input"]
+
+                if tool_name in agent.approval_required:
+                    req = self.approval_gate.create(
+                        tool_name=tool_name,
+                        parameters=tool_input,
+                        session_id=session_id,
+                    )
+                    yield AgentEvent(
+                        type="approval_request",
+                        data=tool_name,
+                        metadata={"approval_id": req.id, "parameters": tool_input},
+                    )
+
+                    status = self.approval_gate.wait_for_resolution(req.id, timeout=300)
+                    if status != ApprovalStatus.APPROVED:
+                        tool_results.append(
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tool_block["id"],
+                                "content": f"User rejected {tool_name}. Do not retry this action.",
+                            }
+                        )
+                        continue
+
+                try:
+                    result = agent.execute_tool(tool_name, tool_input)
+                except Exception as e:
+                    logger.error(
+                        "Tool execution failed in stream step: %s - %s", tool_name, e
+                    )
+                    error_msg = str(e)
+                    if (
+                        "401" in error_msg
+                        or "403" in error_msg
+                        or "unauthorized" in error_msg.lower()
+                    ):
+                        result = json.dumps(
+                            {
+                                "error": f"Authentication failed for {tool_name}. "
+                                "The OAuth token may have expired - please reconnect.",
+                                "error_type": "oauth_expired",
+                            }
+                        )
+                        yield AgentEvent(
+                            type="error",
+                            data=f"OAuth token expired for {tool_name}. Please reconnect.",
+                            metadata={
+                                "error_type": "oauth_expired",
+                                "tool_name": tool_name,
+                                "retryable": False,
+                            },
+                        )
+                    else:
+                        result = json.dumps(
+                            {"error": f"Tool {tool_name} failed: {error_msg}"}
+                        )
+
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_block["id"],
+                        "content": result,
+                    }
+                )
+
+                if (
+                    hasattr(agent, "_nodes")
+                    and routed.ui_pattern == UIPattern.WHITEBOARD
+                ):
+                    yield AgentEvent(
+                        type="whiteboard_update",
+                        data="",
+                        metadata={"nodes": list(agent._nodes.values())},
+                    )
+
+                if (
+                    tool_name == "read_diff"
+                    and routed.ui_pattern == UIPattern.DIFF
+                    and isinstance(result, str)
+                    and not result.startswith('{"error')
+                ):
+                    diff_lines = parse_unified_diff(result)
+                    yield AgentEvent(
+                        type="diff_update",
+                        data="",
+                        metadata={"lines": diff_lines},
+                    )
+
+            history.append({"role": "user", "content": tool_results})
+            self._persist_message(session_id, "user", tool_results)
+            stream_kwargs["messages"] = history
+
+        # Include planning node data in done event for whiteboard pattern
+        if hasattr(agent, "_nodes") and routed.ui_pattern == UIPattern.WHITEBOARD:
+            stream_outputs = list(agent._nodes.values())
+
+        yield AgentEvent(
+            type="done",
+            metadata={
+                "agent": routed.agent,
+                "ui_pattern": routed.ui_pattern,
+                "session_id": session_id,
+                "outputs": stream_outputs,
+                "suggestions": agent.suggestions if agent else [],
+            },
+        )
+
+    def _build_step_intent(
+        self, original: str, step: "FlowStep", carried_state: dict
+    ) -> str:
+        """Build the intent string for a non-first step by injecting
+        carried state as context."""
+        from agent.models import FlowStep as _FS  # noqa: F811
+
+        context_parts = []
+        for key, value in carried_state.items():
+            if isinstance(value, list) and len(value) > 0:
+                context_parts.append(
+                    f"[Context from previous step - {key}: "
+                    f"{json.dumps(value, default=str)[:2000]}]"
+                )
+            elif isinstance(value, str):
+                context_parts.append(
+                    f"[Context from previous step - {key}: {value[:2000]}]"
+                )
+
+        context_block = "\n".join(context_parts)
+        return f"{original}\n\n{context_block}" if context_block else original
+
+    def _extract_carry(
+        self, source_key: str, outputs: list, ui_pattern: str
+    ) -> list | str:
+        """Extract carried state from step outputs based on source_key."""
+        if source_key == "nodes" and ui_pattern == UIPattern.WHITEBOARD.value:
+            return [
+                {
+                    "title": node.get("title", ""),
+                    "body": node.get("body", ""),
+                    "priority": node.get("priority", "medium"),
+                    "id": node.get("id", ""),
+                }
+                for node in outputs
+                if isinstance(node, dict) and "title" in node
+            ]
+        elif source_key == "decisions":
+            return [
+                {
+                    "title": o.get("title", ""),
+                    "approved": o.get("approved", False),
+                }
+                for o in outputs
+                if isinstance(o, dict)
+            ]
+        elif source_key == "diff_decisions":
+            return outputs
+        else:
+            return outputs
+
+    def signal_advance(
+        self, session_id: str, step_index: int, user_state: dict
+    ) -> bool:
+        """Signal that the user is ready for the next flow step.
+        Returns True if a waiting flow was found and signaled."""
+        self._flow_user_state[session_id] = user_state
+        event = self._flow_advance_events.get(session_id)
+        if event:
+            event.set()
+            return True
+        return False

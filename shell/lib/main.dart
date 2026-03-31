@@ -129,6 +129,13 @@ class MonetShellState extends State<MonetShell> {
   // Index of the current streaming assistant message (null when not streaming tokens)
   int? _streamingMessageIndex;
 
+  // Flow state (cross-pattern flows)
+  List<Map<String, dynamic>>? _flowSteps;
+  int _flowCurrentStep = 0;
+  int _flowTotalSteps = 0;
+  bool _awaitingAdvance = false;
+  Map<String, dynamic> _carriedState = {};
+
   StreamSubscription<AgentEvent>? _streamSub;
 
   @override
@@ -156,6 +163,14 @@ class MonetShellState extends State<MonetShell> {
       _chatStreaming = true;
       _chatSuggestions.clear();
       _chatMessages.add(ChatMessage(content: intent, isUser: true));
+      // Cancel any active flow when a new intent is submitted
+      if (_flowSteps != null) {
+        _flowSteps = null;
+        _flowCurrentStep = 0;
+        _flowTotalSteps = 0;
+        _awaitingAdvance = false;
+        _carriedState = {};
+      }
     });
 
     _streamSub?.cancel();
@@ -274,17 +289,50 @@ class MonetShellState extends State<MonetShell> {
                 isRetryable: retryable,
               ));
             });
+          case 'flow_start':
+            setState(() {
+              _flowSteps = (event.metadata['steps'] as List<dynamic>?)
+                  ?.cast<Map<String, dynamic>>() ?? [];
+              _flowTotalSteps = event.metadata['total_steps'] as int? ?? 0;
+              _flowCurrentStep = 0;
+            });
+          case 'pattern_transition':
+            setState(() {
+              _flowCurrentStep = event.metadata['step_index'] as int? ?? 0;
+              _activePattern = event.metadata['next_pattern'] as String?;
+              _activeAgent = event.metadata['next_agent'] as String?;
+              _awaitingAdvance = event.metadata['awaiting_advance'] == true;
+              _carriedState =
+                  (event.metadata['carried_state'] as Map<String, dynamic>?) ?? {};
+              _applyCarriedState();
+              // Reset streaming state for next step
+              _chatStreaming = false;
+              _streamingMessageIndex = null;
+            });
+          case 'flow_done':
+            setState(() {
+              _flowSteps = null;
+              _flowCurrentStep = 0;
+              _flowTotalSteps = 0;
+              _awaitingAdvance = false;
+              _carriedState = {};
+              _isRunning = false;
+              _chatStreaming = false;
+            });
           case 'done':
+            final isFlowStepDone = event.metadata['is_flow_step_done'] == true;
             setState(() {
               _chatStreaming = false;
-              _isRunning = false;
               _streamingMessageIndex = null;
               _applyPatternData(event.metadata);
-              // Populate suggestion chips from agent response
               final suggestions = event.metadata['suggestions'] as List<dynamic>?;
               _chatSuggestions.clear();
               if (suggestions != null) {
                 _chatSuggestions.addAll(suggestions.cast<String>());
+              }
+              // Only mark as not running if this is a final done (not a flow step done)
+              if (!isFlowStepDone) {
+                _isRunning = false;
               }
             });
         }
@@ -370,6 +418,64 @@ class MonetShellState extends State<MonetShell> {
     }
   }
 
+  void _applyCarriedState() {
+    final cards = _carriedState['cards'] as List<dynamic>?;
+    if (cards != null && _activePattern == 'tinder') {
+      _tinderCards = cards
+          .map((c) => TinderCard(
+                title: (c as Map<String, dynamic>)['title'] as String? ?? '',
+                body: c['body'] as String? ?? '',
+                metadata: c,
+              ))
+          .toList();
+    }
+
+    final context = _carriedState['context'];
+    if (context != null && _activePattern == 'chat') {
+      _chatMessages.add(ChatMessage(
+        content: 'Continuing from previous step with '
+            '${context is List ? context.length : 1} items.',
+        isUser: false,
+        isSystem: true,
+      ));
+    }
+  }
+
+  void _advanceFlow() {
+    if (_sessionId == null) return;
+    final client = context.read<AgentClient>();
+    final userState = _collectCurrentPatternState();
+    client.advanceFlow(_sessionId!, _flowCurrentStep, userState);
+    setState(() => _awaitingAdvance = false);
+  }
+
+  Map<String, dynamic> _collectCurrentPatternState() {
+    switch (_activePattern) {
+      case 'tinder':
+        return {
+          'decisions': _tinderCards
+              .map((c) => {
+                    'title': c.title,
+                    'approved': c.metadata['approved'] ?? false,
+                  })
+              .toList(),
+        };
+      case 'whiteboard':
+        return {
+          'nodes': _whiteboardNodes
+              .map((n) => {
+                    'id': n.id,
+                    'title': n.title,
+                    'body': n.body,
+                    'priority': n.priority,
+                  })
+              .toList(),
+        };
+      default:
+        return {};
+    }
+  }
+
   DiffType _parseDiffType(String? type) {
     switch (type) {
       case 'added':
@@ -451,6 +557,7 @@ class MonetShellState extends State<MonetShell> {
       body: Column(
         children: [
           _buildIntentBar(),
+          _buildFlowProgress(),
           Expanded(child: _buildActivePattern()),
           StatusBar(
             tools: const [
@@ -461,6 +568,63 @@ class MonetShellState extends State<MonetShell> {
             activePattern: _activePattern,
             onLogout: widget.onLogout,
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFlowProgress() {
+    if (_flowSteps == null || _flowSteps!.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF12121A),
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < _flowTotalSteps; i++) ...[
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: i < _flowCurrentStep
+                    ? const Color(0xFF7C6EF0)
+                    : i == _flowCurrentStep
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.2),
+              ),
+            ),
+            if (i < _flowTotalSteps - 1)
+              Container(
+                width: 24,
+                height: 1,
+                color: i < _flowCurrentStep
+                    ? const Color(0xFF7C6EF0)
+                    : Colors.white.withValues(alpha: 0.1),
+              ),
+          ],
+          const SizedBox(width: 12),
+          if (_flowCurrentStep < _flowSteps!.length)
+            Text(
+              _flowSteps![_flowCurrentStep]['label'] as String? ?? '',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontSize: 13,
+              ),
+            ),
+          const Spacer(),
+          if (_awaitingAdvance)
+            TextButton(
+              onPressed: _advanceFlow,
+              child: const Text(
+                'Continue',
+                style: TextStyle(color: Color(0xFF7C6EF0)),
+              ),
+            ),
         ],
       ),
     );
