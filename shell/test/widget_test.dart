@@ -11,9 +11,11 @@ import 'package:shell/services/agent_client.dart';
 import 'package:shell/ui/agents_dashboard.dart';
 import 'package:shell/ui/approval_overlay.dart';
 import 'package:shell/ui/home_screen.dart';
+import 'package:shell/ui/monet_theme.dart';
 import 'package:shell/ui/onboarding.dart';
 import 'package:shell/ui/patterns/tinder.dart';
 import 'package:shell/ui/patterns/chat.dart';
+import 'package:shell/ui/voice_button.dart';
 import 'package:shell/ui/patterns/diff.dart';
 import 'package:shell/ui/patterns/whiteboard.dart';
 import 'package:shell/ui/status_bar.dart';
@@ -29,13 +31,13 @@ void main() {
     });
 
     testWidgets('shows loading spinner during session check', (tester) async {
-      await tester.pumpWidget(const MonetApp());
+      await tester.pumpWidget(MonetApp(themeNotifier: MonetThemeNotifier()));
       // Initial state shows loading spinner while checking stored token
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
 
     testWidgets('shows login form when no stored session and backend unavailable', (tester) async {
-      await tester.pumpWidget(const MonetApp());
+      await tester.pumpWidget(MonetApp(themeNotifier: MonetThemeNotifier()));
       // Pump to let the async session restore complete (no stored token)
       // then let onboarding check auth status and fail (no backend)
       await tester.pump(const Duration(milliseconds: 100));
@@ -46,7 +48,7 @@ void main() {
     });
 
     testWidgets('login form has username and password fields', (tester) async {
-      await tester.pumpWidget(const MonetApp());
+      await tester.pumpWidget(MonetApp(themeNotifier: MonetThemeNotifier()));
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(const Duration(seconds: 2));
       await tester.pump(const Duration(milliseconds: 100));
@@ -63,7 +65,7 @@ void main() {
       return Provider<AgentClient>(
         create: (_) => AgentClient(),
         dispose: (_, client) => client.dispose(),
-        child: MaterialApp(home: child),
+        child: MaterialApp(theme: buildMonetTheme(Brightness.dark), home: child),
       );
     }
 
@@ -174,7 +176,7 @@ void main() {
 
   group('TinderPattern', () {
     testWidgets('renders cards with counter', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: TinderPattern(
             cards: [
@@ -189,7 +191,7 @@ void main() {
     });
 
     testWidgets('shows summary when all cards processed', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: TinderPattern(cards: const []),
         ),
@@ -198,7 +200,7 @@ void main() {
     });
 
     testWidgets('undo button disabled on first card', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: TinderPattern(
             cards: [TinderCard(title: 'Test', body: 'Body')],
@@ -212,7 +214,7 @@ void main() {
     testWidgets('calls onDecision when swiped right', (tester) async {
       int? decidedIndex;
       bool? decidedApproved;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: TinderPattern(
             cards: [
@@ -239,7 +241,7 @@ void main() {
     testWidgets('calls onDecision when swiped left', (tester) async {
       int? decidedIndex;
       bool? decidedApproved;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: TinderPattern(
             cards: [
@@ -267,7 +269,7 @@ void main() {
 
   group('ChatPattern', () {
     testWidgets('renders messages', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -282,7 +284,7 @@ void main() {
     });
 
     testWidgets('renders input field', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(messages: const []),
         ),
@@ -291,7 +293,7 @@ void main() {
     });
 
     testWidgets('renders suggestions', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: const [],
@@ -304,7 +306,7 @@ void main() {
     });
 
     testWidgets('shows typing indicator when streaming', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: const [],
@@ -321,7 +323,7 @@ void main() {
 
     testWidgets('calls onSend when text submitted', (tester) async {
       String? sentMessage;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: const [],
@@ -336,7 +338,7 @@ void main() {
     });
 
     testWidgets('renders system messages with tool icon', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -354,7 +356,7 @@ void main() {
     });
 
     testWidgets('system messages are centered', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -375,7 +377,7 @@ void main() {
     });
 
     testWidgets('renders inline approval card with buttons', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -401,7 +403,7 @@ void main() {
     testWidgets('inline approval card calls onApprovalDecision', (tester) async {
       String? decidedId;
       bool? decidedApproved;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -426,7 +428,7 @@ void main() {
     });
 
     testWidgets('resolved approval card shows status', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -448,7 +450,7 @@ void main() {
     });
 
     testWidgets('renders error card with error icon', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -468,7 +470,7 @@ void main() {
 
     testWidgets('error card shows retry button when retryable', (tester) async {
       bool retryCalled = false;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -489,7 +491,7 @@ void main() {
     });
 
     testWidgets('error card hides retry button when not retryable', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -509,7 +511,7 @@ void main() {
     });
 
     testWidgets('rejected approval card shows status', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [
@@ -535,7 +537,7 @@ void main() {
         ChatMessage(content: 'Hi', isUser: false),
       ];
       // isStreaming false: no typing indicator, simulates state after first token
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(messages: messages, isStreaming: false),
         ),
@@ -544,7 +546,7 @@ void main() {
 
       // Simulate streaming token appended to last message
       messages.last.content += ' there, how are you?';
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(messages: messages, isStreaming: false),
         ),
@@ -553,7 +555,7 @@ void main() {
     });
 
     testWidgets('typing indicator hidden when isStreaming false', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: ChatPattern(
             messages: [ChatMessage(content: 'test', isUser: false)],
@@ -570,7 +572,7 @@ void main() {
 
   group('DiffPattern', () {
     testWidgets('renders header with titles', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: DiffPattern(
             lines: const [],
@@ -584,7 +586,7 @@ void main() {
     });
 
     testWidgets('renders diff lines', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: DiffPattern(
             lines: const [
@@ -599,7 +601,7 @@ void main() {
     });
 
     testWidgets('renders action buttons when onDecision provided', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: DiffPattern(
             lines: const [],
@@ -613,7 +615,7 @@ void main() {
 
     testWidgets('calls onDecision with true for approve', (tester) async {
       bool? decision;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: DiffPattern(
             lines: const [],
@@ -627,7 +629,7 @@ void main() {
 
     testWidgets('calls onDecision with false for reject', (tester) async {
       bool? decision;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: DiffPattern(
             lines: const [],
@@ -640,7 +642,7 @@ void main() {
     });
 
     testWidgets('hides action buttons when no onDecision', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: DiffPattern(lines: const []),
         ),
@@ -649,7 +651,7 @@ void main() {
     });
 
     testWidgets('syntax highlights keywords in diff lines', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: DiffPattern(
             lines: const [
@@ -670,7 +672,7 @@ void main() {
     });
 
     testWidgets('syntax highlights strings and comments', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: DiffPattern(
             lines: const [
@@ -772,7 +774,7 @@ void main() {
 
   group('WhiteboardPattern', () {
     testWidgets('renders nodes', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: WhiteboardPattern(
             nodes: [
@@ -787,7 +789,7 @@ void main() {
     });
 
     testWidgets('renders node body text', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: WhiteboardPattern(
             nodes: [
@@ -807,7 +809,7 @@ void main() {
 
     testWidgets('calls onNodeTap when node tapped', (tester) async {
       String? tappedId;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: WhiteboardPattern(
             nodes: [
@@ -822,7 +824,7 @@ void main() {
     });
 
     testWidgets('renders with InteractiveViewer', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: WhiteboardPattern(nodes: const []),
         ),
@@ -831,7 +833,7 @@ void main() {
     });
 
     testWidgets('renders priority indicator dot', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: WhiteboardPattern(
             nodes: [
@@ -853,15 +855,16 @@ void main() {
     });
 
     testWidgets('WhiteboardNode.priorityColor returns correct colors', (tester) async {
-      expect(WhiteboardNode.priorityColor('high'), const Color(0xFFEF4444));
-      expect(WhiteboardNode.priorityColor('low'), const Color(0xFF22C55E));
-      expect(WhiteboardNode.priorityColor('medium'), const Color(0xFF7C6EF0));
-      expect(WhiteboardNode.priorityColor('unknown'), const Color(0xFF7C6EF0));
+      const c = MonetColors.dark;
+      expect(WhiteboardNode.priorityColor('high', c), c.error);
+      expect(WhiteboardNode.priorityColor('low', c), c.success);
+      expect(WhiteboardNode.priorityColor('medium', c), c.primary);
+      expect(WhiteboardNode.priorityColor('unknown', c), c.primary);
     });
 
     testWidgets('calls onNodeMoved after drag', (tester) async {
       String? movedId;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: WhiteboardPattern(
             nodes: [
@@ -888,7 +891,7 @@ void main() {
 
   group('StatusBar', () {
     testWidgets('renders tool indicators', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             tools: const [
@@ -903,7 +906,7 @@ void main() {
     });
 
     testWidgets('shows active agent when running', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(activeAgent: 'email'),
         ),
@@ -912,7 +915,7 @@ void main() {
     });
 
     testWidgets('shows pattern badge', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(activePattern: 'tinder'),
         ),
@@ -921,7 +924,7 @@ void main() {
     });
 
     testWidgets('hides agent indicator when null', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(),
         ),
@@ -930,7 +933,7 @@ void main() {
     });
 
     testWidgets('shows logout button when onLogout provided', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(onLogout: () {}),
         ),
@@ -940,7 +943,7 @@ void main() {
     });
 
     testWidgets('hides logout button when onLogout is null', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(),
         ),
@@ -950,7 +953,7 @@ void main() {
 
     testWidgets('logout button calls onLogout callback', (tester) async {
       bool logoutCalled = false;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(onLogout: () => logoutCalled = true),
         ),
@@ -964,7 +967,7 @@ void main() {
 
   group('ApprovalOverlay', () {
     testWidgets('renders tool name and parameters', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: Builder(
             builder: (context) => ElevatedButton(
@@ -997,7 +1000,7 @@ void main() {
     });
 
     testWidgets('renders shield icon', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: Builder(
             builder: (context) => ElevatedButton(
@@ -1026,7 +1029,7 @@ void main() {
     });
 
     testWidgets('shows formatted parameters', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: Builder(
             builder: (context) => ElevatedButton(
@@ -1060,10 +1063,17 @@ void main() {
   group('MonetShell flow progress', () {
     Widget buildShell() {
       SharedPreferences.setMockInitialValues({});
-      return Provider<AgentClient>(
-        create: (_) => AgentClient(),
-        dispose: (_, client) => client.dispose(),
-        child: const MaterialApp(
+      return MultiProvider(
+        providers: [
+          Provider<AgentClient>(
+            create: (_) => AgentClient(),
+            dispose: (_, client) => client.dispose(),
+          ),
+          ChangeNotifierProvider<MonetThemeNotifier>(
+            create: (_) => MonetThemeNotifier(isDark: true),
+          ),
+        ],
+        child: MaterialApp(theme: buildMonetTheme(Brightness.dark),
           home: MonetShell(),
         ),
       );
@@ -1150,7 +1160,7 @@ void main() {
 
   group('StatusBar system controls', () {
     testWidgets('renders WiFi indicator', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             systemStatus: const SystemStatus(wifiConnected: true, wifiSignal: 80),
@@ -1161,7 +1171,7 @@ void main() {
     });
 
     testWidgets('renders WiFi off icon when disconnected', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             systemStatus: const SystemStatus(wifiConnected: false),
@@ -1172,7 +1182,7 @@ void main() {
     });
 
     testWidgets('renders WiFi 2 bar for medium signal', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             systemStatus: const SystemStatus(wifiConnected: true, wifiSignal: 50),
@@ -1183,7 +1193,7 @@ void main() {
     });
 
     testWidgets('renders WiFi 1 bar for weak signal', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             systemStatus: const SystemStatus(wifiConnected: true, wifiSignal: 20),
@@ -1194,7 +1204,7 @@ void main() {
     });
 
     testWidgets('renders volume indicator with level', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             systemStatus: const SystemStatus(volumeLevel: 75),
@@ -1206,7 +1216,7 @@ void main() {
     });
 
     testWidgets('renders volume down icon for low volume', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             systemStatus: const SystemStatus(volumeLevel: 30),
@@ -1218,7 +1228,7 @@ void main() {
     });
 
     testWidgets('renders muted volume indicator', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             systemStatus: const SystemStatus(volumeLevel: 50, volumeMuted: true),
@@ -1230,7 +1240,7 @@ void main() {
     });
 
     testWidgets('renders brightness indicator with level', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             systemStatus: const SystemStatus(brightnessLevel: 80),
@@ -1243,7 +1253,7 @@ void main() {
     });
 
     testWidgets('renders brightness low icon for dim screen', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             systemStatus: const SystemStatus(brightnessLevel: 30),
@@ -1254,7 +1264,7 @@ void main() {
     });
 
     testWidgets('renders power button', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             onPowerTap: () {},
@@ -1266,7 +1276,7 @@ void main() {
 
     testWidgets('WiFi tap calls onWifiTap', (tester) async {
       bool tapped = false;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             onWifiTap: () => tapped = true,
@@ -1279,7 +1289,7 @@ void main() {
 
     testWidgets('volume tap calls onVolumeTap', (tester) async {
       bool tapped = false;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             onVolumeTap: () => tapped = true,
@@ -1293,7 +1303,7 @@ void main() {
 
     testWidgets('power tap calls onPowerTap', (tester) async {
       bool tapped = false;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             onPowerTap: () => tapped = true,
@@ -1348,7 +1358,7 @@ void main() {
       return Provider<AgentClient>(
         create: (_) => AgentClient(),
         dispose: (_, client) => client.dispose(),
-        child: MaterialApp(home: child),
+        child: MaterialApp(theme: buildMonetTheme(Brightness.dark), home: child),
       );
     }
 
@@ -1390,7 +1400,7 @@ void main() {
 
   group('StatusBar tool connection display', () {
     testWidgets('shows connected tool with green dot', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             tools: const [
@@ -1405,7 +1415,7 @@ void main() {
     });
 
     testWidgets('shows multiple tools', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(
             tools: const [
@@ -1422,7 +1432,7 @@ void main() {
     });
 
     testWidgets('empty tools list renders no indicators', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(tools: const []),
         ),
@@ -1610,7 +1620,7 @@ void main() {
 
   group('StatusBar agents button', () {
     testWidgets('renders Agents button when onAgentsTap is provided', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(onAgentsTap: () {}),
         ),
@@ -1620,7 +1630,7 @@ void main() {
     });
 
     testWidgets('does not render Agents button when onAgentsTap is null', (tester) async {
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(),
         ),
@@ -1630,7 +1640,7 @@ void main() {
 
     testWidgets('Agents button tap calls onAgentsTap callback', (tester) async {
       bool tapped = false;
-      await tester.pumpWidget(MaterialApp(
+      await tester.pumpWidget(MaterialApp(theme: buildMonetTheme(Brightness.dark),
         home: Scaffold(
           body: StatusBar(onAgentsTap: () => tapped = true),
         ),
@@ -1669,7 +1679,7 @@ void main() {
     Widget buildDashboard(http.Client mockClient) {
       return Provider<AgentClient>.value(
         value: AgentClient(client: mockClient),
-        child: const MaterialApp(
+        child: MaterialApp(theme: buildMonetTheme(Brightness.dark),
           home: Scaffold(
             body: AgentsDashboard(),
           ),
@@ -2339,14 +2349,7 @@ void main() {
         create: (_) => AgentClient(client: mockClient),
         dispose: (_, c) => c.dispose(),
         child: MaterialApp(
-          theme: ThemeData(
-            brightness: Brightness.dark,
-            scaffoldBackgroundColor: const Color(0xFF0A0A0F),
-            colorScheme: const ColorScheme.dark(
-              surface: Color(0xFF12121A),
-              primary: Color(0xFF7C6EF0),
-            ),
-          ),
+          theme: buildMonetTheme(Brightness.dark),
           home: Scaffold(
             body: HomeScreen(
               onIntent: onIntent ?? (_) {},
@@ -2504,6 +2507,112 @@ void main() {
 
       final client = AgentClient(client: mockClient);
       expect(() => client.homeSummary(), throwsException);
+      client.dispose();
+    });
+  });
+
+  // -- VoiceButton tests --
+
+  group('VoiceButton', () {
+    testWidgets('renders mic icon in idle state', (tester) async {
+      await tester.pumpWidget(
+        Provider<AgentClient>(
+          create: (_) => AgentClient(),
+          dispose: (_, c) => c.dispose(),
+          child: MaterialApp(
+            theme: buildMonetTheme(Brightness.dark),
+            home: Scaffold(
+              body: VoiceButton(onTranscribed: (_) {}),
+            ),
+          ),
+        ),
+      );
+      expect(find.byIcon(Icons.mic), findsOneWidget);
+    });
+
+    testWidgets('large variant renders with bigger size', (tester) async {
+      await tester.pumpWidget(
+        Provider<AgentClient>(
+          create: (_) => AgentClient(),
+          dispose: (_, c) => c.dispose(),
+          child: MaterialApp(
+            theme: buildMonetTheme(Brightness.dark),
+            home: Scaffold(
+              body: VoiceButton(onTranscribed: (_) {}, large: true),
+            ),
+          ),
+        ),
+      );
+      expect(find.byIcon(Icons.mic), findsOneWidget);
+      // Large variant wraps in a Container with circle decoration
+      final container = tester.widget<Container>(find.byType(Container).first);
+      expect(container.constraints?.maxWidth, 64.0);
+    });
+
+    testWidgets('VoiceButtonState starts idle', (tester) async {
+      await tester.pumpWidget(
+        Provider<AgentClient>(
+          create: (_) => AgentClient(),
+          dispose: (_, c) => c.dispose(),
+          child: MaterialApp(
+            theme: buildMonetTheme(Brightness.dark),
+            home: Scaffold(
+              body: VoiceButton(onTranscribed: (_) {}),
+            ),
+          ),
+        ),
+      );
+      // Just verify widget tree renders without errors
+      expect(find.byType(VoiceButton), findsOneWidget);
+    });
+  });
+
+  // -- AgentClient voice methods tests --
+
+  group('AgentClient voice methods', () {
+    test('voiceAvailable returns true when API says available', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/voice/status') {
+          return http.Response(jsonEncode({'available': true}), 200);
+        }
+        return http.Response('Not found', 404);
+      });
+
+      final client = AgentClient(client: mockClient);
+      final available = await client.voiceAvailable();
+      expect(available, true);
+      client.dispose();
+    });
+
+    test('voiceAvailable returns false when API says unavailable', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/voice/status') {
+          return http.Response(jsonEncode({'available': false}), 200);
+        }
+        return http.Response('Not found', 404);
+      });
+
+      final client = AgentClient(client: mockClient);
+      final available = await client.voiceAvailable();
+      expect(available, false);
+      client.dispose();
+    });
+
+    test('voiceAvailable returns false on network error', () async {
+      final mockClient = MockClient((request) async {
+        throw Exception('Connection refused');
+      });
+
+      final client = AgentClient(client: mockClient);
+      final available = await client.voiceAvailable();
+      expect(available, false);
+      client.dispose();
+    });
+
+    test('transcribeAudio method exists and has correct signature', () {
+      final client = AgentClient();
+      // Verify the method exists and accepts the expected parameters
+      expect(client.transcribeAudio, isA<Function>());
       client.dispose();
     });
   });

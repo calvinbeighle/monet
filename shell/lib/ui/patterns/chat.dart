@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../monet_theme.dart';
+import '../voice_button.dart';
 
 class ChatMessage {
   String content;
@@ -94,6 +96,7 @@ class ChatPatternState extends State<ChatPattern> {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return Column(
       children: [
         Expanded(
@@ -126,6 +129,7 @@ class ChatPatternState extends State<ChatPattern> {
       return _buildSystemMessage(message);
     }
 
+    final c = MonetColors.of(context);
     final isUser = message.isUser;
     final maxWidth = MediaQuery.of(context).size.width * 0.65;
 
@@ -140,8 +144,8 @@ class ChatPatternState extends State<ChatPattern> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: isUser
-                  ? const Color(0xFF7C6EF0)
-                  : const Color(0xFF1A1A25),
+                  ? c.primary
+                  : c.surfaceSecondary,
               borderRadius: BorderRadius.only(
                 topLeft: const Radius.circular(16),
                 topRight: const Radius.circular(16),
@@ -151,8 +155,8 @@ class ChatPatternState extends State<ChatPattern> {
             ),
             child: Text(
               message.content,
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: c.textPrimary,
                 fontSize: 15,
                 height: 1.4,
               ),
@@ -164,24 +168,25 @@ class ChatPatternState extends State<ChatPattern> {
   }
 
   Widget _buildSystemMessage(ChatMessage message) {
+    final c = MonetColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Center(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
+            color: c.border,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.build_outlined, size: 14, color: Colors.white.withValues(alpha: 0.4)),
+              Icon(Icons.build_outlined, size: 14, color: c.textTertiary),
               const SizedBox(width: 6),
               Text(
                 message.content,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.4),
+                  color: c.textTertiary,
                   fontSize: 12,
                   fontStyle: FontStyle.italic,
                 ),
@@ -194,6 +199,7 @@ class ChatPatternState extends State<ChatPattern> {
   }
 
   Widget _buildErrorCard(ChatMessage message) {
+    final c = MonetColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -203,9 +209,9 @@ class ChatPatternState extends State<ChatPattern> {
               maxWidth: MediaQuery.of(context).size.width * 0.75,
             ),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1215),
+              color: c.errorSurface,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+              border: Border.all(color: c.error.withValues(alpha: 0.3)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,13 +223,13 @@ class ChatPatternState extends State<ChatPattern> {
                       Icon(
                         Icons.error_outline,
                         size: 16,
-                        color: Colors.red.shade300,
+                        color: c.error,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         'Error',
                         style: TextStyle(
-                          color: Colors.red.shade300,
+                          color: c.error,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -236,7 +242,7 @@ class ChatPatternState extends State<ChatPattern> {
                   child: Text(
                     message.content,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
+                      color: c.textSecondary,
                       fontSize: 14,
                       height: 1.4,
                     ),
@@ -250,7 +256,7 @@ class ChatPatternState extends State<ChatPattern> {
                       icon: const Icon(Icons.refresh, size: 16),
                       label: const Text('Retry'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: Colors.red.shade700,
+                        backgroundColor: c.error,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                       ),
                     ),
@@ -264,6 +270,7 @@ class ChatPatternState extends State<ChatPattern> {
   }
 
   Widget _buildApprovalCard(ChatMessage message) {
+    final c = MonetColors.of(context);
     final isPending = message.approvalStatus == 'pending';
     final isApproved = message.approvalStatus == 'approved';
     final displayName = (message.toolName ?? 'action').replaceAll('_', ' ');
@@ -278,14 +285,14 @@ class ChatPatternState extends State<ChatPattern> {
               maxWidth: MediaQuery.of(context).size.width * 0.75,
             ),
             decoration: BoxDecoration(
-              color: const Color(0xFF12121A),
+              color: c.surface,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isPending
-                    ? const Color(0xFF7C6EF0).withValues(alpha: 0.3)
+                    ? c.primary.withValues(alpha: 0.3)
                     : isApproved
-                        ? Colors.green.withValues(alpha: 0.3)
-                        : Colors.red.withValues(alpha: 0.3),
+                        ? c.success.withValues(alpha: 0.3)
+                        : c.error.withValues(alpha: 0.3),
               ),
             ),
             child: Column(
@@ -298,13 +305,13 @@ class ChatPatternState extends State<ChatPattern> {
                       Icon(
                         Icons.shield_outlined,
                         size: 16,
-                        color: const Color(0xFF7C6EF0),
+                        color: c.primary,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         displayName,
-                        style: const TextStyle(
-                          color: Color(0xFF7C6EF0),
+                        style: TextStyle(
+                          color: c.primary,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -318,7 +325,7 @@ class ChatPatternState extends State<ChatPattern> {
                     child: Text(
                       params.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: c.textTertiary,
                         fontSize: 12,
                         fontFamily: 'monospace',
                         height: 1.4,
@@ -343,7 +350,7 @@ class ChatPatternState extends State<ChatPattern> {
                             }
                           },
                           style: TextButton.styleFrom(
-                            foregroundColor: Colors.red.shade300,
+                            foregroundColor: c.error,
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                           ),
                           child: const Text('Reject'),
@@ -359,7 +366,7 @@ class ChatPatternState extends State<ChatPattern> {
                             }
                           },
                           style: FilledButton.styleFrom(
-                            backgroundColor: Colors.green.shade700,
+                            backgroundColor: c.success,
                             padding: const EdgeInsets.symmetric(horizontal: 16),
                           ),
                           child: const Text('Approve'),
@@ -376,13 +383,13 @@ class ChatPatternState extends State<ChatPattern> {
                         Icon(
                           isApproved ? Icons.check_circle : Icons.cancel,
                           size: 14,
-                          color: isApproved ? Colors.green : Colors.red.shade300,
+                          color: isApproved ? c.success : c.error,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           isApproved ? 'Approved' : 'Rejected',
                           style: TextStyle(
-                            color: isApproved ? Colors.green : Colors.red.shade300,
+                            color: isApproved ? c.success : c.error,
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
                           ),
@@ -399,6 +406,7 @@ class ChatPatternState extends State<ChatPattern> {
   }
 
   Widget _buildTypingIndicator() {
+    final c = MonetColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -406,7 +414,7 @@ class ChatPatternState extends State<ChatPattern> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A1A25),
+              color: c.surfaceSecondary,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
@@ -425,6 +433,7 @@ class ChatPatternState extends State<ChatPattern> {
   }
 
   Widget _buildSuggestions() {
+    final c = MonetColors.of(context);
     return Container(
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -436,10 +445,10 @@ class ChatPatternState extends State<ChatPattern> {
           return ActionChip(
             label: Text(
               widget.suggestions[index],
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: TextStyle(color: c.textSecondary, fontSize: 13),
             ),
-            backgroundColor: const Color(0xFF1A1A25),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+            backgroundColor: c.surfaceSecondary,
+            side: BorderSide(color: c.border),
             onPressed: () =>
                 widget.onSuggestionTap?.call(widget.suggestions[index]),
           );
@@ -449,12 +458,13 @@ class ChatPatternState extends State<ChatPattern> {
   }
 
   Widget _buildInput() {
+    final c = MonetColors.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0A0F),
+        color: c.scaffoldBg,
         border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          top: BorderSide(color: c.border),
         ),
       ),
       child: Row(
@@ -462,14 +472,14 @@ class ChatPatternState extends State<ChatPattern> {
           Expanded(
             child: TextField(
               controller: _controller,
-              style: const TextStyle(color: Colors.white, fontSize: 15),
+              style: TextStyle(color: c.textPrimary, fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Type a message...',
                 hintStyle: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.3),
+                  color: c.textMeta,
                 ),
                 filled: true,
-                fillColor: const Color(0xFF12121A),
+                fillColor: c.surface,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide.none,
@@ -482,11 +492,18 @@ class ChatPatternState extends State<ChatPattern> {
               onSubmitted: (_) => _handleSend(),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
+          VoiceButton(
+            onTranscribed: (text) {
+              _controller.text = text;
+              _handleSend();
+            },
+          ),
+          const SizedBox(width: 4),
           IconButton(
             onPressed: _handleSend,
             icon: const Icon(Icons.send),
-            color: const Color(0xFF7C6EF0),
+            color: c.primary,
           ),
         ],
       ),
@@ -530,6 +547,7 @@ class _TypingDotState extends State<_TypingDot>
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, child) {
@@ -537,7 +555,7 @@ class _TypingDotState extends State<_TypingDot>
           width: 8,
           height: 8,
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.3 + _animation.value * 0.4),
+            color: c.textMeta.withValues(alpha: 0.3 + _animation.value * 0.4),
             shape: BoxShape.circle,
           ),
         );

@@ -5,7 +5,8 @@ import logging
 from dataclasses import asdict
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -20,6 +21,7 @@ from agent.runner import AgentRunner
 from agent.scheduler import AgentScheduler, ScheduleConfig, ScheduleStore
 from agent.session_store import DEFAULT_DB_PATH
 from agent.system import SystemManager
+from agent.voice import transcribe_audio, get_openai_key
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
@@ -27,6 +29,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Monet Agent Backend", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 approval_gate = ApprovalGate()
 runner = AgentRunner(approval_gate=approval_gate)
@@ -36,6 +46,12 @@ nango_mgr = NangoManager()
 schedule_store = ScheduleStore(db_path=DEFAULT_DB_PATH)
 scheduler = AgentScheduler(schedule_store=schedule_store, runner=runner)
 keystroke_store = KeystrokeStore(db_path=DEFAULT_DB_PATH)
+
+# Trace Messaging router (data ingestion + AI proxy endpoints)
+from agent.trace_router import make_trace_router
+
+trace_router = make_trace_router(nango_mgr)
+app.include_router(trace_router, prefix="/api/trace")
 
 
 class RunRequest(BaseModel):
@@ -771,6 +787,41 @@ def keystroke_clear():
     """Delete all keystroke data. Privacy/reset endpoint."""
     deleted = keystroke_store.clear_all()
     return {"status": "cleared", "deleted": deleted}
+
+
+# --- Voice transcription routes ---
+
+
+@app.post("/api/voice/transcribe")
+async def voice_transcribe(file: UploadFile):
+    """Transcribe uploaded audio via OpenAI Whisper API."""
+    if not get_openai_key():
+        raise HTTPException(
+            status_code=503,
+            detail="Voice transcription unavailable: OPENAI_API_KEY not configured",
+        )
+
+    audio_bytes = await file.read()
+    if len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Empty audio file")
+
+    try:
+        text = await transcribe_audio(
+            audio_bytes, filename=file.filename or "recording.wav"
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return {"text": text}
+
+
+@app.get("/api/voice/status")
+def voice_status():
+    """Check if voice transcription is available."""
+    available = get_openai_key() is not None
+    return {"available": available}
 
 
 # --- Home screen summary (aggregated endpoint for the landing experience) ---

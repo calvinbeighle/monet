@@ -838,6 +838,41 @@ class AgentClient {
     }
   }
 
+  /// Check if voice transcription is available.
+  Future<bool> voiceAvailable() async {
+    try {
+      final response =
+          await _client.get(Uri.parse('$baseUrl/api/voice/status'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['available'] == true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  /// Transcribe audio bytes via the backend voice endpoint.
+  /// Returns the transcribed text.
+  Future<String> transcribeAudio(
+      List<int> audioBytes, String filename) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/api/voice/transcribe'),
+    );
+    request.files.add(http.MultipartFile.fromBytes(
+      'file',
+      audioBytes,
+      filename: filename,
+    ));
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode != 200) {
+      throw Exception('Transcription failed: ${response.statusCode}');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data['text'] as String? ?? '';
+  }
+
   void dispose() {
     _client.close();
   }

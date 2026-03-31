@@ -8,19 +8,25 @@ import 'services/agent_client.dart';
 import 'ui/agents_dashboard.dart';
 import 'ui/approval_overlay.dart';
 import 'ui/home_screen.dart';
+import 'ui/monet_theme.dart';
 import 'ui/onboarding.dart';
 import 'ui/patterns/chat.dart';
 import 'ui/patterns/diff.dart';
 import 'ui/patterns/tinder.dart';
 import 'ui/patterns/whiteboard.dart';
 import 'ui/status_bar.dart';
+import 'ui/voice_button.dart';
 
-void main() {
-  runApp(const MonetApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final themeNotifier = await MonetThemeNotifier.load();
+  runApp(MonetApp(themeNotifier: themeNotifier));
 }
 
 class MonetApp extends StatefulWidget {
-  const MonetApp({super.key});
+  final MonetThemeNotifier themeNotifier;
+
+  const MonetApp({super.key, required this.themeNotifier});
 
   @override
   State<MonetApp> createState() => _MonetAppState();
@@ -63,30 +69,31 @@ class _MonetAppState extends State<MonetApp> {
 
   @override
   Widget build(BuildContext context) {
-    return Provider<AgentClient>.value(
-      value: _agentClient,
-      child: MaterialApp(
-        title: 'Monet',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          brightness: Brightness.dark,
-          scaffoldBackgroundColor: const Color(0xFF0A0A0F),
-          fontFamily: 'Inter',
-          colorScheme: const ColorScheme.dark(
-            surface: Color(0xFF12121A),
-            primary: Color(0xFF7C6EF0),
-          ),
+    return ChangeNotifierProvider<MonetThemeNotifier>.value(
+      value: widget.themeNotifier,
+      child: Provider<AgentClient>.value(
+        value: _agentClient,
+        child: Consumer<MonetThemeNotifier>(
+          builder: (context, theme, _) {
+            final themeData = buildMonetTheme(theme.brightness);
+            final colors = theme.isDark ? MonetColors.dark : MonetColors.light;
+            return MaterialApp(
+              title: 'Monet',
+              debugShowCheckedModeBanner: false,
+              theme: themeData,
+              home: _checkingSession
+                  ? Scaffold(
+                      backgroundColor: colors.scaffoldBg,
+                      body: Center(
+                        child: CircularProgressIndicator(color: colors.primary),
+                      ),
+                    )
+                  : _authenticated
+                      ? MonetShell(onLogout: _onLogout)
+                      : OnboardingScreen(onAuthenticated: _onAuthenticated),
+            );
+          },
         ),
-        home: _checkingSession
-            ? const Scaffold(
-                backgroundColor: Color(0xFF0A0A0F),
-                body: Center(
-                  child: CircularProgressIndicator(color: Color(0xFF7C6EF0)),
-                ),
-              )
-            : _authenticated
-                ? MonetShell(onLogout: _onLogout)
-                : OnboardingScreen(onAuthenticated: _onAuthenticated),
       ),
     );
   }
@@ -203,9 +210,10 @@ class MonetShellState extends State<MonetShell> {
   void _handleWifiTap() {
     // Show WiFi network list in a bottom sheet
     final client = context.read<AgentClient>();
+    final c = MonetColors.of(context);
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF12121A),
+      backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
       ),
@@ -252,41 +260,44 @@ class MonetShellState extends State<MonetShell> {
     final client = context.read<AgentClient>();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF12121A),
-        title: Text('Power', style: TextStyle(color: Colors.white.withValues(alpha: 0.8))),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _PowerOption(
-              icon: Icons.power_settings_new,
-              label: 'Shutdown',
-              onTap: () {
-                Navigator.of(ctx).pop();
-                client.powerAction('shutdown');
-              },
-            ),
-            const SizedBox(height: 8),
-            _PowerOption(
-              icon: Icons.restart_alt,
-              label: 'Restart',
-              onTap: () {
-                Navigator.of(ctx).pop();
-                client.powerAction('restart');
-              },
-            ),
-            const SizedBox(height: 8),
-            _PowerOption(
-              icon: Icons.bedtime,
-              label: 'Suspend',
-              onTap: () {
-                Navigator.of(ctx).pop();
-                client.powerAction('suspend');
-              },
-            ),
-          ],
-        ),
-      ),
+      builder: (ctx) {
+        final c = MonetColors.of(ctx);
+        return AlertDialog(
+          backgroundColor: c.surface,
+          title: Text('Power', style: TextStyle(color: c.textPrimary)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _PowerOption(
+                icon: Icons.power_settings_new,
+                label: 'Shutdown',
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  client.powerAction('shutdown');
+                },
+              ),
+              const SizedBox(height: 8),
+              _PowerOption(
+                icon: Icons.restart_alt,
+                label: 'Restart',
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  client.powerAction('restart');
+                },
+              ),
+              const SizedBox(height: 8),
+              _PowerOption(
+                icon: Icons.bedtime,
+                label: 'Suspend',
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  client.powerAction('suspend');
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -740,18 +751,25 @@ class MonetShellState extends State<MonetShell> {
           _buildIntentBar(),
           _buildFlowProgress(),
           Expanded(child: _buildActivePattern()),
-          StatusBar(
-            tools: _connectedTools,
-            activeAgent: _isRunning ? _activeAgent : null,
-            activePattern: _activePattern,
-            onLogout: widget.onLogout,
-            systemStatus: _systemStatus,
-            onWifiTap: _handleWifiTap,
-            onVolumeTap: _handleVolumeTap,
-            onVolumeChanged: _handleVolumeChanged,
-            onBrightnessChanged: _handleBrightnessChanged,
-            onPowerTap: _handlePowerTap,
-            onAgentsTap: _handleAgentsTap,
+          Builder(
+            builder: (context) {
+              final themeNotifier = context.watch<MonetThemeNotifier>();
+              return StatusBar(
+                tools: _connectedTools,
+                activeAgent: _isRunning ? _activeAgent : null,
+                activePattern: _activePattern,
+                onLogout: widget.onLogout,
+                systemStatus: _systemStatus,
+                onWifiTap: _handleWifiTap,
+                onVolumeTap: _handleVolumeTap,
+                onVolumeChanged: _handleVolumeChanged,
+                onBrightnessChanged: _handleBrightnessChanged,
+                onPowerTap: _handlePowerTap,
+                onAgentsTap: _handleAgentsTap,
+                isDarkTheme: themeNotifier.isDark,
+                onThemeToggle: themeNotifier.toggle,
+              );
+            },
           ),
         ],
       ),
@@ -760,12 +778,13 @@ class MonetShellState extends State<MonetShell> {
 
   Widget _buildFlowProgress() {
     if (_flowSteps == null || _flowSteps!.isEmpty) return const SizedBox.shrink();
+    final c = MonetColors.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF12121A),
+        color: c.surface,
         border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          bottom: BorderSide(color: c.border),
         ),
       ),
       child: Row(
@@ -777,10 +796,10 @@ class MonetShellState extends State<MonetShell> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: i < _flowCurrentStep
-                    ? const Color(0xFF7C6EF0)
+                    ? c.primary
                     : i == _flowCurrentStep
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.2),
+                        ? c.textPrimary
+                        : c.textHint,
               ),
             ),
             if (i < _flowTotalSteps - 1)
@@ -788,8 +807,8 @@ class MonetShellState extends State<MonetShell> {
                 width: 24,
                 height: 1,
                 color: i < _flowCurrentStep
-                    ? const Color(0xFF7C6EF0)
-                    : Colors.white.withValues(alpha: 0.1),
+                    ? c.primary
+                    : c.border,
               ),
           ],
           const SizedBox(width: 12),
@@ -797,7 +816,7 @@ class MonetShellState extends State<MonetShell> {
             Text(
               _flowSteps![_flowCurrentStep]['label'] as String? ?? '',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
+                color: c.textSecondary,
                 fontSize: 13,
               ),
             ),
@@ -805,9 +824,9 @@ class MonetShellState extends State<MonetShell> {
           if (_awaitingAdvance)
             TextButton(
               onPressed: _advanceFlow,
-              child: const Text(
+              child: Text(
                 'Continue',
-                style: TextStyle(color: Color(0xFF7C6EF0)),
+                style: TextStyle(color: c.primary),
               ),
             ),
         ],
@@ -828,24 +847,25 @@ class MonetShellState extends State<MonetShell> {
     if (_activePattern == null || _activePattern == 'chat') {
       return const SizedBox.shrink();
     }
+    final c = MonetColors.of(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0A0F),
+        color: c.scaffoldBg,
         border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          bottom: BorderSide(color: c.border),
         ),
       ),
       child: SafeArea(
         bottom: false,
         child: TextField(
           controller: _intentController,
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+          style: TextStyle(color: c.textPrimary, fontSize: 16),
           decoration: InputDecoration(
             hintText: 'What would you like to do?',
-            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+            hintStyle: TextStyle(color: c.textMeta),
             filled: true,
-            fillColor: const Color(0xFF12121A),
+            fillColor: c.surface,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide.none,
@@ -855,21 +875,32 @@ class MonetShellState extends State<MonetShell> {
               vertical: 14,
             ),
             suffixIcon: _isRunning
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
+                ? Padding(
+                    padding: const EdgeInsets.all(12),
                     child: SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Color(0xFF7C6EF0),
+                        color: c.primary,
                       ),
                     ),
                   )
-                : IconButton(
-                    onPressed: () => _submitIntent(_intentController.text),
-                    icon: const Icon(Icons.arrow_forward),
-                    color: const Color(0xFF7C6EF0),
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      VoiceButton(
+                        onTranscribed: (text) {
+                          _intentController.text = text;
+                          _submitIntent(text);
+                        },
+                      ),
+                      IconButton(
+                        onPressed: () => _submitIntent(_intentController.text),
+                        icon: const Icon(Icons.arrow_forward),
+                        color: c.primary,
+                      ),
+                    ],
                   ),
           ),
           onSubmitted: _submitIntent,
@@ -996,37 +1027,41 @@ class _WifiSheetState extends State<_WifiSheet> {
     final controller = TextEditingController();
     return showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF12121A),
-        title: Text('Connect to $ssid',
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 16)),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'Password',
-            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+      builder: (ctx) {
+        final c = MonetColors.of(ctx);
+        return AlertDialog(
+          backgroundColor: c.surface,
+          title: Text('Connect to $ssid',
+              style: TextStyle(color: c.textPrimary, fontSize: 16)),
+          content: TextField(
+            controller: controller,
+            obscureText: true,
+            style: TextStyle(color: c.textPrimary),
+            decoration: InputDecoration(
+              hintText: 'Password',
+              hintStyle: TextStyle(color: c.textMeta),
+            ),
+            autofocus: true,
+            onSubmitted: (v) => Navigator.of(ctx).pop(v),
           ),
-          autofocus: true,
-          onSubmitted: (v) => Navigator.of(ctx).pop(v),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: const Text('Connect', style: TextStyle(color: Color(0xFF7C6EF0))),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('Cancel', style: TextStyle(color: c.textTertiary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text),
+              child: Text('Connect', style: TextStyle(color: c.primary)),
+            ),
+          ],
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
@@ -1039,22 +1074,22 @@ class _WifiSheetState extends State<_WifiSheet> {
               children: [
                 Text('WiFi Networks',
                     style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
+                        color: c.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.w500)),
                 const Spacer(),
                 if (_scanning)
-                  const SizedBox(
+                  SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Color(0xFF7C6EF0)),
+                        strokeWidth: 2, color: c.primary),
                   )
                 else
                   GestureDetector(
                     onTap: _scan,
                     child: Icon(Icons.refresh,
-                        size: 18, color: Colors.white.withValues(alpha: 0.5)),
+                        size: 18, color: c.textTertiary),
                   ),
               ],
             ),
@@ -1064,7 +1099,7 @@ class _WifiSheetState extends State<_WifiSheet> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text('No networks found',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
+                  style: TextStyle(color: c.textTertiary)),
             )
           else
             ...List.generate(
@@ -1080,23 +1115,19 @@ class _WifiSheetState extends State<_WifiSheet> {
                   leading: Icon(
                     signal >= 70 ? Icons.wifi : signal >= 40 ? Icons.wifi_2_bar : Icons.wifi_1_bar,
                     size: 18,
-                    color: connected
-                        ? const Color(0xFF7C6EF0)
-                        : Colors.white.withValues(alpha: 0.5),
+                    color: connected ? c.primary : c.textTertiary,
                   ),
                   title: Text(ssid,
                       style: TextStyle(
-                          color: connected
-                              ? const Color(0xFF7C6EF0)
-                              : Colors.white.withValues(alpha: 0.8),
+                          color: connected ? c.primary : c.textPrimary,
                           fontSize: 14)),
                   subtitle: Text(
                     connected ? 'Connected' : security,
                     style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
+                        color: c.textTertiary, fontSize: 11),
                   ),
                   trailing: connected
-                      ? Icon(Icons.check, size: 16, color: const Color(0xFF7C6EF0))
+                      ? Icon(Icons.check, size: 16, color: c.primary)
                       : null,
                   onTap: connected ? null : () => _connect(ssid, security),
                 );
@@ -1122,6 +1153,7 @@ class _PowerOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -1129,11 +1161,11 @@ class _PowerOption extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: Colors.white.withValues(alpha: 0.6)),
+            Icon(icon, size: 20, color: c.textSecondary),
             const SizedBox(width: 12),
             Text(label,
                 style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8), fontSize: 14)),
+                    color: c.textPrimary, fontSize: 14)),
           ],
         ),
       ),

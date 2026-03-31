@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/agent_client.dart';
+import 'monet_theme.dart';
+import 'voice_button.dart';
 
 /// Home screen - the default landing experience after login.
 ///
@@ -75,9 +77,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     if (_loading && _summary == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF7C6EF0)),
+      return Center(
+        child: CircularProgressIndicator(color: c.primary),
       );
     }
 
@@ -91,7 +94,9 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               const SizedBox(height: 24),
               _buildGreeting(),
-              const SizedBox(height: 32),
+              const SizedBox(height: 20),
+              _buildVoicePrompt(),
+              const SizedBox(height: 28),
               _buildQuickActions(),
               const SizedBox(height: 32),
               _buildConnectedTools(),
@@ -108,6 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildGreeting() {
+    final c = MonetColors.of(context);
     final client = context.read<AgentClient>();
     final username = client.username ?? 'there';
     return Column(
@@ -116,7 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Text(
           '$_greeting, $username.',
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.9),
+            color: c.textPrimary,
             fontSize: 28,
             fontWeight: FontWeight.w300,
             letterSpacing: -0.5,
@@ -126,11 +132,33 @@ class _HomeScreenState extends State<HomeScreen> {
         Text(
           'What would you like to work on?',
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.4),
+            color: c.textTertiary,
             fontSize: 16,
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildVoicePrompt() {
+    final c = MonetColors.of(context);
+    return Center(
+      child: Column(
+        children: [
+          VoiceButton(
+            large: true,
+            onTranscribed: (text) => widget.onIntent(text),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Hold to speak',
+            style: TextStyle(
+              color: c.textMeta,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -163,6 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildConnectedTools() {
+    final c = MonetColors.of(context);
     final tools = (_summary?['tools'] as List<dynamic>?) ?? [];
 
     return Column(
@@ -187,16 +216,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF12121A),
+                    color: c.surface,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.06),
+                      color: c.hoverOverlay,
                     ),
                   ),
                   child: Text(
                     'No tools connected yet. Connect Gmail, GitHub, or Google Docs to get started.',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.4),
+                      color: c.textTertiary,
                       fontSize: 13,
                     ),
                   ),
@@ -209,6 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildAgentOverview() {
+    final c = MonetColors.of(context);
     final agents = (_summary?['agents'] as List<dynamic>?) ?? [];
     final activeSchedules = _summary?['active_schedules'] as int? ?? 0;
 
@@ -228,13 +258,13 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF7C6EF0).withValues(alpha: 0.15),
+                  color: c.primary.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   '$workingCount active',
-                  style: const TextStyle(
-                    color: Color(0xFF7C6EF0),
+                  style: TextStyle(
+                    color: c.primary,
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
                   ),
@@ -245,13 +275,13 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
+                  color: c.borderSubtle,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   '$activeSchedules scheduled',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.4),
+                    color: c.textTertiary,
                     fontSize: 11,
                   ),
                 ),
@@ -263,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text(
                 'View all',
                 style: TextStyle(
-                  color: const Color(0xFF7C6EF0).withValues(alpha: 0.8),
+                  color: c.primary.withValues(alpha: 0.8),
                   fontSize: 13,
                 ),
               ),
@@ -297,6 +327,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildRecentActivity() {
+    final c = MonetColors.of(context);
     final activity = (_summary?['recent_activity'] as List<dynamic>?) ?? [];
     if (activity.isEmpty) {
       return Column(
@@ -307,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(
             'No activity yet. Try a quick action above to get started.',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.3),
+              color: c.textMeta,
               fontSize: 13,
             ),
           ),
@@ -339,10 +370,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _sectionHeader(String text) {
+    final c = MonetColors.of(context);
     return Text(
       text,
       style: TextStyle(
-        color: Colors.white.withValues(alpha: 0.5),
+        color: c.textTertiary,
         fontSize: 12,
         fontWeight: FontWeight.w600,
         letterSpacing: 1.0,
@@ -395,6 +427,7 @@ class _QuickActionChipState extends State<_QuickActionChip> {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -405,13 +438,13 @@ class _QuickActionChipState extends State<_QuickActionChip> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
             color: _hovered
-                ? const Color(0xFF7C6EF0).withValues(alpha: 0.12)
-                : const Color(0xFF12121A),
+                ? c.primary.withValues(alpha: 0.12)
+                : c.surface,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: _hovered
-                  ? const Color(0xFF7C6EF0).withValues(alpha: 0.3)
-                  : Colors.white.withValues(alpha: 0.08),
+                  ? c.primary.withValues(alpha: 0.3)
+                  : c.activeOverlay,
             ),
           ),
           child: Row(
@@ -421,16 +454,16 @@ class _QuickActionChipState extends State<_QuickActionChip> {
                 widget.icon,
                 size: 16,
                 color: _hovered
-                    ? const Color(0xFF7C6EF0)
-                    : Colors.white.withValues(alpha: 0.4),
+                    ? c.primary
+                    : c.textTertiary,
               ),
               const SizedBox(width: 8),
               Text(
                 widget.label,
                 style: TextStyle(
                   color: _hovered
-                      ? Colors.white.withValues(alpha: 0.9)
-                      : Colors.white.withValues(alpha: 0.6),
+                      ? c.textPrimary
+                      : c.textSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w400,
                 ),
@@ -470,15 +503,16 @@ class _ToolCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF12121A),
+        color: c.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: connected
-              ? const Color(0xFF7C6EF0).withValues(alpha: 0.2)
-              : Colors.white.withValues(alpha: 0.06),
+              ? c.primary.withValues(alpha: 0.2)
+              : c.hoverOverlay,
         ),
       ),
       child: Row(
@@ -487,8 +521,8 @@ class _ToolCard extends StatelessWidget {
             _icon,
             size: 20,
             color: connected
-                ? const Color(0xFF7C6EF0)
-                : Colors.white.withValues(alpha: 0.3),
+                ? c.primary
+                : c.textMeta,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -498,7 +532,7 @@ class _ToolCard extends StatelessWidget {
                 Text(
                   name,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: c.textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -508,8 +542,8 @@ class _ToolCard extends StatelessWidget {
                   connected ? 'Connected' : 'Not connected',
                   style: TextStyle(
                     color: connected
-                        ? const Color(0xFF7C6EF0).withValues(alpha: 0.7)
-                        : Colors.white.withValues(alpha: 0.3),
+                        ? c.primary.withValues(alpha: 0.7)
+                        : c.textMeta,
                     fontSize: 11,
                   ),
                 ),
@@ -522,8 +556,8 @@ class _ToolCard extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: connected
-                  ? const Color(0xFF4ADE80)
-                  : Colors.white.withValues(alpha: 0.15),
+                  ? c.success
+                  : c.border,
             ),
           ),
         ],
@@ -574,25 +608,27 @@ class _AgentMiniCardState extends State<_AgentMiniCard> {
     }
   }
 
-  Color get _accentColor {
+  Color _accentColor(MonetColors c) {
     switch (widget.name) {
       case 'email':
-        return const Color(0xFFE06C75);
+        return c.agentEmail;
       case 'code':
-        return const Color(0xFF61AFEF);
+        return c.agentCode;
       case 'planning':
-        return const Color(0xFFC678DD);
+        return c.agentPlanning;
       case 'writing':
-        return const Color(0xFF98C379);
+        return c.agentWriting;
       case 'general':
-        return const Color(0xFF7C6EF0);
+        return c.primary;
       default:
-        return const Color(0xFFE5C07B);
+        return c.agentCustom;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
+    final accentColor = _accentColor(c);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -604,13 +640,13 @@ class _AgentMiniCardState extends State<_AgentMiniCard> {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: _hovered
-                ? _accentColor.withValues(alpha: 0.06)
-                : const Color(0xFF12121A),
+                ? accentColor.withValues(alpha: 0.06)
+                : c.surface,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: _hovered
-                  ? _accentColor.withValues(alpha: 0.2)
-                  : Colors.white.withValues(alpha: 0.06),
+                  ? accentColor.withValues(alpha: 0.2)
+                  : c.hoverOverlay,
             ),
           ),
           child: Column(
@@ -618,13 +654,13 @@ class _AgentMiniCardState extends State<_AgentMiniCard> {
             children: [
               Row(
                 children: [
-                  Icon(_icon, size: 18, color: _accentColor),
+                  Icon(_icon, size: 18, color: accentColor),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       widget.name,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
+                        color: c.textPrimary,
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
@@ -637,10 +673,10 @@ class _AgentMiniCardState extends State<_AgentMiniCard> {
                       height: 6,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(0xFF4ADE80),
+                        color: c.success,
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF4ADE80).withValues(alpha: 0.4),
+                            color: c.success.withValues(alpha: 0.4),
                             blurRadius: 4,
                           ),
                         ],
@@ -652,7 +688,7 @@ class _AgentMiniCardState extends State<_AgentMiniCard> {
               Text(
                 widget.description,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.35),
+                  color: c.textHint,
                   fontSize: 11,
                 ),
                 maxLines: 2,
@@ -663,7 +699,7 @@ class _AgentMiniCardState extends State<_AgentMiniCard> {
                 Text(
                   '${widget.totalRuns} runs',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.25),
+                    color: c.textHint,
                     fontSize: 10,
                   ),
                 ),
@@ -712,16 +748,16 @@ class _ActivityRowState extends State<_ActivityRow> {
     }
   }
 
-  Color get _statusColor {
+  Color _statusColor(MonetColors c) {
     switch (widget.status) {
       case 'completed':
-        return const Color(0xFF4ADE80);
+        return c.success;
       case 'error':
-        return const Color(0xFFE06C75);
+        return c.agentEmail;
       case 'running':
-        return const Color(0xFF7C6EF0);
+        return c.primary;
       default:
-        return Colors.white.withValues(alpha: 0.3);
+        return c.textMeta;
     }
   }
 
@@ -736,6 +772,8 @@ class _ActivityRowState extends State<_ActivityRow> {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
+    final statusColor = _statusColor(c);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -746,18 +784,18 @@ class _ActivityRowState extends State<_ActivityRow> {
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
           decoration: BoxDecoration(
             color: _hovered
-                ? Colors.white.withValues(alpha: 0.03)
+                ? c.borderSubtle
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
             children: [
-              Icon(_statusIcon, size: 16, color: _statusColor),
+              Icon(_statusIcon, size: 16, color: statusColor),
               const SizedBox(width: 10),
               Text(
                 widget.agentName,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5),
+                  color: c.textTertiary,
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                 ),
@@ -767,7 +805,7 @@ class _ActivityRowState extends State<_ActivityRow> {
                 child: Text(
                   widget.intent,
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: c.textSecondary,
                     fontSize: 13,
                   ),
                   overflow: TextOverflow.ellipsis,
@@ -777,7 +815,7 @@ class _ActivityRowState extends State<_ActivityRow> {
               Text(
                 _timeAgo,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.25),
+                  color: c.textHint,
                   fontSize: 11,
                 ),
               ),

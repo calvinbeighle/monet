@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete - 862 passing tests (718 Python + 144 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete, Voice Input complete, Dark/Light Theme complete - 887 passing tests (736 Python + 151 Flutter).**
 
 ---
 
@@ -228,11 +228,11 @@ Debian VM boots directly into Monet.
 ## Phase 5 - Polish (FUTURE)
 
 - [x] Keystroke collection pipeline (OS-level capture -> SQLite -> personalization)
-- [ ] Dark/light theme
+- [x] Dark/light theme
 - [ ] Animation polish on pattern transitions
 - [ ] More integrations (Slack, Calendar, Notion, Linear)
 - [x] Smarter intent routing (Claude Haiku LLM fallback when keyword rules miss)
-- [ ] Voice input
+- [x] Voice input
 - [ ] Mobile companion (Flutter - same codebase)
 - [x] Planning agent (agent/agents/planning.py - implemented with 5 tools)
 
@@ -432,6 +432,14 @@ Debian VM boots directly into Monet.
 - **Why this matters for demo:** Keyword-only routing is fragile - natural language like "anything new from John today" or "clean up my mailbox a bit" falls through to general agent. The Haiku fallback catches these cases with near-zero latency impact (~200ms).
 - **Test count:** 862 total (718 Python + 144 Flutter), all passing.
 - **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
+
+### Implementation Notes (2026-03-31) - Batch 25
+
+- **Voice input implemented (SCOPE.md: "Voice input supported", "No raw text input required"):** Full press-to-record, release-to-transcribe pipeline. Backend: `agent/voice.py` with async Whisper API transcription via OpenAI's `/v1/audio/transcriptions` endpoint using httpx. New endpoints: POST /api/voice/transcribe (multipart file upload, returns transcribed text), GET /api/voice/status (checks OPENAI_API_KEY availability). Validates empty audio, oversized files (25MB limit), missing API key (503), and Whisper errors (502). Flutter: `shell/lib/ui/voice_button.dart` - reusable VoiceButton widget with three states (idle/recording/transcribing), uses `record` package for WAV capture at 16kHz mono, pulse animation during recording, CircularProgressIndicator during transcription. Integrated in three locations: ChatPattern input area (between text field and send button), intent bar (as suffixIcon alongside submit arrow), and HomeScreen (prominent large button with "Hold to speak" label). AgentClient has `transcribeAudio()` multipart upload and `voiceAvailable()` status check. macOS permissions: NSMicrophoneUsageDescription in Info.plist, audio-input entitlement in both Debug and Release profiles, network.client entitlement for API access.
+- **Dark/light theme verified complete:** MonetThemeNotifier with SharedPreferences persistence, MonetColors.dark/light with full 22-token color system, buildMonetTheme() for both Brightness modes, lerp() for smooth transitions, StatusBar toggle wired end-to-end via ChangeNotifierProvider/Consumer. Marked as done in Phase 5.
+- **Flutter test regression fixed:** MonetShell flow progress tests were missing ChangeNotifierProvider<MonetThemeNotifier> after the theme system was added, causing Column overflow errors. Fixed by wrapping in MultiProvider.
+- **Test count:** 887 total (736 Python + 151 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Animation polish on pattern transitions not addressed. More integrations (Slack, Calendar, Notion, Linear) not implemented.
 
 ---
 
