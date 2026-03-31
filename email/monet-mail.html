@@ -844,7 +844,12 @@ document.addEventListener('click', function(e) {
   // Clicks on canvas / creatures
   if (!started) return;
   if (target.closest('.popup, .start, .zero, .hand-debug, #camPreview')) return;
-  if (frozen) { closePopup(); return; }
+  // Safety: if frozen but no popup visible, unfreeze
+  if (frozen) {
+    var popupEl = document.getElementById('popup');
+    if (!popupEl || !popupEl.classList.contains('open')) { frozen = false; }
+    else { closePopup(); return; }
+  }
   handleCreatureClick(e.clientX, e.clientY);
 });
 
@@ -976,7 +981,9 @@ function showZero() {
 // 9. Mouse/keyboard handlers
 // -----------------------------------------------
 function handleCreatureClick(clientX, clientY) {
-  if (!started || frozen) return false;
+  if (!started) return false;
+  // If frozen (popup open), close it instead of clicking creatures
+  if (frozen) { closePopup(); return false; }
   for (var i = agentCreatures.length - 1; i >= 0; i--) {
     var c = agentCreatures[i];
     if (c.alive && c.hitTest(clientX, clientY)) {
