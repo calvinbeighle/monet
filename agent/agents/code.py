@@ -1,26 +1,28 @@
-"""Code agent - handles GitHub operations via Nango integration."""
+"""Code agent - handles GitHub operations via Nango proxy.
+
+All API calls go through Nango's proxy endpoint:
+  {METHOD} https://api.nango.dev/proxy/{github-api-path}
+  Headers: Authorization, Connection-Id, Provider-Config-Key
+
+GitHub API paths are relative to https://api.github.com (the base_url
+configured for the github provider in Nango).
+"""
 
 import json
 import logging
 import os
 
-import httpx
-
 from agent.agents.base import BaseAgent
 from agent.models import UIPattern
+from agent.nango import PROVIDERS, nango_proxy_request
 
 logger = logging.getLogger(__name__)
 
-NANGO_BASE_URL = os.environ.get("NANGO_BASE_URL", "https://api.nango.dev")
-NANGO_SECRET_KEY = os.environ.get("NANGO_SECRET_KEY", "")
-NANGO_CONNECTION_ID = os.environ.get("NANGO_GITHUB_CONNECTION_ID", "github-default")
-
-
-def _nango_headers() -> dict:
-    return {
-        "Authorization": f"Bearer {NANGO_SECRET_KEY}",
-        "Content-Type": "application/json",
-    }
+# GitHub provider config from Nango
+_PROVIDER_CONFIG_KEY = PROVIDERS["github"]["config_key"]
+_CONNECTION_ID = os.environ.get(
+    "NANGO_GITHUB_CONNECTION_ID", PROVIDERS["github"]["connection_id"]
+)
 
 
 class CodeAgent(BaseAgent):
@@ -295,150 +297,143 @@ class CodeAgent(BaseAgent):
             return json.dumps({"error": str(e)})
 
     def _tool_list_prs(self, params: dict) -> str:
-
         repo = params["repo"]
         state = params.get("state", "open")
-        resp = httpx.get(
-            f"{NANGO_BASE_URL}/v1/github/repos/{repo}/pulls",
-            headers=_nango_headers(),
-            params={"connectionId": NANGO_CONNECTION_ID, "state": state},
-            timeout=30,
+
+        resp = nango_proxy_request(
+            method="GET",
+            path=f"repos/{repo}/pulls",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            params={"state": state},
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_read_diff(self, params: dict) -> str:
-
         repo = params["repo"]
         pr_number = params["pr_number"]
-        headers = _nango_headers()
-        # Request raw unified diff format from GitHub API via content negotiation
-        headers["Accept"] = "application/vnd.github.v3.diff"
-        resp = httpx.get(
-            f"{NANGO_BASE_URL}/v1/github/repos/{repo}/pulls/{pr_number}",
-            headers=headers,
-            params={"connectionId": NANGO_CONNECTION_ID},
-            timeout=30,
+
+        resp = nango_proxy_request(
+            method="GET",
+            path=f"repos/{repo}/pulls/{pr_number}",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            extra_headers={"Accept": "application/vnd.github.v3.diff"},
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_read_file(self, params: dict) -> str:
-
         repo = params["repo"]
         path = params["path"]
         ref = params.get("ref", "main")
-        resp = httpx.get(
-            f"{NANGO_BASE_URL}/v1/github/repos/{repo}/contents/{path}",
-            headers=_nango_headers(),
-            params={"connectionId": NANGO_CONNECTION_ID, "ref": ref},
-            timeout=30,
+
+        resp = nango_proxy_request(
+            method="GET",
+            path=f"repos/{repo}/contents/{path}",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            params={"ref": ref},
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_post_review(self, params: dict) -> str:
-
         repo = params["repo"]
         pr_number = params["pr_number"]
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/github/repos/{repo}/pulls/{pr_number}/reviews",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
+
+        resp = nango_proxy_request(
+            method="POST",
+            path=f"repos/{repo}/pulls/{pr_number}/reviews",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body={
                 "body": params["body"],
                 "event": params.get("event", "COMMENT"),
             },
-            timeout=30,
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_approve_pr(self, params: dict) -> str:
-
         repo = params["repo"]
         pr_number = params["pr_number"]
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/github/repos/{repo}/pulls/{pr_number}/reviews",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
+
+        resp = nango_proxy_request(
+            method="POST",
+            path=f"repos/{repo}/pulls/{pr_number}/reviews",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body={
                 "body": "Approved via Monet",
                 "event": "APPROVE",
             },
-            timeout=30,
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_merge_pr(self, params: dict) -> str:
-
         repo = params["repo"]
         pr_number = params["pr_number"]
-        resp = httpx.put(
-            f"{NANGO_BASE_URL}/v1/github/repos/{repo}/pulls/{pr_number}/merge",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
-                "merge_method": params.get("merge_method", "squash"),
-            },
-            timeout=30,
+
+        resp = nango_proxy_request(
+            method="PUT",
+            path=f"repos/{repo}/pulls/{pr_number}/merge",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body={"merge_method": params.get("merge_method", "squash")},
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_push_code(self, params: dict) -> str:
-
         repo = params["repo"]
-        branch = params["branch"]
-        files = params["files"]
-        message = params["message"]
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/github/repos/{repo}/git/commits",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
-                "branch": branch,
-                "files": files,
-                "message": message,
+
+        resp = nango_proxy_request(
+            method="POST",
+            path=f"repos/{repo}/git/commits",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body={
+                "branch": params["branch"],
+                "files": params["files"],
+                "message": params["message"],
             },
-            timeout=30,
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_create_branch(self, params: dict) -> str:
-
         repo = params["repo"]
-        branch = params["branch"]
-        from_ref = params.get("from_ref", "main")
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/github/repos/{repo}/git/refs",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
-                "ref": f"refs/heads/{branch}",
-                "sha": from_ref,
+
+        resp = nango_proxy_request(
+            method="POST",
+            path=f"repos/{repo}/git/refs",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body={
+                "ref": f"refs/heads/{params['branch']}",
+                "sha": params.get("from_ref", "main"),
             },
-            timeout=30,
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_write_file(self, params: dict) -> str:
-
         repo = params["repo"]
         path = params["path"]
-        resp = httpx.put(
-            f"{NANGO_BASE_URL}/v1/github/repos/{repo}/contents/{path}",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
+
+        resp = nango_proxy_request(
+            method="PUT",
+            path=f"repos/{repo}/contents/{path}",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body={
                 "content": params["content"],
                 "message": params["message"],
                 "branch": params.get("branch", "main"),
             },
-            timeout=30,
         )
         resp.raise_for_status()
         return resp.text

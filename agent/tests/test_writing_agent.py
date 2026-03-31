@@ -1,7 +1,13 @@
-"""Tests for the writing agent."""
+"""Tests for the writing agent.
+
+Why these tests matter: The writing agent handles Google Docs operations (SCOPE.md Feature 2).
+Tool calls go through Nango's proxy endpoint using two providers: google-docs for document
+CRUD and google-drive for listing/searching files. These tests verify correct URL
+construction, header format, and payload structure.
+"""
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 from agent.agents.writing import WritingAgent
 from agent.models import UIPattern
@@ -59,8 +65,8 @@ class TestWritingAgent:
         result = json.loads(self.agent.execute_tool("nonexistent_tool", {}))
         assert "error" in result
 
-    @patch("agent.agents.writing.httpx")
-    def test_execute_list_documents(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_list_documents(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps(
             {
@@ -70,141 +76,214 @@ class TestWritingAgent:
             }
         )
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool("list_documents", {"max_results": 5})
         assert "files" in result
-        mock_httpx.get.assert_called_once()
-        call_params = mock_httpx.get.call_args[1]["params"]
-        assert call_params["maxResults"] == 5
+        mock_request.assert_called_once()
+        call_kwargs = mock_request.call_args[1]
+        assert "/proxy/drive/v3/files" in call_kwargs["url"]
+        assert call_kwargs["params"]["pageSize"] == 5
+        assert call_kwargs["headers"]["Provider-Config-Key"] == "google-drive"
 
-    @patch("agent.agents.writing.httpx")
-    def test_execute_list_documents_default_max(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_list_documents_default_max(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps({"files": []})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         self.agent.execute_tool("list_documents", {})
-        call_params = mock_httpx.get.call_args[1]["params"]
-        assert call_params["maxResults"] == 20
+        call_kwargs = mock_request.call_args[1]
+        assert call_kwargs["params"]["pageSize"] == 20
 
-    @patch("agent.agents.writing.httpx")
-    def test_execute_read_document(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_read_document(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps(
             {"documentId": "doc1", "title": "Test", "body": {"content": "Hello world"}}
         )
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool("read_document", {"document_id": "doc1"})
         assert "doc1" in result
-        assert "documents/doc1" in mock_httpx.get.call_args[0][0]
+        assert "/proxy/v1/documents/doc1" in mock_request.call_args[1]["url"]
+        assert (
+            mock_request.call_args[1]["headers"]["Provider-Config-Key"] == "google-docs"
+        )
 
-    @patch("agent.agents.writing.httpx")
-    def test_execute_create_document(self, mock_httpx):
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"documentId": "new_doc", "title": "My Doc"})
-        mock_response.raise_for_status = MagicMock()
-        mock_httpx.post.return_value = mock_response
+    @patch("agent.nango.httpx.request")
+    def test_execute_create_document(self, mock_request):
+        # First call creates the doc, second call inserts content via batchUpdate
+        create_response = MagicMock()
+        create_response.text = json.dumps({"documentId": "new_doc", "title": "My Doc"})
+        create_response.json.return_value = {"documentId": "new_doc", "title": "My Doc"}
+        create_response.raise_for_status = MagicMock()
+
+        update_response = MagicMock()
+        update_response.text = json.dumps({"replies": []})
+        update_response.raise_for_status = MagicMock()
+
+        mock_request.side_effect = [create_response, update_response]
 
         result = self.agent.execute_tool(
             "create_document",
             {"title": "My Doc", "content": "Document body text"},
         )
         assert "new_doc" in result
-        body = mock_httpx.post.call_args[1]["json"]
-        assert body["title"] == "My Doc"
-        assert body["body"] == "Document body text"
+        # First call: POST to create document
+        first_call = mock_request.call_args_list[0][1]
+        assert first_call["method"] == "POST"
+        assert "/proxy/v1/documents" in first_call["url"]
+        assert first_call["json"]["title"] == "My Doc"
+        # Second call: POST batchUpdate to insert content
+        second_call = mock_request.call_args_list[1][1]
+        assert "batchUpdate" in second_call["url"]
+        assert (
+            second_call["json"]["requests"][0]["insertText"]["text"]
+            == "Document body text"
+        )
 
-    @patch("agent.agents.writing.httpx")
-    def test_execute_edit_document_replace(self, mock_httpx):
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"status": "updated"})
-        mock_response.raise_for_status = MagicMock()
-        mock_httpx.post.return_value = mock_response
+    @patch("agent.nango.httpx.request")
+    def test_execute_edit_document_replace(self, mock_request):
+        # First call: GET to read doc (for end index), second call: POST batchUpdate
+        doc_response = MagicMock()
+        doc_response.json.return_value = {
+            "documentId": "doc1",
+            "body": {"content": [{"endIndex": 50}]},
+        }
+        doc_response.raise_for_status = MagicMock()
+
+        update_response = MagicMock()
+        update_response.text = json.dumps({"replies": []})
+        update_response.raise_for_status = MagicMock()
+
+        mock_request.side_effect = [doc_response, update_response]
 
         result = self.agent.execute_tool(
             "edit_document",
             {"document_id": "doc1", "content": "New content", "mode": "replace"},
         )
-        assert "updated" in result
-        body = mock_httpx.post.call_args[1]["json"]
-        assert body["content"] == "New content"
-        assert body["mode"] == "replace"
-        assert "documents/doc1" in mock_httpx.post.call_args[0][0]
+        assert "replies" in result
+        # Second call should be batchUpdate with delete + insert
+        update_call = mock_request.call_args_list[1][1]
+        assert "batchUpdate" in update_call["url"]
+        requests = update_call["json"]["requests"]
+        assert any("deleteContentRange" in r for r in requests)
+        assert any("insertText" in r for r in requests)
 
-    @patch("agent.agents.writing.httpx")
-    def test_execute_edit_document_append(self, mock_httpx):
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"status": "updated"})
-        mock_response.raise_for_status = MagicMock()
-        mock_httpx.post.return_value = mock_response
+    @patch("agent.nango.httpx.request")
+    def test_execute_edit_document_append(self, mock_request):
+        # First call: GET to read doc, second call: POST batchUpdate
+        doc_response = MagicMock()
+        doc_response.json.return_value = {
+            "documentId": "doc1",
+            "body": {"content": [{"endIndex": 50}]},
+        }
+        doc_response.raise_for_status = MagicMock()
+
+        update_response = MagicMock()
+        update_response.text = json.dumps({"replies": []})
+        update_response.raise_for_status = MagicMock()
+
+        mock_request.side_effect = [doc_response, update_response]
 
         result = self.agent.execute_tool(
             "edit_document",
-            {"document_id": "doc1", "content": "Appended text"},
+            {"document_id": "doc1", "content": "Appended text", "mode": "append"},
         )
-        assert "updated" in result
-        body = mock_httpx.post.call_args[1]["json"]
-        assert body["mode"] == "replace"  # default mode
+        assert "replies" in result
+        update_call = mock_request.call_args_list[1][1]
+        requests = update_call["json"]["requests"]
+        # Append should only have insertText, no delete
+        assert not any("deleteContentRange" in r for r in requests)
+        insert = next(r for r in requests if "insertText" in r)
+        assert insert["insertText"]["text"] == "Appended text"
+        # Insert at end index - 1
+        assert insert["insertText"]["location"]["index"] == 49
 
-    @patch("agent.agents.writing.httpx")
-    def test_execute_search_documents(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_search_documents(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps(
             {"files": [{"id": "doc1", "name": "Meeting Notes"}]}
         )
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool(
             "search_documents", {"query": "meeting", "max_results": 5}
         )
         assert "Meeting Notes" in result
-        call_params = mock_httpx.get.call_args[1]["params"]
-        assert "meeting" in call_params["q"]
-        assert call_params["maxResults"] == 5
+        call_kwargs = mock_request.call_args[1]
+        assert "meeting" in call_kwargs["params"]["q"]
+        assert call_kwargs["params"]["pageSize"] == 5
+        assert call_kwargs["headers"]["Provider-Config-Key"] == "google-drive"
 
-    @patch("agent.agents.writing.httpx")
-    def test_execute_search_documents_default_max(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_search_documents_default_max(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps({"files": []})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         self.agent.execute_tool("search_documents", {"query": "test"})
-        call_params = mock_httpx.get.call_args[1]["params"]
-        assert call_params["maxResults"] == 10
+        call_kwargs = mock_request.call_args[1]
+        assert call_kwargs["params"]["pageSize"] == 10
 
-    @patch("agent.agents.writing.httpx")
-    def test_execute_tool_handles_http_error(self, mock_httpx):
-        mock_httpx.get.side_effect = Exception("Connection refused")
+    @patch("agent.nango.httpx.request")
+    def test_execute_tool_handles_http_error(self, mock_request):
+        mock_request.side_effect = Exception("Connection refused")
 
         result = json.loads(self.agent.execute_tool("list_documents", {}))
         assert "error" in result
         assert "Connection refused" in result["error"]
 
-    @patch("agent.agents.writing.httpx")
-    def test_list_documents_filters_by_mime_type(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_list_documents_filters_by_mime_type(self, mock_request):
         """list_documents only returns Google Docs, not other Drive files."""
         mock_response = MagicMock()
         mock_response.text = json.dumps({"files": []})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         self.agent.execute_tool("list_documents", {})
-        call_params = mock_httpx.get.call_args[1]["params"]
-        assert "application/vnd.google-apps.document" in call_params["q"]
+        call_kwargs = mock_request.call_args[1]
+        assert "application/vnd.google-apps.document" in call_kwargs["params"]["q"]
 
-    @patch("agent.agents.writing.httpx")
-    def test_list_documents_orders_by_modified_time(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_list_documents_orders_by_modified_time(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps({"files": []})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         self.agent.execute_tool("list_documents", {})
-        call_params = mock_httpx.get.call_args[1]["params"]
-        assert call_params["orderBy"] == "modifiedTime desc"
+        call_kwargs = mock_request.call_args[1]
+        assert call_kwargs["params"]["orderBy"] == "modifiedTime desc"
+
+    @patch("agent.nango.httpx.request")
+    def test_docs_use_google_docs_provider(self, mock_request):
+        """read_document and create_document should use google-docs provider."""
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"documentId": "d1", "title": "T"})
+        mock_response.json.return_value = {"documentId": "d1"}
+        mock_response.raise_for_status = MagicMock()
+        mock_request.return_value = mock_response
+
+        self.agent.execute_tool("read_document", {"document_id": "d1"})
+        headers = mock_request.call_args[1]["headers"]
+        assert headers["Provider-Config-Key"] == "google-docs"
+
+    @patch("agent.nango.httpx.request")
+    def test_drive_ops_use_google_drive_provider(self, mock_request):
+        """list_documents and search_documents should use google-drive provider."""
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"files": []})
+        mock_response.raise_for_status = MagicMock()
+        mock_request.return_value = mock_response
+
+        self.agent.execute_tool("list_documents", {})
+        headers = mock_request.call_args[1]["headers"]
+        assert headers["Provider-Config-Key"] == "google-drive"

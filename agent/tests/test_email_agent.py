@@ -1,4 +1,9 @@
-"""Tests for the email agent."""
+"""Tests for the email agent.
+
+Why these tests matter: The email agent is the primary demo flow (SCOPE.md Feature 2).
+Every tool call goes through Nango's proxy endpoint. These tests verify correct URL
+construction, header format, and payload structure for the Gmail API via Nango proxy.
+"""
 
 import json
 from unittest.mock import patch, MagicMock
@@ -50,34 +55,43 @@ class TestEmailAgent:
         result = json.loads(self.agent.execute_tool("nonexistent_tool", {}))
         assert "error" in result
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_list_inbox(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_list_inbox(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps({"messages": [{"id": "1", "subject": "Test"}]})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool("list_inbox", {"max_results": 5})
         assert "messages" in result
+        mock_request.assert_called_once()
+        call_kwargs = mock_request.call_args
+        assert call_kwargs[1]["method"] == "GET"
+        assert "/proxy/gmail/v1/users/me/messages" in call_kwargs[1]["url"]
+        assert call_kwargs[1]["headers"]["Connection-Id"] is not None
+        assert call_kwargs[1]["headers"]["Provider-Config-Key"] == "google-mail"
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_read_email(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_read_email(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps(
             {"id": "msg1", "subject": "Test", "body": "Hello"}
         )
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool("read_email", {"message_id": "msg1"})
         assert "msg1" in result
+        assert (
+            "/proxy/gmail/v1/users/me/messages/msg1" in mock_request.call_args[1]["url"]
+        )
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_send_email(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_send_email(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps({"status": "sent", "id": "msg2"})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.post.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool(
             "send_email",
@@ -88,73 +102,82 @@ class TestEmailAgent:
             },
         )
         assert "sent" in result
+        call_kwargs = mock_request.call_args[1]
+        assert call_kwargs["method"] == "POST"
+        assert "/proxy/gmail/v1/users/me/messages/send" in call_kwargs["url"]
+        # connectionId should NOT be in the body - it's in headers now
+        body = call_kwargs["json"]
+        assert "connectionId" not in body
+        assert body["to"] == "test@example.com"
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_draft_reply(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_draft_reply(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps({"draft_id": "d1", "status": "created"})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.post.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool(
             "draft_reply",
             {"message_id": "msg_123", "body": "Thanks for your email."},
         )
         assert "draft_id" in result
-        mock_httpx.post.assert_called_once()
-        call_args = mock_httpx.post.call_args
-        assert "drafts" in call_args[0][0]
+        mock_request.assert_called_once()
+        call_kwargs = mock_request.call_args[1]
+        assert "/proxy/gmail/v1/users/me/drafts" in call_kwargs["url"]
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_archive_email(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_archive_email(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps({"status": "archived"})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.post.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool("archive_email", {"message_id": "msg_123"})
         assert "archived" in result
-        call_args = mock_httpx.post.call_args
-        body = call_args[1]["json"]
+        body = mock_request.call_args[1]["json"]
         assert "INBOX" in body["removeLabelIds"]
+        # connectionId should NOT be in the body
+        assert "connectionId" not in body
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_label_email_add(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_label_email_add(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps({"status": "labeled"})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.post.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool(
             "label_email",
             {"message_id": "msg_123", "label": "Important", "action": "add"},
         )
         assert "labeled" in result
-        body = mock_httpx.post.call_args[1]["json"]
+        body = mock_request.call_args[1]["json"]
         assert "Important" in body["addLabelIds"]
+        assert "connectionId" not in body
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_label_email_remove(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_label_email_remove(self, mock_request):
         mock_response = MagicMock()
         mock_response.text = json.dumps({"status": "unlabeled"})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.post.return_value = mock_response
+        mock_request.return_value = mock_response
 
         result = self.agent.execute_tool(
             "label_email",
             {"message_id": "msg_123", "label": "Spam", "action": "remove"},
         )
         assert "unlabeled" in result
-        body = mock_httpx.post.call_args[1]["json"]
+        body = mock_request.call_args[1]["json"]
         assert "Spam" in body["removeLabelIds"]
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_send_email_with_reply(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_send_email_with_reply(self, mock_request):
         """send_email with reply_to_message_id includes replyToMessageId in payload."""
         mock_response = MagicMock()
         mock_response.text = json.dumps({"status": "sent"})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.post.return_value = mock_response
+        mock_request.return_value = mock_response
 
         self.agent.execute_tool(
             "send_email",
@@ -165,27 +188,41 @@ class TestEmailAgent:
                 "reply_to_message_id": "orig_msg_1",
             },
         )
-        body = mock_httpx.post.call_args[1]["json"]
+        body = mock_request.call_args[1]["json"]
         assert body["replyToMessageId"] == "orig_msg_1"
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_list_inbox_unread_only(self, mock_httpx):
+    @patch("agent.nango.httpx.request")
+    def test_execute_list_inbox_unread_only(self, mock_request):
         """list_inbox with unread_only=True adds is:unread to query."""
         mock_response = MagicMock()
         mock_response.text = json.dumps({"messages": []})
         mock_response.raise_for_status = MagicMock()
-        mock_httpx.get.return_value = mock_response
+        mock_request.return_value = mock_response
 
         self.agent.execute_tool("list_inbox", {"unread_only": True})
-        call_params = mock_httpx.get.call_args[1]["params"]
+        call_params = mock_request.call_args[1]["params"]
         assert "is:unread" in call_params["q"]
 
-    @patch("agent.agents.email.httpx")
-    def test_execute_tool_handles_http_error(self, mock_httpx):
-        import httpx as real_httpx
-
-        mock_httpx.get.side_effect = Exception("Connection refused")
+    @patch("agent.nango.httpx.request")
+    def test_execute_tool_handles_http_error(self, mock_request):
+        mock_request.side_effect = Exception("Connection refused")
 
         result = json.loads(self.agent.execute_tool("list_inbox", {}))
         assert "error" in result
         assert "Connection refused" in result["error"]
+
+    @patch("agent.nango.httpx.request")
+    def test_proxy_headers_format(self, mock_request):
+        """All requests must include Connection-Id and Provider-Config-Key headers."""
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"messages": []})
+        mock_response.raise_for_status = MagicMock()
+        mock_request.return_value = mock_response
+
+        self.agent.execute_tool("list_inbox", {})
+        headers = mock_request.call_args[1]["headers"]
+        assert "Connection-Id" in headers
+        assert "Provider-Config-Key" in headers
+        assert headers["Provider-Config-Key"] == "google-mail"
+        assert "Authorization" in headers
+        assert headers["Authorization"].startswith("Bearer ")

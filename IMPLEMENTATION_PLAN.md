@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete - 833 passing tests (689 Python + 144 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete - 848 passing tests (704 Python + 144 Flutter).**
 
 ---
 
@@ -413,6 +413,17 @@ Debian VM boots directly into Monet.
 - **Update custom agent validation added:** `update_custom_agent` endpoint now validates tool_sets and ui_pattern (matching create_custom_agent validation) instead of accepting arbitrary values.
 - **Test coverage expanded:** Added `test_models.py` (27 tests) covering all data models in models.py - UIPattern, ApprovalStatus, AgentOutput, AgentResult, AgentEvent, FlowStep, FlowPlan, RoutedIntent, ApprovalRequest including defaults, field isolation, and serialization. Added `test_api_endpoints.py` (27 tests) covering HTTP-level endpoint testing via FastAPI TestClient for: /api/run error handling, /api/stream error handling, /api/flow/advance, all 11 /api/system/\* routes (wifi status/scan/connect/disconnect, volume get/set/mute, brightness get/set, power actions), toggle_schedule None safety, update_custom_agent validation, and home_summary error handling.
 - **Test count:** 833 total (689 Python + 144 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
+
+### Implementation Notes (2026-03-31) - Batch 23
+
+- **Nango proxy URL format fixed (critical bug):** All three agent tool implementations (email, code, writing) were using incorrect Nango API paths (`/v1/gmail/...`, `/v1/github/...`, `/v1/google-docs/...`) with `connectionId` passed as query params or JSON body fields. The correct Nango proxy format is `{METHOD} /proxy/{api-path}` with `Connection-Id` and `Provider-Config-Key` as HTTP headers (per https://docs.nango.dev). This bug would have caused all tool calls to fail with 404s when connecting to a real Nango instance.
+- **Shared `nango_proxy_request()` helper added:** Centralized proxy request helper in `agent/nango.py` that constructs the correct URL format, sets required headers (Authorization, Connection-Id, Provider-Config-Key), handles query params and JSON bodies, and supports extra headers (e.g., GitHub diff Accept header). All three agents now use this single helper instead of duplicating httpx call patterns.
+- **Google Drive provider added:** Writing agent needs both Google Docs API (for document CRUD) and Google Drive API (for listing/searching files). These have different base URLs in Nango, so a `google-drive` provider was added to the PROVIDERS dict. Marked as `internal: True` so it does not appear in user-facing tool status or onboarding UI. `USER_FACING_PROVIDERS` dict added to filter internal providers.
+- **Gmail API paths corrected:** All Gmail tools now use the correct Gmail API paths relative to googleapis.com base URL (e.g., `gmail/v1/users/me/messages` instead of the incorrect Nango-style paths).
+- **GitHub API paths corrected:** All GitHub tools now use paths relative to api.github.com (e.g., `repos/{owner}/{repo}/pulls` instead of `v1/github/repos/{owner}/{repo}/pulls`).
+- **Google Docs API operations corrected:** `create_document` now uses a two-step flow (POST to create, then batchUpdate to insert content). `edit_document` now uses the proper batchUpdate API with deleteContentRange + insertText for replace mode, and insertText at end index for append mode. Drive listing/searching uses correct `drive/v3/files` paths with `pageSize` (not `maxResults`).
+- **Test count:** 848 total (704 Python + 144 Flutter), all passing.
 - **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
 
 ---

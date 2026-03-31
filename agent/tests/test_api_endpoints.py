@@ -347,7 +347,7 @@ class TestHomeSummary:
     def test_home_summary_error(self, client):
         """Home summary returns 500 on unexpected error."""
         with patch.object(
-            nango_mgr, "get_all_statuses", side_effect=RuntimeError("boom")
+            nango_mgr, "get_user_facing_statuses", side_effect=RuntimeError("boom")
         ):
             resp = client.get("/api/home/summary")
             assert resp.status_code == 500
@@ -365,7 +365,7 @@ class TestHomeSummary:
                 name="GitHub", provider="github", connected=False, connection_id="conn2"
             ),
         ]
-        with patch.object(nango_mgr, "get_all_statuses", return_value=statuses):
+        with patch.object(nango_mgr, "get_user_facing_statuses", return_value=statuses):
             with patch.object(runner, "describe_agents", return_value=[]):
                 with patch.object(
                     runner.activity_store, "get_all_activity", return_value=[]

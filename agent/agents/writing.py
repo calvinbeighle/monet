@@ -1,26 +1,35 @@
-"""Writing agent - handles Google Docs operations via Nango integration."""
+"""Writing agent - handles Google Docs operations via Nango proxy.
+
+All API calls go through Nango's proxy endpoint:
+  {METHOD} https://api.nango.dev/proxy/{api-path}
+  Headers: Authorization, Connection-Id, Provider-Config-Key
+
+Two providers are used:
+  - google-docs (base: https://docs.googleapis.com) for document CRUD
+  - google-drive (base: https://www.googleapis.com) for listing/searching files
+"""
 
 import json
 import logging
 import os
 
-import httpx
-
 from agent.agents.base import BaseAgent
 from agent.models import UIPattern
+from agent.nango import PROVIDERS, nango_proxy_request
 
 logger = logging.getLogger(__name__)
 
-NANGO_BASE_URL = os.environ.get("NANGO_BASE_URL", "https://api.nango.dev")
-NANGO_SECRET_KEY = os.environ.get("NANGO_SECRET_KEY", "")
-NANGO_CONNECTION_ID = os.environ.get("NANGO_GDOCS_CONNECTION_ID", "google-docs-default")
+# Google Docs provider - for reading/creating/editing documents
+_DOCS_CONFIG_KEY = PROVIDERS["google-docs"]["config_key"]
+_DOCS_CONNECTION_ID = os.environ.get(
+    "NANGO_GDOCS_CONNECTION_ID", PROVIDERS["google-docs"]["connection_id"]
+)
 
-
-def _nango_headers() -> dict:
-    return {
-        "Authorization": f"Bearer {NANGO_SECRET_KEY}",
-        "Content-Type": "application/json",
-    }
+# Google Drive provider - for listing/searching files
+_DRIVE_CONFIG_KEY = PROVIDERS["google-drive"]["config_key"]
+_DRIVE_CONNECTION_ID = os.environ.get(
+    "NANGO_GDRIVE_CONNECTION_ID", PROVIDERS["google-drive"]["connection_id"]
+)
 
 
 class WritingAgent(BaseAgent):
@@ -179,16 +188,17 @@ class WritingAgent(BaseAgent):
         """List recent Google Docs via Nango Google Drive proxy."""
         max_results = params.get("max_results", 20)
 
-        resp = httpx.get(
-            f"{NANGO_BASE_URL}/v1/google-drive/files",
-            headers=_nango_headers(),
+        resp = nango_proxy_request(
+            method="GET",
+            path="drive/v3/files",
+            provider_config_key=_DRIVE_CONFIG_KEY,
+            connection_id=_DRIVE_CONNECTION_ID,
             params={
-                "connectionId": NANGO_CONNECTION_ID,
                 "q": "mimeType='application/vnd.google-apps.document'",
-                "maxResults": max_results,
+                "pageSize": max_results,
                 "orderBy": "modifiedTime desc",
+                "fields": "files(id,name,modifiedTime,description)",
             },
-            timeout=30,
         )
         resp.raise_for_status()
         return resp.text
@@ -197,44 +207,118 @@ class WritingAgent(BaseAgent):
         """Read a specific Google Doc via Nango proxy."""
         document_id = params["document_id"]
 
-        resp = httpx.get(
-            f"{NANGO_BASE_URL}/v1/google-docs/documents/{document_id}",
-            headers=_nango_headers(),
-            params={"connectionId": NANGO_CONNECTION_ID},
-            timeout=30,
+        resp = nango_proxy_request(
+            method="GET",
+            path=f"v1/documents/{document_id}",
+            provider_config_key=_DOCS_CONFIG_KEY,
+            connection_id=_DOCS_CONNECTION_ID,
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_create_document(self, params: dict) -> str:
         """Create a new Google Doc via Nango proxy."""
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/google-docs/documents",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
+        resp = nango_proxy_request(
+            method="POST",
+            path="v1/documents",
+            provider_config_key=_DOCS_CONFIG_KEY,
+            connection_id=_DOCS_CONNECTION_ID,
+            json_body={
                 "title": params["title"],
-                "body": params["content"],
             },
-            timeout=30,
         )
         resp.raise_for_status()
+
+        # If content provided, insert it via batchUpdate
+        doc_data = resp.json()
+        doc_id = doc_data.get("documentId", "")
+        content = params.get("content", "")
+
+        if content and doc_id:
+            update_resp = nango_proxy_request(
+                method="POST",
+                path=f"v1/documents/{doc_id}:batchUpdate",
+                provider_config_key=_DOCS_CONFIG_KEY,
+                connection_id=_DOCS_CONNECTION_ID,
+                json_body={
+                    "requests": [
+                        {
+                            "insertText": {
+                                "location": {"index": 1},
+                                "text": content,
+                            }
+                        }
+                    ]
+                },
+            )
+            update_resp.raise_for_status()
+
         return resp.text
 
     def _tool_edit_document(self, params: dict) -> str:
-        """Edit an existing Google Doc via Nango proxy."""
+        """Edit an existing Google Doc via Nango proxy using batchUpdate."""
         document_id = params["document_id"]
         mode = params.get("mode", "replace")
+        content = params["content"]
 
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/google-docs/documents/{document_id}",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
-                "content": params["content"],
-                "mode": mode,
-            },
-            timeout=30,
+        if mode == "replace":
+            # First get the document to find end index
+            doc_resp = nango_proxy_request(
+                method="GET",
+                path=f"v1/documents/{document_id}",
+                provider_config_key=_DOCS_CONFIG_KEY,
+                connection_id=_DOCS_CONNECTION_ID,
+            )
+            doc_resp.raise_for_status()
+            doc = doc_resp.json()
+            end_index = doc.get("body", {}).get("content", [{}])[-1].get("endIndex", 2)
+
+            requests = []
+            # Delete existing content (index 1 to end-1 to preserve the trailing newline)
+            if end_index > 2:
+                requests.append(
+                    {
+                        "deleteContentRange": {
+                            "range": {"startIndex": 1, "endIndex": end_index - 1}
+                        }
+                    }
+                )
+            # Insert new content
+            requests.append(
+                {
+                    "insertText": {
+                        "location": {"index": 1},
+                        "text": content,
+                    }
+                }
+            )
+        else:
+            # Append mode - insert at end
+            doc_resp = nango_proxy_request(
+                method="GET",
+                path=f"v1/documents/{document_id}",
+                provider_config_key=_DOCS_CONFIG_KEY,
+                connection_id=_DOCS_CONNECTION_ID,
+            )
+            doc_resp.raise_for_status()
+            doc = doc_resp.json()
+            end_index = doc.get("body", {}).get("content", [{}])[-1].get("endIndex", 2)
+
+            requests = [
+                {
+                    "insertText": {
+                        "location": {"index": end_index - 1},
+                        "text": content,
+                    }
+                }
+            ]
+
+        resp = nango_proxy_request(
+            method="POST",
+            path=f"v1/documents/{document_id}:batchUpdate",
+            provider_config_key=_DOCS_CONFIG_KEY,
+            connection_id=_DOCS_CONNECTION_ID,
+            json_body={"requests": requests},
         )
         resp.raise_for_status()
         return resp.text
@@ -244,16 +328,17 @@ class WritingAgent(BaseAgent):
         query = params["query"]
         max_results = params.get("max_results", 10)
 
-        resp = httpx.get(
-            f"{NANGO_BASE_URL}/v1/google-drive/files",
-            headers=_nango_headers(),
+        resp = nango_proxy_request(
+            method="GET",
+            path="drive/v3/files",
+            provider_config_key=_DRIVE_CONFIG_KEY,
+            connection_id=_DRIVE_CONNECTION_ID,
             params={
-                "connectionId": NANGO_CONNECTION_ID,
                 "q": f"mimeType='application/vnd.google-apps.document' and fullText contains '{query}'",
-                "maxResults": max_results,
+                "pageSize": max_results,
                 "orderBy": "relevance",
+                "fields": "files(id,name,modifiedTime,description)",
             },
-            timeout=30,
         )
         resp.raise_for_status()
         return resp.text

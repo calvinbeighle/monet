@@ -14,9 +14,11 @@ import pytest
 
 from agent.nango import (
     PROVIDERS,
+    USER_FACING_PROVIDERS,
     ConnectSession,
     NangoManager,
     ToolConnectionStatus,
+    nango_proxy_request,
 )
 
 
@@ -34,8 +36,17 @@ class TestNangoManager:
     def test_providers_defined(self):
         assert "gmail" in PROVIDERS
         assert "github" in PROVIDERS
+        assert "google-docs" in PROVIDERS
+        assert "google-drive" in PROVIDERS
         assert PROVIDERS["gmail"]["config_key"] == "google-mail"
         assert PROVIDERS["github"]["config_key"] == "github"
+
+    def test_user_facing_providers_excludes_internal(self):
+        assert "google-drive" not in USER_FACING_PROVIDERS
+        assert "gmail" in USER_FACING_PROVIDERS
+        assert "github" in USER_FACING_PROVIDERS
+        assert "google-docs" in USER_FACING_PROVIDERS
+        assert len(USER_FACING_PROVIDERS) == 3
 
     def test_check_connection_unknown_provider(self):
         mgr = NangoManager(secret_key="test-key")
@@ -144,10 +155,23 @@ class TestNangoManager:
 
         mgr = NangoManager(secret_key="test-key")
         statuses = mgr.get_all_statuses()
+        assert len(statuses) == 4
+        providers = {s.provider for s in statuses}
+        assert providers == {"gmail", "github", "google-docs", "google-drive"}
+        assert all(s.connected for s in statuses)
+
+    @patch("agent.nango.httpx.get")
+    def test_get_user_facing_statuses(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"credentials": {"access_token": "token"}}
+        mock_get.return_value = mock_resp
+
+        mgr = NangoManager(secret_key="test-key")
+        statuses = mgr.get_user_facing_statuses()
         assert len(statuses) == 3
         providers = {s.provider for s in statuses}
         assert providers == {"gmail", "github", "google-docs"}
-        assert all(s.connected for s in statuses)
 
     @patch("agent.nango.httpx.get")
     def test_get_all_statuses_mixed(self, mock_get):
@@ -306,3 +330,144 @@ class TestAPIEndpoints:
         resp = self.client.get("/api/tools/connect/gmail")
         # Will be 503 if no key is set in test env
         assert resp.status_code in (200, 503)
+
+
+class TestNangoProxyRequest:
+    """Tests for the shared nango_proxy_request helper.
+
+    Why these tests matter: Every agent tool call goes through this function.
+    Correct URL construction, header format, and parameter passing are critical
+    for all Gmail, GitHub, and Google Docs integrations to work.
+    """
+
+    @patch("agent.nango.httpx.request")
+    def test_constructs_proxy_url(self, mock_request):
+        mock_request.return_value = MagicMock()
+        nango_proxy_request(
+            method="GET",
+            path="gmail/v1/users/me/messages",
+            provider_config_key="google-mail",
+            connection_id="gmail-default",
+            base_url="https://api.nango.dev",
+            secret_key="test-key",
+        )
+        call_kwargs = mock_request.call_args[1]
+        assert (
+            call_kwargs["url"]
+            == "https://api.nango.dev/proxy/gmail/v1/users/me/messages"
+        )
+
+    @patch("agent.nango.httpx.request")
+    def test_strips_leading_slash(self, mock_request):
+        mock_request.return_value = MagicMock()
+        nango_proxy_request(
+            method="GET",
+            path="/repos/owner/repo/pulls",
+            provider_config_key="github",
+            connection_id="github-default",
+            base_url="https://api.nango.dev",
+            secret_key="test-key",
+        )
+        url = mock_request.call_args[1]["url"]
+        assert "/proxy/repos/" in url
+        assert "//repos" not in url
+
+    @patch("agent.nango.httpx.request")
+    def test_includes_required_headers(self, mock_request):
+        mock_request.return_value = MagicMock()
+        nango_proxy_request(
+            method="GET",
+            path="test/path",
+            provider_config_key="google-mail",
+            connection_id="my-conn",
+            secret_key="sk-123",
+        )
+        headers = mock_request.call_args[1]["headers"]
+        assert headers["Authorization"] == "Bearer sk-123"
+        assert headers["Connection-Id"] == "my-conn"
+        assert headers["Provider-Config-Key"] == "google-mail"
+
+    @patch("agent.nango.httpx.request")
+    def test_passes_query_params(self, mock_request):
+        mock_request.return_value = MagicMock()
+        nango_proxy_request(
+            method="GET",
+            path="test",
+            provider_config_key="github",
+            connection_id="conn",
+            params={"state": "open", "per_page": 30},
+            secret_key="key",
+        )
+        assert mock_request.call_args[1]["params"] == {"state": "open", "per_page": 30}
+
+    @patch("agent.nango.httpx.request")
+    def test_passes_json_body(self, mock_request):
+        mock_request.return_value = MagicMock()
+        body = {"title": "Test", "body": "Content"}
+        nango_proxy_request(
+            method="POST",
+            path="test",
+            provider_config_key="google-docs",
+            connection_id="conn",
+            json_body=body,
+            secret_key="key",
+        )
+        call_kwargs = mock_request.call_args[1]
+        assert call_kwargs["json"] == body
+        assert call_kwargs["headers"]["Content-Type"] == "application/json"
+
+    @patch("agent.nango.httpx.request")
+    def test_no_content_type_without_json(self, mock_request):
+        mock_request.return_value = MagicMock()
+        nango_proxy_request(
+            method="GET",
+            path="test",
+            provider_config_key="github",
+            connection_id="conn",
+            secret_key="key",
+        )
+        headers = mock_request.call_args[1]["headers"]
+        assert "Content-Type" not in headers
+
+    @patch("agent.nango.httpx.request")
+    def test_extra_headers_merged(self, mock_request):
+        mock_request.return_value = MagicMock()
+        nango_proxy_request(
+            method="GET",
+            path="test",
+            provider_config_key="github",
+            connection_id="conn",
+            extra_headers={"Accept": "application/vnd.github.v3.diff"},
+            secret_key="key",
+        )
+        headers = mock_request.call_args[1]["headers"]
+        assert headers["Accept"] == "application/vnd.github.v3.diff"
+        # Standard headers still present
+        assert "Connection-Id" in headers
+
+    @patch("agent.nango.httpx.request")
+    def test_uses_correct_method(self, mock_request):
+        mock_request.return_value = MagicMock()
+        for method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
+            nango_proxy_request(
+                method=method,
+                path="test",
+                provider_config_key="github",
+                connection_id="conn",
+                secret_key="key",
+            )
+            assert mock_request.call_args[1]["method"] == method
+
+    @patch("agent.nango.httpx.request")
+    def test_returns_response(self, mock_request):
+        expected = MagicMock()
+        expected.status_code = 200
+        mock_request.return_value = expected
+        resp = nango_proxy_request(
+            method="GET",
+            path="test",
+            provider_config_key="github",
+            connection_id="conn",
+            secret_key="key",
+        )
+        assert resp is expected

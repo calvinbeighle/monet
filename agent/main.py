@@ -532,7 +532,7 @@ def tools_status():
     """
     from dataclasses import asdict as _asdict
 
-    statuses = nango_mgr.get_all_statuses()
+    statuses = nango_mgr.get_user_facing_statuses()
     return {"tools": [_asdict(s) for s in statuses], "configured": nango_mgr.configured}
 
 
@@ -787,7 +787,7 @@ def home_summary():
         from dataclasses import asdict as _asdict
 
         # Tool connection status (list of ToolConnectionStatus dataclasses)
-        statuses = nango_mgr.get_all_statuses()
+        statuses = nango_mgr.get_user_facing_statuses()
         tools = [_asdict(s) for s in statuses]
 
         # Agent list with stats (lightweight - no activity history)

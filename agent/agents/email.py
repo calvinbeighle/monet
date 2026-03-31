@@ -1,27 +1,28 @@
-"""Email agent - handles Gmail operations via Nango integration."""
+"""Email agent - handles Gmail operations via Nango proxy.
+
+All API calls go through Nango's proxy endpoint:
+  {METHOD} https://api.nango.dev/proxy/{gmail-api-path}
+  Headers: Authorization, Connection-Id, Provider-Config-Key
+
+Gmail API paths are relative to https://www.googleapis.com (the base_url
+configured for the google-mail provider in Nango).
+"""
 
 import json
 import logging
 import os
-from typing import Optional
-
-import httpx
 
 from agent.agents.base import BaseAgent
 from agent.models import UIPattern
+from agent.nango import PROVIDERS, nango_proxy_request
 
 logger = logging.getLogger(__name__)
 
-NANGO_BASE_URL = os.environ.get("NANGO_BASE_URL", "https://api.nango.dev")
-NANGO_SECRET_KEY = os.environ.get("NANGO_SECRET_KEY", "")
-NANGO_CONNECTION_ID = os.environ.get("NANGO_GMAIL_CONNECTION_ID", "gmail-default")
-
-
-def _nango_headers() -> dict:
-    return {
-        "Authorization": f"Bearer {NANGO_SECRET_KEY}",
-        "Content-Type": "application/json",
-    }
+# Gmail provider config from Nango
+_PROVIDER_CONFIG_KEY = PROVIDERS["gmail"]["config_key"]
+_CONNECTION_ID = os.environ.get(
+    "NANGO_GMAIL_CONNECTION_ID", PROVIDERS["gmail"]["connection_id"]
+)
 
 
 class EmailAgent(BaseAgent):
@@ -196,7 +197,6 @@ class EmailAgent(BaseAgent):
 
     def _tool_list_inbox(self, params: dict) -> str:
         """List inbox emails via Nango Gmail proxy."""
-
         max_results = params.get("max_results", 20)
         unread_only = params.get("unread_only", False)
 
@@ -204,53 +204,51 @@ class EmailAgent(BaseAgent):
         if unread_only:
             query += " is:unread"
 
-        resp = httpx.get(
-            f"{NANGO_BASE_URL}/v1/gmail/messages",
-            headers=_nango_headers(),
-            params={
-                "connectionId": NANGO_CONNECTION_ID,
-                "q": query,
-                "maxResults": max_results,
-            },
-            timeout=30,
+        resp = nango_proxy_request(
+            method="GET",
+            path="gmail/v1/users/me/messages",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            params={"q": query, "maxResults": max_results},
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_read_email(self, params: dict) -> str:
         """Read a specific email via Nango Gmail proxy."""
-
         message_id = params["message_id"]
-        resp = httpx.get(
-            f"{NANGO_BASE_URL}/v1/gmail/messages/{message_id}",
-            headers=_nango_headers(),
-            params={"connectionId": NANGO_CONNECTION_ID},
-            timeout=30,
+
+        resp = nango_proxy_request(
+            method="GET",
+            path=f"gmail/v1/users/me/messages/{message_id}",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_draft_reply(self, params: dict) -> str:
         """Create a draft reply via Nango Gmail proxy."""
-
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/gmail/drafts",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
+        resp = nango_proxy_request(
+            method="POST",
+            path="gmail/v1/users/me/drafts",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body={
+                "message": {
+                    "threadId": params["message_id"],
+                    "raw": "",  # Gmail API expects raw or payload
+                },
                 "replyToMessageId": params["message_id"],
                 "body": params["body"],
             },
-            timeout=30,
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_send_email(self, params: dict) -> str:
         """Send an email via Nango Gmail proxy."""
-
         payload: dict = {
-            "connectionId": NANGO_CONNECTION_ID,
             "to": params["to"],
             "subject": params["subject"],
             "body": params["body"],
@@ -258,49 +256,48 @@ class EmailAgent(BaseAgent):
         if params.get("reply_to_message_id"):
             payload["replyToMessageId"] = params["reply_to_message_id"]
 
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/gmail/messages/send",
-            headers=_nango_headers(),
-            json=payload,
-            timeout=30,
+        resp = nango_proxy_request(
+            method="POST",
+            path="gmail/v1/users/me/messages/send",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body=payload,
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_archive_email(self, params: dict) -> str:
         """Archive an email via Nango Gmail proxy."""
-
         message_id = params["message_id"]
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/gmail/messages/{message_id}/modify",
-            headers=_nango_headers(),
-            json={
-                "connectionId": NANGO_CONNECTION_ID,
-                "removeLabelIds": ["INBOX"],
-            },
-            timeout=30,
+
+        resp = nango_proxy_request(
+            method="POST",
+            path=f"gmail/v1/users/me/messages/{message_id}/modify",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body={"removeLabelIds": ["INBOX"]},
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_label_email(self, params: dict) -> str:
         """Add or remove a label via Nango Gmail proxy."""
-
         message_id = params["message_id"]
         action = params.get("action", "add")
         label = params["label"]
 
-        body: dict = {"connectionId": NANGO_CONNECTION_ID}
+        body: dict = {}
         if action == "add":
             body["addLabelIds"] = [label]
         else:
             body["removeLabelIds"] = [label]
 
-        resp = httpx.post(
-            f"{NANGO_BASE_URL}/v1/gmail/messages/{message_id}/modify",
-            headers=_nango_headers(),
-            json=body,
-            timeout=30,
+        resp = nango_proxy_request(
+            method="POST",
+            path=f"gmail/v1/users/me/messages/{message_id}/modify",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            json_body=body,
         )
         resp.raise_for_status()
         return resp.text
