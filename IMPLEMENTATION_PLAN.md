@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete - 848 passing tests (704 Python + 144 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete - 862 passing tests (718 Python + 144 Flutter).**
 
 ---
 
@@ -231,7 +231,7 @@ Debian VM boots directly into Monet.
 - [ ] Dark/light theme
 - [ ] Animation polish on pattern transitions
 - [ ] More integrations (Slack, Calendar, Notion, Linear)
-- [ ] Smarter intent routing (semantic embeddings, learn from usage)
+- [x] Smarter intent routing (Claude Haiku LLM fallback when keyword rules miss)
 - [ ] Voice input
 - [ ] Mobile companion (Flutter - same codebase)
 - [x] Planning agent (agent/agents/planning.py - implemented with 5 tools)
@@ -424,6 +424,13 @@ Debian VM boots directly into Monet.
 - **GitHub API paths corrected:** All GitHub tools now use paths relative to api.github.com (e.g., `repos/{owner}/{repo}/pulls` instead of `v1/github/repos/{owner}/{repo}/pulls`).
 - **Google Docs API operations corrected:** `create_document` now uses a two-step flow (POST to create, then batchUpdate to insert content). `edit_document` now uses the proper batchUpdate API with deleteContentRange + insertText for replace mode, and insertText at end index for append mode. Drive listing/searching uses correct `drive/v3/files` paths with `pageSize` (not `maxResults`).
 - **Test count:** 848 total (704 Python + 144 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
+
+### Implementation Notes (2026-03-31) - Batch 24
+
+- **Smarter intent routing with Claude Haiku fallback (Phase 5):** `agent/router.py` IntentRouter now accepts an optional `anthropic.Anthropic` client. When keyword rules produce no match (would fall through to general/chat), the router calls Claude Haiku (claude-haiku-4-5-20251001) with a structured classification prompt. The LLM classifies the intent into one of 5 agents (email, code, writing, planning, general) and 4 UI patterns (tinder, chat, diff, whiteboard). Response validation sanitizes invalid agent names and UI patterns. Graceful degradation: if no client is provided, if the API call fails, or if the response is not valid JSON, falls back to general/chat. AgentRunner now passes its Anthropic client to the router so the LLM fallback is active in production.
+- **Why this matters for demo:** Keyword-only routing is fragile - natural language like "anything new from John today" or "clean up my mailbox a bit" falls through to general agent. The Haiku fallback catches these cases with near-zero latency impact (~200ms).
+- **Test count:** 862 total (718 Python + 144 Flutter), all passing.
 - **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
 
 ---
