@@ -3,6 +3,10 @@ import { useAppStore } from "./lib/stores";
 import { useActivityStore } from "./lib/stores";
 import { useWorkstreamStore } from "./lib/stores";
 import { loadAllActivities, loadAllWorkstreams } from "./lib/utils";
+import {
+  startIngestion,
+  stopIngestion,
+} from "./lib/services/ingestion-orchestrator";
 import { HeaderBar } from "./components/header-bar";
 import { NotificationArea } from "./components/notification-area";
 import { WorkstreamTimeline } from "./features/timeline/workstream-timeline";
@@ -42,12 +46,14 @@ export function App() {
       // Check lifecycle statuses
       checkLifecycles();
 
-      // For now, skip auth check - go straight to loaded
-      // TODO: implement actual auth check against backend
+      // Skip auth for now - go straight to authenticated
       setAuthState("authenticated");
       setDataState(
         activities.length > 0 || workstreams.length > 0 ? "loaded" : "loading",
       );
+
+      // Start data ingestion from all sources (backend + dev fixtures)
+      startIngestion();
     } catch (err) {
       console.error("[App] initialization failed:", err);
       setDataState("error");
@@ -62,6 +68,7 @@ export function App() {
 
   useEffect(() => {
     initialize();
+    return () => stopIngestion();
   }, [initialize]);
 
   // Handle browser back/forward

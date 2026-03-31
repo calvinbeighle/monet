@@ -1,8 +1,8 @@
 # Trace Messaging - Implementation Plan
 
-## Status: Priority 1 complete - Foundation layer built
+## Status: Priority 2 in progress - Data ingestion layer built
 
-Last audited: 2026-03-31 15:55 PDT
+Last audited: 2026-03-31 16:12 PDT
 
 ---
 
@@ -102,9 +102,9 @@ Each source is independent - all 6 can be built in parallel. Local file sources 
 
 ### Backend (extends existing FastAPI)
 
-- [ ] **2.0a Extend FastAPI backend - CORS + router setup** - Add `CORSMiddleware` to `../agent/main.py` (`allow_origins=["http://localhost:5173"]` for Vite dev server). Create new router file `../agent/trace_router.py` using `APIRouter()` - this will be the FIRST router in main.py (no existing `include_router` pattern). Register via `app.include_router(trace_router, prefix="/api/trace")`. Router needs access to `nango_mgr` singleton from main.py - use factory function pattern: `make_trace_router(nango_mgr)`.
+- [x] **2.0a Extend FastAPI backend - CORS + router setup** - Add `CORSMiddleware` to `../agent/main.py` (`allow_origins=["http://localhost:5173"]` for Vite dev server). Create new router file `../agent/trace_router.py` using `APIRouter()` - this will be the FIRST router in main.py (no existing `include_router` pattern). Register via `app.include_router(trace_router, prefix="/api/trace")`. Router needs access to `nango_mgr` singleton from main.py - use factory function pattern: `make_trace_router(nango_mgr)`.
 
-- [ ] **2.0b Backend data endpoints** - All in `../agent/trace_router.py`:
+- [x] **2.0b Backend data endpoints** - All in `../agent/trace_router.py`:
   - `GET /api/trace/arc/sidebar` - reads `~/Library/Application Support/Arc/StorableSidebar.json`. Use ONLY `sidebar.containers[1]` (ignore `sidebarSyncState` and `firebaseSyncState` which are CloudKit/Firebase sync copies). Two-step parse: (1) Build space UUID->name map from `sidebar.containers[1].spaces[]` (alternating UUID/object pairs, each object has `title` and `containerIDs`). (2) Read items from `sidebar.containers[1].items[]` (alternating UUID/object pairs); each tab object has `data.tab.savedURL`, `data.tab.savedTitle`, `data.tab.timeLastActiveAt` (Apple Core Data epoch), `parentID`, `createdAt`, `isUnread`. Resolve space membership by traversing `parentID` chain up to a container UUID, then matching against space `containerIDs`. Items with `data.folder` instead of `data.tab` are folders (skip or use as grouping context). Returns normalized tabs with URL, title, space name (resolved), isPinned (parent is pinned container), domain (extracted from URL), dataSource ("sidebar"). 12 spaces currently: Personal, School, Angus, Calvin, Calvin Angus, Calvin Angus Beighle, Martian Yash, Martian Etan, Martian - Personal, etc.
   - `GET /api/trace/arc/archive` - reads `~/Library/Application Support/Arc/StorableArchiveItems.json`. Items array alternates UUID strings and item objects. Filter by `archivedAt` (Apple Core Data timestamp - seconds since 2001-01-01, NOT Unix epoch; value ~791M for 2026) to past 7 days. Extract `sidebarItem.data.tab.savedURL/savedTitle` and `source.space._0` (UUID - resolve to space name using sidebar spaces map, requires loading sidebar first or caching the map).
   - `GET /api/trace/arc/history` - reads History SQLite (Profile 13) via `sqlite3.connect("file:///path?immutable=1&mode=ro", uri=True)`. Join `urls.url/title/visit_count` + `visits.visit_time`. Convert Windows FILETIME timestamps (microseconds since 1601-01-01) to Unix epoch. Past 7 days.
@@ -129,22 +129,22 @@ Each source is independent - all 6 can be built in parallel. Local file sources 
 
 ### Frontend Ingestion Services
 
-- [ ] **2.1 Gmail ingestion** (spec 01) - OAuth via Nango (`check_connection` + `create_connect_session` pattern from `nango.py`). Initial: fetch 30-day inbox threads. Incremental: poll via Gmail history API every 30 seconds. Use stored history cursor. Cursor expiry triggers full backfill (not just incremental). Normalize: strip Re:/Fwd: from subjects, extract participants from headers, UTC epoch ms timestamps, preserve HTML body + extract plain text for AI. Progressive store on initial load (each thread available immediately, not batch-at-end). Dev mode: load from `../email/inbox.json` (parse as `json["emails"]`). Gmail API calls should go through the backend (add Gmail proxy endpoints to trace_router.py that use `nango_proxy_request()` with provider_config_key="google-mail", connection_id="gmail-default"). Correct Nango proxy URL pattern: `{NANGO_BASE_URL}/proxy/gmail/v1/users/me/messages` with headers `Authorization: Bearer {key}`, `Connection-Id`, `Provider-Config-Key`. Do NOT call Nango directly from browser code. Offline: exponential backoff, resume from last stored history cursor on reconnect.
+- [~] **2.1 Gmail ingestion** (spec 01) - Frontend service implemented, backend proxy endpoints done. Needs Nango OAuth integration testing. - OAuth via Nango (`check_connection` + `create_connect_session` pattern from `nango.py`). Initial: fetch 30-day inbox threads. Incremental: poll via Gmail history API every 30 seconds. Use stored history cursor. Cursor expiry triggers full backfill (not just incremental). Normalize: strip Re:/Fwd: from subjects, extract participants from headers, UTC epoch ms timestamps, preserve HTML body + extract plain text for AI. Progressive store on initial load (each thread available immediately, not batch-at-end). Dev mode: load from `../email/inbox.json` (parse as `json["emails"]`). Gmail API calls should go through the backend (add Gmail proxy endpoints to trace_router.py that use `nango_proxy_request()` with provider_config_key="google-mail", connection_id="gmail-default"). Correct Nango proxy URL pattern: `{NANGO_BASE_URL}/proxy/gmail/v1/users/me/messages` with headers `Authorization: Bearer {key}`, `Connection-Id`, `Provider-Config-Key`. Do NOT call Nango directly from browser code. Offline: exponential backoff, resume from last stored history cursor on reconnect.
 
-- [ ] **2.1a Dev seed data fixtures** (gap #1) - Create static JSON fixtures in `src/lib/fixtures/` for all non-Gmail sources so frontend development can proceed before backend endpoints are ready. Files: `calendar-events.fixture.json` (10-15 events with attendees matching Gmail contacts), `git-commits.fixture.json` (20 commits across 3 branches), `arc-tabs.fixture.json` (30 tabs across 4 spaces, mix of sidebar/archive), `claude-sessions.fixture.json` (5 sessions with project paths). Each fixture matches the normalized `ActivityRecord` shape. Ingestion services check for `VITE_DEV_MODE=true` env var and load fixtures instead of calling backend. This unblocks P4 UI work without waiting for P2 backend endpoints.
+- [x] **2.1a Dev seed data fixtures** (gap #1) - Create static JSON fixtures in `src/lib/fixtures/` for all non-Gmail sources so frontend development can proceed before backend endpoints are ready. Files: `calendar-events.fixture.json` (10-15 events with attendees matching Gmail contacts), `git-commits.fixture.json` (20 commits across 3 branches), `arc-tabs.fixture.json` (30 tabs across 4 spaces, mix of sidebar/archive), `claude-sessions.fixture.json` (5 sessions with project paths). Each fixture matches the normalized `ActivityRecord` shape. Ingestion services check for `VITE_DEV_MODE=true` env var and load fixtures instead of calling backend. This unblocks P4 UI work without waiting for P2 backend endpoints.
 
-- [ ] **2.2 Arc browser ingestion** (spec 02) - Three data sources, all via backend endpoints:
+- [~] **2.2 Arc browser ingestion** (spec 02) - Frontend ingestion services implemented, backend endpoints done. Needs end-to-end testing with real data. - Three data sources, all via backend endpoints:
   1. StorableSidebar.json - current tabs with URLs, titles, space context. Poll every 60s via `GET /api/trace/arc/sidebar`. On each poll, diff against previous read - emit only new/changed tabs, update timestamps for changed tabs (not full reload).
   2. StorableArchiveItems.json - archived tabs with archivedAt timestamps, space names. Initial load via `GET /api/trace/arc/archive`, past 7 days.
   3. History SQLite (optional) - URLs with visit timestamps and counts. Via `GET /api/trace/arc/history`. Past 7 days. 4 profiles exist (8, 9, 12, 13); Profile 13 is primary.
   - Source ID: hash of (url + space name). Domain extraction + path summary for keyword matching (e.g., "github.com/anthropics/claude-code" -> domain: "github.com", path: "anthropics/claude-code"). Space names as labels. Metadata must include: url, spaceName, isPinned, isBookmark, domain, visitCount, dataSource. Graceful skip if data not found (no user-facing error).
   - Note: 30+ historical sidebar snapshots (`StorableSidebar.YYYY-MM-DD-*.json`) exist on disk but are deferred for MVP - could provide historical tab context in future.
 
-- [ ] **2.3 Calendar ingestion** (spec 03) - Read via `GET /api/trace/calendar/events`. 14-day past/future window. Exclude cancelled. Expand recurring events into individual instances (not stored as single record). Attendee emails are strong workstream detection signals (exclude self/user's own entry). Extract meeting links from description/location (Zoom, Google Meet patterns). Refresh every 5 minutes. Fall back to cached file if API unavailable.
+- [~] **2.3 Calendar ingestion** (spec 03) - Frontend ingestion services implemented, backend endpoints done. Needs end-to-end testing with real data. - Read via `GET /api/trace/calendar/events`. 14-day past/future window. Exclude cancelled. Expand recurring events into individual instances (not stored as single record). Attendee emails are strong workstream detection signals (exclude self/user's own entry). Extract meeting links from description/location (Zoom, Google Meet patterns). Refresh every 5 minutes. Fall back to cached file if API unavailable.
 
-- [ ] **2.4 Git activity ingestion** (spec 04) - Via `GET /api/trace/git/commits`. Two output types: (1) per-commit records with hash, message, branch, files changed, insertions/deletions; (2) per-project-directory records with structural metadata (path, fileCount, lastModified, hasPackageJson, hasGitRepo). Only commits by current user (matched by git config email). Branch names as labels. Refresh every 5 minutes.
+- [~] **2.4 Git activity ingestion** (spec 04) - Frontend ingestion services implemented, backend endpoints done. Needs end-to-end testing with real data. - Via `GET /api/trace/git/commits`. Two output types: (1) per-commit records with hash, message, branch, files changed, insertions/deletions; (2) per-project-directory records with structural metadata (path, fileCount, lastModified, hasPackageJson, hasGitRepo). Only commits by current user (matched by git config email). Branch names as labels. Refresh every 5 minutes.
 
-- [ ] **2.5 Claude Code session ingestion** (spec 05) - Via `GET /api/trace/claude-sessions`. Backend joins session metadata (`~/.claude/sessions/*.json`) with conversation data (`~/.claude/projects/<path>/<sessionId>.jsonl`). Title: first user message truncated to 100 chars. Body: null (privacy/size). Labels: [project directory name]. Metadata: { sessionId, projectPath, turnCount, duration, lastActiveTimestamp }. 14-day window. Refresh every 5 minutes.
+- [~] **2.5 Claude Code session ingestion** (spec 05) - Frontend ingestion services implemented, backend endpoints done. Needs end-to-end testing with real data. - Via `GET /api/trace/claude-sessions`. Backend joins session metadata (`~/.claude/sessions/*.json`) with conversation data (`~/.claude/projects/<path>/<sessionId>.jsonl`). Title: first user message truncated to 100 chars. Body: null (privacy/size). Labels: [project directory name]. Metadata: { sessionId, projectPath, turnCount, duration, lastActiveTimestamp }. 14-day window. Refresh every 5 minutes.
 
 - [ ] **2.6 HubSpot CRM ingestion** (spec 06) - API key from 1Password. Fetch contacts with emails -> build enrichment lookup table keyed by email (shared with ALL other sources): { displayName, companyName, dealNames, lifecycleStage, vipFlag, relationshipScore }. VIP flag: true if deal amount exceeds threshold OR lifecycle is "customer" (OR condition). Relationship score: deal stage progression + activity recency + lifecycle stage (customer > opportunity > lead). Fetch open deals -> normalize as activity records (preview: "Stage: [stage] - $[amount]"). Refresh every 15 minutes. Graceful skip if key unavailable (warning logged, no user-facing error).
 
@@ -291,24 +291,28 @@ Depends on P1 (shell, stores) and P3 (AI summaries to display).
 
 21. **main.py static vs parameterized route ordering** - VERIFIED: main.py has explicit comments about static routes needing to come before parameterized routes on the same prefix (e.g., `/api/agents/tool-sets` before `/api/agents/{agent_name}`). trace_router.py must follow the same pattern if any prefix has both static and parameterized routes.
 
+22. **Gmail ingestion serial message fetching** - Gmail ingestion service fetches individual messages serially for full content. Should batch-fetch or use threads endpoint for efficiency.
+
+23. **Ingestion services lack unit tests** - Ingestion services need tests. Currently only covered by type checking - should add unit tests with fixture data.
+
 ## Spec Coverage
 
 | Spec                         | Plan Items            | Status      |
 | ---------------------------- | --------------------- | ----------- |
-| 01-gmail-ingestion           | 2.0b, 2.1, 2.1a       | Not started |
-| 02-arc-browser-ingestion     | 2.0a, 2.0b, 2.2, 2.1a | Not started |
-| 03-calendar-ingestion        | 2.0b, 2.3, 2.1a       | Not started |
-| 04-file-activity-ingestion   | 2.0b, 2.4, 2.1a       | Not started |
-| 05-claude-sessions-ingestion | 2.0b, 2.5, 2.1a       | Not started |
+| 01-gmail-ingestion           | 2.0b, 2.1, 2.1a       | In progress |
+| 02-arc-browser-ingestion     | 2.0a, 2.0b, 2.2, 2.1a | In progress |
+| 03-calendar-ingestion        | 2.0b, 2.3, 2.1a       | In progress |
+| 04-file-activity-ingestion   | 2.0b, 2.4, 2.1a       | In progress |
+| 05-claude-sessions-ingestion | 2.0b, 2.5, 2.1a       | In progress |
 | 06-hubspot-ingestion         | 2.6, 3.4              | Not started |
 | 07-workstream-detection      | 2.0c, 3.1             | Not started |
-| 08-workstream-data-model     | 1.2, 1.3, 1.4, 1.5    | Not started |
+| 08-workstream-data-model     | 1.2, 1.3, 1.4, 1.5    | Complete    |
 | 09-context-linking           | 2.0c, 3.2             | Not started |
 | 10-workstream-timeline       | 4.1, 4.1a             | Not started |
 | 11-workstream-detail-view    | 4.2 (incl. merge UI)  | Not started |
 | 12-ai-summary                | 2.0c, 3.3             | Not started |
 | 13-email-actions             | 4.3                   | Not started |
-| 14-application-shell         | 1.6, 5.2, 5.3, 5.4    | Not started |
+| 14-application-shell         | 1.6, 5.2, 5.3, 5.4    | In progress |
 
 ## Implementation Order (recommended)
 
