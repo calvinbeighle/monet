@@ -209,13 +209,14 @@ class TestActivityStore:
 # ---------------------------------------------------------------------------
 
 
-KNOWN_AGENTS = {"email", "code", "planning", "general"}
+KNOWN_AGENTS = {"email", "code", "planning", "general", "writing"}
 
 EXPECTED_DESCRIPTIONS = {
     "email": "Reads, drafts, sends, and organizes your emails",
     "code": "Reviews PRs, writes code, and manages your GitHub repos",
     "planning": "Plans sprints, brainstorms ideas, and organizes tasks",
     "general": "Answers questions and handles general conversation",
+    "writing": "Creates, edits, and organizes your documents in Google Docs",
 }
 
 
@@ -228,7 +229,7 @@ class TestAgentDescriptions:
             assert isinstance(agent.description, str)
             assert len(agent.description) > 0
 
-    def test_describe_agents_returns_all_four(self, runner):
+    def test_describe_agents_returns_all_five(self, runner):
         agents = runner.describe_agents()
         names = {a["name"] for a in agents}
         assert names == KNOWN_AGENTS
@@ -335,11 +336,11 @@ class TestAgentsDashboardAPI:
         data = response.json()
         assert isinstance(data, list)
 
-    def test_list_agents_returns_four_agents(self, client):
+    def test_list_agents_returns_five_agents(self, client):
         response = client.get("/api/agents")
         assert response.status_code == 200
         agents = response.json()
-        assert len(agents) == 4
+        assert len(agents) == 5
         names = {a["name"] for a in agents}
         assert names == KNOWN_AGENTS
 

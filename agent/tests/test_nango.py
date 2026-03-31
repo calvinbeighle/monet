@@ -144,9 +144,9 @@ class TestNangoManager:
 
         mgr = NangoManager(secret_key="test-key")
         statuses = mgr.get_all_statuses()
-        assert len(statuses) == 2
+        assert len(statuses) == 3
         providers = {s.provider for s in statuses}
-        assert providers == {"gmail", "github"}
+        assert providers == {"gmail", "github", "google-docs"}
         assert all(s.connected for s in statuses)
 
     @patch("agent.nango.httpx.get")
@@ -284,9 +284,9 @@ class TestAPIEndpoints:
         assert "tools" in data
         assert "configured" in data
         assert isinstance(data["tools"], list)
-        assert len(data["tools"]) == 2
+        assert len(data["tools"]) == 3
         names = {t["name"] for t in data["tools"]}
-        assert names == {"Gmail", "GitHub"}
+        assert names == {"Gmail", "GitHub", "Google Docs"}
 
     def test_tools_status_has_required_fields(self):
         resp = self.client.get("/api/tools/status")

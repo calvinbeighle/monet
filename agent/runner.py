@@ -14,6 +14,7 @@ from agent.agents.code import CodeAgent
 from agent.agents.email import EmailAgent
 from agent.agents.general import GeneralAgent
 from agent.agents.planning import PlanningAgent
+from agent.agents.writing import WritingAgent
 from agent.approval import ApprovalGate
 from agent.diff_parser import parse_unified_diff
 from agent.models import (
@@ -41,6 +42,7 @@ def _get_agent_registry() -> dict[str, BaseAgent]:
         "code": CodeAgent(),
         "general": GeneralAgent(),
         "planning": PlanningAgent(),
+        "writing": WritingAgent(),
     }
 
 

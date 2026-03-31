@@ -161,6 +161,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           _tools = [
             _ToolInfo(name: 'Gmail', provider: 'gmail', connected: false),
             _ToolInfo(name: 'GitHub', provider: 'github', connected: false),
+            _ToolInfo(name: 'Google Docs', provider: 'google-docs', connected: false),
           ];
         });
       }
@@ -180,7 +181,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           builder: (ctx) => AlertDialog(
             backgroundColor: const Color(0xFF12121A),
             title: Text(
-              'Connect ${provider == 'gmail' ? 'Gmail' : 'GitHub'}',
+              'Connect ${provider == 'gmail' ? 'Gmail' : provider == 'google-docs' ? 'Google Docs' : 'GitHub'}',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
             ),
             content: Column(
@@ -299,7 +300,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget _buildConnectToolsForm() {
     return _FormCard(
       title: 'Connect Your Tools',
-      subtitle: 'Link your accounts so Monet can work with your email and code.',
+      subtitle: 'Link your accounts so Monet can work with your email, code, and documents.',
       error: _errorMessage,
       children: [
         if (_loadingTools)
@@ -349,7 +350,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _buildToolRow(_ToolInfo tool) {
-    final icon = tool.provider == 'gmail' ? Icons.email_outlined : Icons.code;
+    final IconData icon;
+    if (tool.provider == 'gmail') {
+      icon = Icons.email_outlined;
+    } else if (tool.provider == 'google-docs') {
+      icon = Icons.description_outlined;
+    } else {
+      icon = Icons.code;
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Container(

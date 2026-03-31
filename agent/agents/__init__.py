@@ -2,5 +2,6 @@ from agent.agents.email import EmailAgent
 from agent.agents.code import CodeAgent
 from agent.agents.general import GeneralAgent
 from agent.agents.planning import PlanningAgent
+from agent.agents.writing import WritingAgent
 
-__all__ = ["EmailAgent", "CodeAgent", "GeneralAgent", "PlanningAgent"]
+__all__ = ["EmailAgent", "CodeAgent", "GeneralAgent", "PlanningAgent", "WritingAgent"]

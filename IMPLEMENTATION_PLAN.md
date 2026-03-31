@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete - 517 passing tests (400 Python + 117 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete - 551 passing tests (434 Python + 117 Flutter).**
 
 ---
 
@@ -351,22 +351,31 @@ Debian VM boots directly into Monet.
 
 - **See Agents dashboard implemented (SCOPE.md Feature 3):** `agent/activity_store.py` with ActivityStore class tracks every agent run in SQLite (start time, finish time, status, tool calls count, approvals count, summary). Three new API endpoints: GET /api/agents returns all agents with metadata and stats, GET /api/agents/{name} returns detail with recent activity, GET /api/agents/activity returns global activity feed. Activity tracking wired into both run_sync and stream_sync in AgentRunner. Flutter `agents_dashboard.dart` renders agents as visual entity cards (not table rows) with real-time status indicators (idle/working), tool count, run count, and clickable detail views with tool listing, stats, and activity history. StatusBar has new "Agents" button that toggles the dashboard. All four agents now have description fields.
 - **Test count:** 517 total (400 Python + 117 Flutter), all passing.
-- **Remaining gaps:** Writing tool connector not implemented. VM testing needed for Tasks 19, 21, 22 boot flow. User-created agents (SCOPE.md mentions "configured through conversation") not implemented.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. User-created agents (SCOPE.md mentions "configured through conversation") not implemented.
+
+### Implementation Notes (2026-03-31) - Batch 16
+
+- **Writing Agent implemented (SCOPE.md Feature 2 - Writing tool):** `agent/agents/writing.py` with WritingAgent class - 5 tools (list_documents, read_document, create_document, edit_document, search_documents). Uses Nango Google Docs integration for OAuth and API access. create_document and edit_document require user approval. Registered in runner alongside email, code, planning, and general agents.
+- **Google Docs provider added to Nango:** `agent/nango.py` now includes google-docs provider with config_key, connection_id (NANGO_GDOCS_CONNECTION_ID env var), and display_name. Connection status and OAuth session creation work for all three providers.
+- **Writing routing rules added:** `agent/router.py` now routes writing-specific intents (document, doc, article, blog, essay, report, memo, notes, summarize, rewrite, proofread, google doc) to the writing agent with CHAT UI pattern. Rule is placed before the code-write rule so "write a document" routes to writing while "write a function" still routes to code.
+- **Onboarding updated for three tools:** `shell/lib/ui/onboarding.dart` Connect Tools step now shows Gmail, GitHub, and Google Docs with appropriate icons (description_outlined for docs). Fallback tool list includes all three providers. OAuth dialog handles google-docs provider name.
+- **Test count:** 551 total (434 Python + 117 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. User-created agents (SCOPE.md mentions "configured through conversation") not implemented. Keystroke collection pipeline not implemented.
 
 ---
 
 ## Architecture Notes
 
-| Layer           | Choice                              | Status                        |
-| --------------- | ----------------------------------- | ----------------------------- |
-| Base OS         | Debian 12 aarch64 (stripped)        | Scripts ready (needs VM test) |
-| Compositor      | Sway                                | Config ready (needs VM test)  |
-| Shell UI        | Flutter (native Wayland client)     | Implemented                   |
-| Agent backend   | Python + FastAPI                    | Implemented                   |
-| Agent framework | Claude Agent SDK                    | Implemented                   |
-| Integrations    | Nango (managed OAuth, Gmail/GitHub) | Implemented                   |
-| State           | SQLite                              | Implemented                   |
-| IPC             | Unix socket / HTTP localhost        | Implemented                   |
+| Layer           | Choice                              | Status                                                          |
+| --------------- | ----------------------------------- | --------------------------------------------------------------- |
+| Base OS         | Debian 12 aarch64 (stripped)        | Scripts ready (needs VM test)                                   |
+| Compositor      | Sway                                | Config ready (needs VM test)                                    |
+| Shell UI        | Flutter (native Wayland client)     | Implemented                                                     |
+| Agent backend   | Python + FastAPI                    | Implemented (5 agents: email, code, planning, general, writing) |
+| Agent framework | Claude Agent SDK                    | Implemented                                                     |
+| Integrations    | Nango (managed OAuth, Gmail/GitHub) | Implemented                                                     |
+| State           | SQLite                              | Implemented                                                     |
+| IPC             | Unix socket / HTTP localhost        | Implemented                                                     |
 
 ## Known Discrepancies
 

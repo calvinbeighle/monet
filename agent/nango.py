@@ -31,6 +31,13 @@ PROVIDERS = {
         "connection_id": os.environ.get("NANGO_GITHUB_CONNECTION_ID", "github-default"),
         "display_name": "GitHub",
     },
+    "google-docs": {
+        "config_key": "google-docs",
+        "connection_id": os.environ.get(
+            "NANGO_GDOCS_CONNECTION_ID", "google-docs-default"
+        ),
+        "display_name": "Google Docs",
+    },
 }
 
 

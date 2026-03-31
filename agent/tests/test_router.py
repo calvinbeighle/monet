@@ -124,3 +124,66 @@ class TestIntentRouter:
         result = self.router.route("build a REST API endpoint")
         assert result.agent == "code"
         assert result.ui_pattern == UIPattern.CHAT.value
+
+    # Writing agent routing tests
+
+    def test_document_routes_to_writing(self):
+        result = self.router.route("write a document about the project")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_google_doc_routes_to_writing(self):
+        result = self.router.route("create a google doc for the meeting")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_article_routes_to_writing(self):
+        result = self.router.route("write an article about AI")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_blog_routes_to_writing(self):
+        result = self.router.route("write a blog post")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_essay_routes_to_writing(self):
+        result = self.router.route("write an essay on climate change")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_report_routes_to_writing(self):
+        result = self.router.route("create a report on Q1 sales")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_memo_routes_to_writing(self):
+        result = self.router.route("write a memo to the team")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_notes_routes_to_writing(self):
+        result = self.router.route("take notes from the meeting")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_summarize_routes_to_writing(self):
+        result = self.router.route("summarize this text for me")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_rewrite_routes_to_writing(self):
+        result = self.router.route("rewrite this paragraph")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_proofread_routes_to_writing(self):
+        result = self.router.route("proofread my document")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_write_function_still_routes_to_code(self):
+        """'write a function' has no writing keywords, falls through to code."""
+        result = self.router.route("write a function to parse JSON")
+        assert result.agent == "code"
+        assert result.ui_pattern == UIPattern.CHAT.value
