@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-21 complete - 383 passing tests (293 Python + 90 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete - 420 passing tests (330 Python + 90 Flutter).**
 
 ---
 
@@ -209,9 +209,9 @@ Debian VM boots directly into Monet.
 
 ### Task 22: Image Build Script
 
-- [ ] Create `os/build-image.sh` - stock Debian ISO -> custom Monet .qcow2
-- [ ] Automated: strip, install deps, copy Monet, configure boot
-- [ ] Test on fresh UTM instance
+- [x] Create `os/build-image.sh` - stock Debian ISO -> custom Monet .qcow2
+- [x] Automated: strip, install deps, copy Monet, configure boot
+- [ ] Test on fresh UTM instance (needs VM testing)
 
 ---
 
@@ -322,6 +322,13 @@ Debian VM boots directly into Monet.
 - **Flutter system controls:** StatusBar now shows real-time WiFi signal strength (3 tiers), volume level with mute toggle, brightness level, and power button. WiFi tap opens a bottom sheet with network scan, password dialog, and connect. Power tap opens a dialog with shutdown/restart/suspend options. System state polled every 10 seconds.
 - **OS layer updates:** Sway config adds XF86Audio* and XF86MonBrightness* hardware key bindings. install.sh now installs brightnessctl and plymouth. Plymouth theme (monet.plymouth + monet.script) renders dark background (#0A0A0F) with "M O N E T" text and pulsing dot. GRUB configured for quiet boot (quiet splash loglevel=0 vt.global_cursor_default=0). Kernel printk suppressed via sysctl. Polkit rules allow monet user to shutdown/restart/suspend without password.
 - **Test count:** 383 total (293 Python + 90 Flutter), all passing.
+
+### Implementation Notes (2026-03-30) - Batch 13
+
+- **Image build script implemented (Task 22):** `os/build-image.sh` automates the full pipeline from stock Debian 12 cloud image to bootable Monet .qcow2. Downloads official Debian cloud image (arm64 or amd64), resizes to 8GB, injects Monet source tree via virt-customize, runs strip.sh and install.sh inside the image, compacts the output. Supports --arch, --size, --source, --skip-download, --api-key, --nango-key, --password flags. Requires libguestfs-tools + qemu-utils on a Linux build host. Uses a staging directory + install wrapper script to bridge install.sh's repo-relative path expectations. Final image is compressed qcow2 ready for UTM/QEMU.
+- **Build script tests:** 37 new tests in `test_build_image.py` covering script existence, permissions, shebang, strict mode, root guard, required tool checks, repo file verification, architecture support, download/resize/strip/install pipeline, argument parsing (--help exits 0, unknown flags exit 1), output path construction, safety (no hardcoded keys, operates on copy not base, growpart+resize2fs), and repo file presence.
+- **Test count:** 420 total (330 Python + 90 Flutter), all passing.
+- **Remaining gaps:** Tool connection status hardcoded in StatusBar (needs Nango connection state API). "See Agents" dashboard from SCOPE.md not in implementation plan or codebase. Connect Tools onboarding step not implemented. VM testing needed for Tasks 19, 21, 22 boot flow.
 
 ---
 
