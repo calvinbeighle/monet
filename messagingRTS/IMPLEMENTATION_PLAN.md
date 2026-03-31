@@ -153,27 +153,27 @@ These must be resolved before implementation begins:
 
 ### 2.4 Zone System
 
-- [ ] Six zones: Active Front, Opportunities, At Risk, Lost, Noise, Base/Handled
-- [ ] Zone layout initialization (canonical positions on canvas)
-- [ ] Zone rendering: filled polygons with color tinting, boundary indicators, labels
-- [ ] Thread count display per zone (including zero)
-- [ ] Adaptive zone sizing: area scales proportional to thread population
+- [x] Six zones: Active Front, Opportunities, At Risk, Lost, Noise, Base/Handled
+- [x] Zone layout initialization (canonical positions on canvas)
+- [x] Zone rendering: filled polygons with color tinting, boundary indicators, labels
+- [x] Thread count display per zone (including zero)
+- [x] Adaptive zone sizing: area scales proportional to thread population
 - [ ] Soft boundaries: threads drift across, not snap
-- [ ] Zone alerts: threshold evaluation, active/inactive states, visual indication
+- [x] Zone alerts: threshold evaluation, active/inactive states, visual indication
 - [ ] Manual thread reclassification via drag (user override flag)
 - [ ] **Spec**: 04-zone-system
 - [ ] **Tests**: Zone layout, count accuracy, adaptive sizing, alert threshold firing/resolution, drag override
 
 ### 2.5 Thread Positioning & Drift Engine
 
-- [ ] Urgency scoring: time since last reply, sender importance, deadlines, thread age
-- [ ] Value scoring: sender relationship, keywords, engagement depth, user labels/stars
-- [ ] Initial placement: new threads positioned in Active or Monitor zone based on scores
-- [ ] Tick-based continuous drift: target position computed from scores + neglect duration
-- [ ] Smooth movement: actual position approaches target by fractional step per tick
-- [ ] Neglect drift: proportional to neglect duration, toward Lost zone
-- [ ] User action repositioning: reply snaps target to Active, archive drifts to archive boundary
-- [ ] Collision avoidance: minimum separation distance enforcement
+- [x] Urgency scoring: time since last reply, sender importance, deadlines, thread age
+- [x] Value scoring: sender relationship, keywords, engagement depth, user labels/stars
+- [x] Initial placement: new threads positioned in Active or Monitor zone based on scores
+- [x] Tick-based continuous drift: target position computed from scores + neglect duration
+- [x] Smooth movement: actual position approaches target by fractional step per tick
+- [x] Neglect drift: proportional to neglect duration, toward Lost zone
+- [x] User action repositioning: reply snaps target to Active, archive drifts to archive boundary
+- [x] Collision avoidance: minimum separation distance enforcement
 - [ ] Position persistence across sessions
 - [ ] Score re-evaluation on session resume (reflect accumulated neglect)
 - [ ] **Spec**: 03-thread-positioning
