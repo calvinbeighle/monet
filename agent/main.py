@@ -125,19 +125,39 @@ def auth_status():
 
 @app.post("/api/auth/create")
 def create_user(request: AuthRequest):
-    """Create a new user account."""
+    """Create a new user account and issue a session token."""
     try:
         auth_store.create_user(request.username, request.password)
     except UserExistsError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return {"status": "created", "username": request.username}
+    token = auth_store.create_token(request.username)
+    return {"status": "created", "username": request.username, "token": token}
 
 
 @app.post("/api/auth/login")
 def login(request: AuthRequest):
-    """Authenticate a user."""
+    """Authenticate a user and issue a persistent session token."""
     if auth_store.authenticate(request.username, request.password):
-        return {"authenticated": True, "username": request.username}
+        token = auth_store.create_token(request.username)
+        return {"authenticated": True, "username": request.username, "token": token}
     raise HTTPException(status_code=401, detail="Invalid username or password")
+
+
+@app.get("/api/auth/verify")
+def verify_token(token: str):
+    """Verify a session token. Returns username if valid, 401 if not."""
+    username = auth_store.verify_token(token)
+    if username is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return {"authenticated": True, "username": username}
+
+
+@app.post("/api/auth/logout")
+def logout(token: str):
+    """Revoke a session token (logout)."""
+    revoked = auth_store.revoke_token(token)
+    if not revoked:
+        raise HTTPException(status_code=404, detail="Token not found")
+    return {"status": "logged_out"}

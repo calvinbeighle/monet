@@ -11,12 +11,14 @@ class StatusBar extends StatelessWidget {
   final List<ConnectedTool> tools;
   final String? activeAgent;
   final String? activePattern;
+  final VoidCallback? onLogout;
 
   const StatusBar({
     super.key,
     this.tools = const [],
     this.activeAgent,
     this.activePattern,
+    this.onLogout,
   });
 
   @override
@@ -38,6 +40,10 @@ class StatusBar extends StatelessWidget {
           if (activePattern != null) ...[
             const SizedBox(width: 12),
             _buildPatternBadge(),
+          ],
+          if (onLogout != null) ...[
+            const SizedBox(width: 12),
+            _buildLogoutButton(),
           ],
         ],
       ),
@@ -108,6 +114,26 @@ class StatusBar extends StatelessWidget {
           color: Colors.white.withValues(alpha: 0.5),
           fontSize: 11,
         ),
+      ),
+    );
+  }
+
+  Widget _buildLogoutButton() {
+    return GestureDetector(
+      onTap: onLogout,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.logout, size: 14, color: Colors.white.withValues(alpha: 0.4)),
+          const SizedBox(width: 4),
+          Text(
+            'Logout',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 12,
+            ),
+          ),
+        ],
       ),
     );
   }

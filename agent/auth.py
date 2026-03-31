@@ -1,8 +1,10 @@
-"""Authentication module - SQLite user store with password hashing.
+"""Authentication module - SQLite user store with password hashing and session tokens.
 
-Provides first-boot user creation and subsequent login for the Monet OS.
-Passwords are hashed with PBKDF2-HMAC-SHA256 (100k iterations) and stored
-as salt:hash in SQLite. This is the single source of truth for user identity.
+Provides first-boot user creation, login, and persistent session tokens for the
+Monet OS. Passwords are hashed with PBKDF2-HMAC-SHA256 (100k iterations) and
+stored as salt:hash in SQLite. Session tokens are cryptographically random 32-byte
+hex strings stored alongside the username they belong to. Tokens persist until
+explicit logout or revocation - this is what enables "stay logged in until logout."
 """
 
 import hashlib
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 PBKDF2_ITERATIONS = 100_000
 SALT_BYTES = 16
+TOKEN_BYTES = 32
 
 
 class UserExistsError(Exception):
@@ -22,7 +25,7 @@ class UserExistsError(Exception):
 
 
 class AuthStore:
-    """SQLite-backed user authentication store."""
+    """SQLite-backed user authentication store with persistent session tokens."""
 
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
@@ -35,6 +38,14 @@ class AuthStore:
                     username TEXT PRIMARY KEY,
                     password_hash TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS auth_tokens (
+                    token TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (username) REFERENCES users(username)
                 )"""
             )
             conn.commit()
@@ -98,3 +109,40 @@ class AuthStore:
                 "SELECT username FROM users ORDER BY created_at"
             ).fetchall()
             return [row[0] for row in rows]
+
+    def create_token(self, username: str) -> str:
+        """Create a persistent session token for a user. Returns the token string."""
+        token = secrets.token_hex(TOKEN_BYTES)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "INSERT INTO auth_tokens (token, username) VALUES (?, ?)",
+                (token, username),
+            )
+            conn.commit()
+        logger.info("Created session token for user: %s", username)
+        return token
+
+    def verify_token(self, token: str) -> str | None:
+        """Verify a session token. Returns the username if valid, None otherwise."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT username FROM auth_tokens WHERE token = ?",
+                (token,),
+            ).fetchone()
+            return row[0] if row else None
+
+    def revoke_token(self, token: str) -> bool:
+        """Revoke a session token. Returns True if a token was actually deleted."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("DELETE FROM auth_tokens WHERE token = ?", (token,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def revoke_all_tokens(self, username: str) -> int:
+        """Revoke all session tokens for a user. Returns count of tokens revoked."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "DELETE FROM auth_tokens WHERE username = ?", (username,)
+            )
+            conn.commit()
+            return cursor.rowcount

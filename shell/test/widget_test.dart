@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:shell/main.dart';
 import 'package:shell/services/agent_client.dart';
@@ -16,23 +17,33 @@ import 'package:shell/ui/status_bar.dart';
 
 void main() {
   group('MonetApp', () {
-    testWidgets('shows onboarding screen before authentication', (tester) async {
-      await tester.pumpWidget(const MonetApp());
-      // Initial state shows loading spinner while checking auth status
-      expect(find.byType(OnboardingScreen), findsOneWidget);
+    setUp(() {
+      // Initialize SharedPreferences with empty values for test isolation
+      SharedPreferences.setMockInitialValues({});
     });
 
-    testWidgets('shows login form when backend unavailable', (tester) async {
+    testWidgets('shows loading spinner during session check', (tester) async {
       await tester.pumpWidget(const MonetApp());
-      // Wait for the auth check to fail (no backend) and show login form
-      await tester.pumpAndSettle();
+      // Initial state shows loading spinner while checking stored token
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('shows login form when no stored session and backend unavailable', (tester) async {
+      await tester.pumpWidget(const MonetApp());
+      // Pump to let the async session restore complete (no stored token)
+      // then let onboarding check auth status and fail (no backend)
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('Monet'), findsOneWidget);
       expect(find.text('Sign in to continue.'), findsOneWidget);
     });
 
     testWidgets('login form has username and password fields', (tester) async {
       await tester.pumpWidget(const MonetApp());
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('Username'), findsOneWidget);
       expect(find.text('Password'), findsOneWidget);
       expect(find.text('Sign In'), findsOneWidget);
@@ -791,6 +802,36 @@ void main() {
         ),
       ));
       expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('shows logout button when onLogout provided', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(onLogout: () {}),
+        ),
+      ));
+      expect(find.text('Logout'), findsOneWidget);
+      expect(find.byIcon(Icons.logout), findsOneWidget);
+    });
+
+    testWidgets('hides logout button when onLogout is null', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(),
+        ),
+      ));
+      expect(find.text('Logout'), findsNothing);
+    });
+
+    testWidgets('logout button calls onLogout callback', (tester) async {
+      bool logoutCalled = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(onLogout: () => logoutCalled = true),
+        ),
+      ));
+      await tester.tap(find.text('Logout'));
+      expect(logoutCalled, true);
     });
   });
 

@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 in progress - 258 passing tests (203 Python + 55 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 in progress - 277 passing tests (219 Python + 58 Flutter).**
 
 ---
 
@@ -193,8 +193,8 @@ Debian VM boots directly into Monet.
 - [x] Create `agent/auth.py` - SQLite user store with bcrypt/pbkdf2 password hashing
 - [x] Create `agent/tests/test_auth.py`
 - [x] Create `shell/lib/ui/onboarding.dart` - first-boot: create user + connect tools
-- [ ] Lock screen on subsequent boots (partially done - login form exists but no session persistence across app restarts)
-- [ ] Session persistence until explicit logout
+- [x] Lock screen on subsequent boots (fully implemented - persistent session tokens survive app restarts; cold start validates token via /api/auth/verify and skips login if valid)
+- [x] Session persistence until explicit logout
 - [x] Auth API routes in FastAPI
 
 ### Task 21: System Integration
@@ -236,7 +236,7 @@ Debian VM boots directly into Monet.
 - **Real-time token streaming fixed:** Previously tokens were buffered in a local `streamedContent` string and only rendered on the `done` event. Now tokens stream into the UI on each event via mutable `ChatMessage` updates.
 - **Intent bar hidden on initial load:** The intent bar is hidden when `_activePattern` is null (initial state), relying on chat pattern's built-in input field. This is intentional - chat is the default landing view.
 - **Tool connection status hardcoded:** StatusBar always shows Gmail/GitHub as disconnected. Needs Nango connection state API.
-- **Auth session not persisted:** Login state is in-memory only (`_authenticated` flag). App restart requires re-login. Needs shared_preferences or secure storage.
+- **Auth session persistence:** Resolved - session tokens are now cryptographically random, persisted via shared_preferences, and validated on cold start via /api/auth/verify.
 
 ### Implementation Notes (2026-03-30) - Batch 2
 
@@ -290,6 +290,12 @@ Debian VM boots directly into Monet.
 - **Missing tool execution tests added:** Added tests for email agent (draft_reply, archive_email, label_email add/remove, send_email with reply, list_inbox unread_only) and code agent (read_file, post_review, approve_pr, create_branch, write_file, push_code).
 - **E2E flow tests added:** Comprehensive tests for all three Phase 3 flows: Email Single Reply (read->draft->send chain, streaming approval, rejection), Email Batch Inbox (multiple approvals, mixed approve/reject), Code PR Review (list->read->review chain, diff_update emission, merge approval, error handling).
 - **Test count:** 258 total (203 Python + 55 Flutter), all passing.
+
+### Implementation Notes (2026-03-30) - Batch 9
+
+- **Session persistence implemented end-to-end:** Backend issues cryptographically random 32-byte tokens on login/create, stores them in an `auth_tokens` SQLite table. Flutter shell persists the token via shared_preferences. On cold start, MonetApp calls /api/auth/verify to validate the stored token - if valid, skips the login screen entirely. If invalid or backend unreachable, clears the stale token and shows login.
+- **Logout wired end-to-end:** StatusBar has a logout button that calls /api/auth/logout to revoke the token server-side, then clears local storage and returns to the login screen.
+- **Test count:** 277 total (219 Python + 58 Flutter), all passing.
 
 ---
 

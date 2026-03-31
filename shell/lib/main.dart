@@ -25,16 +25,43 @@ class MonetApp extends StatefulWidget {
 
 class _MonetAppState extends State<MonetApp> {
   bool _authenticated = false;
+  bool _checkingSession = true;
+  late final AgentClient _agentClient;
+
+  @override
+  void initState() {
+    super.initState();
+    _agentClient = AgentClient();
+    _tryRestoreSession();
+  }
+
+  Future<void> _tryRestoreSession() async {
+    final username = await _agentClient.tryRestoreSession();
+    setState(() {
+      _authenticated = username != null;
+      _checkingSession = false;
+    });
+  }
 
   void _onAuthenticated() {
     setState(() => _authenticated = true);
   }
 
+  void _onLogout() async {
+    await _agentClient.logout();
+    setState(() => _authenticated = false);
+  }
+
+  @override
+  void dispose() {
+    _agentClient.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Provider<AgentClient>(
-      create: (_) => AgentClient(),
-      dispose: (_, client) => client.dispose(),
+    return Provider<AgentClient>.value(
+      value: _agentClient,
       child: MaterialApp(
         title: 'Monet',
         debugShowCheckedModeBanner: false,
@@ -47,16 +74,25 @@ class _MonetAppState extends State<MonetApp> {
             primary: Color(0xFF7C6EF0),
           ),
         ),
-        home: _authenticated
-            ? const MonetShell()
-            : OnboardingScreen(onAuthenticated: _onAuthenticated),
+        home: _checkingSession
+            ? const Scaffold(
+                backgroundColor: Color(0xFF0A0A0F),
+                body: Center(
+                  child: CircularProgressIndicator(color: Color(0xFF7C6EF0)),
+                ),
+              )
+            : _authenticated
+                ? MonetShell(onLogout: _onLogout)
+                : OnboardingScreen(onAuthenticated: _onAuthenticated),
       ),
     );
   }
 }
 
 class MonetShell extends StatefulWidget {
-  const MonetShell({super.key});
+  final VoidCallback? onLogout;
+
+  const MonetShell({super.key, this.onLogout});
 
   @override
   State<MonetShell> createState() => MonetShellState();
@@ -423,6 +459,7 @@ class MonetShellState extends State<MonetShell> {
             ],
             activeAgent: _isRunning ? _activeAgent : null,
             activePattern: _activePattern,
+            onLogout: widget.onLogout,
           ),
         ],
       ),

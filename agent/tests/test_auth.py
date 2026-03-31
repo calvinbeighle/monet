@@ -114,6 +114,76 @@ class TestAuthStore:
         assert store2.authenticate("alice", "password123") is True
 
 
+class TestAuthTokens:
+    """Tests for session token management - the mechanism that enables
+    'stay logged in until explicit logout' across app restarts."""
+
+    def test_create_and_verify_token(self, auth_store):
+        auth_store.create_user("alice", "password123")
+        token = auth_store.create_token("alice")
+        assert isinstance(token, str)
+        assert len(token) == 64  # 32 bytes = 64 hex chars
+        assert auth_store.verify_token(token) == "alice"
+
+    def test_verify_invalid_token(self, auth_store):
+        assert auth_store.verify_token("nonexistent_token") is None
+
+    def test_revoke_token(self, auth_store):
+        auth_store.create_user("alice", "password123")
+        token = auth_store.create_token("alice")
+        assert auth_store.verify_token(token) == "alice"
+        assert auth_store.revoke_token(token) is True
+        assert auth_store.verify_token(token) is None
+
+    def test_revoke_nonexistent_token(self, auth_store):
+        assert auth_store.revoke_token("no_such_token") is False
+
+    def test_multiple_tokens_per_user(self, auth_store):
+        """A user can have multiple active sessions (e.g. different devices)."""
+        auth_store.create_user("alice", "password123")
+        token1 = auth_store.create_token("alice")
+        token2 = auth_store.create_token("alice")
+        assert token1 != token2
+        assert auth_store.verify_token(token1) == "alice"
+        assert auth_store.verify_token(token2) == "alice"
+
+    def test_revoke_all_tokens(self, auth_store):
+        auth_store.create_user("alice", "password123")
+        auth_store.create_token("alice")
+        auth_store.create_token("alice")
+        count = auth_store.revoke_all_tokens("alice")
+        assert count == 2
+
+    def test_revoke_all_tokens_no_tokens(self, auth_store):
+        auth_store.create_user("alice", "password123")
+        assert auth_store.revoke_all_tokens("alice") == 0
+
+    def test_token_persists_across_instances(self, auth_store):
+        """Token survives creating a new AuthStore on the same db - this is the
+        core property that enables session persistence across app restarts."""
+        auth_store.create_user("alice", "password123")
+        token = auth_store.create_token("alice")
+        store2 = AuthStore(db_path=auth_store.db_path)
+        assert store2.verify_token(token) == "alice"
+
+    def test_revoking_one_token_preserves_others(self, auth_store):
+        auth_store.create_user("alice", "password123")
+        token1 = auth_store.create_token("alice")
+        token2 = auth_store.create_token("alice")
+        auth_store.revoke_token(token1)
+        assert auth_store.verify_token(token1) is None
+        assert auth_store.verify_token(token2) == "alice"
+
+    def test_tokens_scoped_to_user(self, auth_store):
+        """Revoking all tokens for one user doesn't affect another's."""
+        auth_store.create_user("alice", "pass1")
+        auth_store.create_user("bob", "pass2")
+        auth_store.create_token("alice")
+        bob_token = auth_store.create_token("bob")
+        auth_store.revoke_all_tokens("alice")
+        assert auth_store.verify_token(bob_token) == "bob"
+
+
 class TestAuthAPI:
     """Tests for the auth API routes in FastAPI."""
 
@@ -217,3 +287,61 @@ class TestAuthAPI:
             json={"username": "alice", "password": "ab"},
         )
         assert resp.status_code == 400
+
+    def test_login_returns_token(self, client):
+        """Login should return a session token for persistent auth."""
+        client.post(
+            "/api/auth/create",
+            json={"username": "alice", "password": "password123"},
+        )
+        resp = client.post(
+            "/api/auth/login",
+            json={"username": "alice", "password": "password123"},
+        )
+        data = resp.json()
+        assert "token" in data
+        assert len(data["token"]) == 64
+
+    def test_create_user_returns_token(self, client):
+        """Account creation should auto-issue a session token."""
+        resp = client.post(
+            "/api/auth/create",
+            json={"username": "alice", "password": "password123"},
+        )
+        data = resp.json()
+        assert "token" in data
+        assert len(data["token"]) == 64
+
+    def test_verify_valid_token(self, client):
+        resp = client.post(
+            "/api/auth/create",
+            json={"username": "alice", "password": "password123"},
+        )
+        token = resp.json()["token"]
+        resp = client.get(f"/api/auth/verify?token={token}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["authenticated"] is True
+        assert data["username"] == "alice"
+
+    def test_verify_invalid_token(self, client):
+        resp = client.get("/api/auth/verify?token=bogus_token")
+        assert resp.status_code == 401
+
+    def test_logout_revokes_token(self, client):
+        resp = client.post(
+            "/api/auth/create",
+            json={"username": "alice", "password": "password123"},
+        )
+        token = resp.json()["token"]
+        # Logout
+        resp = client.post(f"/api/auth/logout?token={token}")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "logged_out"
+        # Token should now be invalid
+        resp = client.get(f"/api/auth/verify?token={token}")
+        assert resp.status_code == 401
+
+    def test_logout_invalid_token(self, client):
+        resp = client.post("/api/auth/logout?token=no_such_token")
+        assert resp.status_code == 404

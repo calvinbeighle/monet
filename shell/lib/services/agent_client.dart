@@ -2,6 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+const _tokenKey = 'monet_auth_token';
+const _usernameKey = 'monet_auth_username';
 
 class AgentEvent {
   final String type;
@@ -95,11 +99,16 @@ class ApprovalRequest {
 class AgentClient {
   final String baseUrl;
   final http.Client _client;
+  String? _authToken;
+  String? _username;
 
   AgentClient({
     this.baseUrl = 'http://localhost:8000',
     http.Client? client,
   }) : _client = client ?? http.Client();
+
+  String? get authToken => _authToken;
+  String? get username => _username;
 
   /// Check if any user account exists (first-boot detection).
   Future<Map<String, dynamic>> authStatus() async {
@@ -110,7 +119,7 @@ class AgentClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
-  /// Create a new user account.
+  /// Create a new user account. Stores the returned session token for persistence.
   Future<Map<String, dynamic>> createUser(String username, String password) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/api/auth/create'),
@@ -121,10 +130,12 @@ class AgentClient {
       final detail = (jsonDecode(response.body) as Map<String, dynamic>)['detail'] ?? 'Unknown error';
       throw Exception(detail);
     }
-    return jsonDecode(response.body) as Map<String, dynamic>;
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    await _persistToken(data['token'] as String?, username);
+    return data;
   }
 
-  /// Authenticate a user. Returns the response map on success, throws on failure.
+  /// Authenticate a user. Stores the returned session token for persistence.
   Future<Map<String, dynamic>> login(String username, String password) async {
     final response = await _client.post(
       Uri.parse('$baseUrl/api/auth/login'),
@@ -137,7 +148,66 @@ class AgentClient {
     if (response.statusCode != 200) {
       throw Exception('Login failed: ${response.statusCode}');
     }
-    return jsonDecode(response.body) as Map<String, dynamic>;
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    await _persistToken(data['token'] as String?, username);
+    return data;
+  }
+
+  /// Try to restore a session from a previously stored token.
+  /// Returns the username if the token is still valid, null otherwise.
+  Future<String?> tryRestoreSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_tokenKey);
+    if (token == null) return null;
+
+    try {
+      final response = await _client.get(
+        Uri.parse('$baseUrl/api/auth/verify?token=$token'),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        _authToken = token;
+        _username = data['username'] as String?;
+        return _username;
+      }
+    } catch (_) {
+      // Backend unreachable - clear stale token
+    }
+    // Token invalid or backend down - clear stored credentials
+    await _clearPersistedToken();
+    return null;
+  }
+
+  /// Logout: revoke the token on the backend and clear local storage.
+  Future<void> logout() async {
+    if (_authToken != null) {
+      try {
+        await _client.post(
+          Uri.parse('$baseUrl/api/auth/logout?token=$_authToken'),
+        );
+      } catch (_) {
+        // Best-effort revocation - clear locally regardless
+      }
+    }
+    _authToken = null;
+    _username = null;
+    await _clearPersistedToken();
+  }
+
+  Future<void> _persistToken(String? token, String username) async {
+    _authToken = token;
+    _username = username;
+    if (token != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tokenKey, token);
+      await prefs.setString(_usernameKey, username);
+    }
+  }
+
+  Future<void> _clearPersistedToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_usernameKey);
   }
 
   Future<bool> healthCheck() async {
