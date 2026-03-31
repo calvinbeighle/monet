@@ -1,5 +1,8 @@
 """Tests for the intent router."""
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
 from agent.models import UIPattern
 from agent.router import IntentRouter
 
@@ -217,3 +220,118 @@ class TestIntentRouter:
         result = self.router.route("write a blog about productivity")
         assert result.agent == "writing"
         assert result.ui_pattern == UIPattern.CHAT.value
+
+
+def _make_mock_client(response_text: str) -> MagicMock:
+    """Create a mock Anthropic client that returns the given text."""
+    client = MagicMock()
+    content_block = SimpleNamespace(text=response_text)
+    client.messages.create.return_value = SimpleNamespace(content=[content_block])
+    return client
+
+
+class TestLLMFallbackRouter:
+    """Tests for the Claude Haiku fallback when keyword rules miss."""
+
+    def test_llm_classifies_email_intent(self):
+        client = _make_mock_client('{"agent": "email", "ui_pattern": "chat"}')
+        router = IntentRouter(client=client)
+        result = router.route("anything new from John today")
+        assert result.agent == "email"
+        assert result.ui_pattern == UIPattern.CHAT.value
+        client.messages.create.assert_called_once()
+
+    def test_llm_classifies_email_batch_intent(self):
+        client = _make_mock_client('{"agent": "email", "ui_pattern": "tinder"}')
+        router = IntentRouter(client=client)
+        result = router.route("clean up my mailbox a bit")
+        assert result.agent == "email"
+        assert result.ui_pattern == UIPattern.TINDER.value
+
+    def test_llm_classifies_code_intent(self):
+        client = _make_mock_client('{"agent": "code", "ui_pattern": "chat"}')
+        router = IntentRouter(client=client)
+        result = router.route("make the login page faster")
+        assert result.agent == "code"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_llm_classifies_planning_intent(self):
+        client = _make_mock_client('{"agent": "planning", "ui_pattern": "whiteboard"}')
+        router = IntentRouter(client=client)
+        result = router.route("what should we work on next quarter")
+        assert result.agent == "planning"
+        assert result.ui_pattern == UIPattern.WHITEBOARD.value
+
+    def test_llm_classifies_writing_intent(self):
+        client = _make_mock_client('{"agent": "writing", "ui_pattern": "chat"}')
+        router = IntentRouter(client=client)
+        result = router.route("help me put together a pitch deck outline")
+        assert result.agent == "writing"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_llm_not_called_when_keywords_match(self):
+        client = _make_mock_client('{"agent": "general", "ui_pattern": "chat"}')
+        router = IntentRouter(client=client)
+        result = router.route("handle my inbox")
+        assert result.agent == "email"
+        assert result.ui_pattern == UIPattern.TINDER.value
+        client.messages.create.assert_not_called()
+
+    def test_llm_failure_falls_back_to_general(self):
+        client = MagicMock()
+        client.messages.create.side_effect = Exception("API error")
+        router = IntentRouter(client=client)
+        result = router.route("anything new from John today")
+        assert result.agent == "general"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_llm_invalid_json_falls_back_to_general(self):
+        client = _make_mock_client("not valid json")
+        router = IntentRouter(client=client)
+        result = router.route("check on my messages")
+        assert result.agent == "general"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_llm_invalid_agent_name_sanitized(self):
+        client = _make_mock_client('{"agent": "hacker", "ui_pattern": "chat"}')
+        router = IntentRouter(client=client)
+        result = router.route("do something weird")
+        assert result.agent == "general"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_llm_invalid_ui_pattern_sanitized(self):
+        client = _make_mock_client('{"agent": "email", "ui_pattern": "hologram"}')
+        router = IntentRouter(client=client)
+        result = router.route("check my messages")
+        assert result.agent == "email"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_no_client_skips_llm(self):
+        router = IntentRouter()
+        result = router.route("anything new from John today")
+        assert result.agent == "general"
+        assert result.ui_pattern == UIPattern.CHAT.value
+
+    def test_llm_uses_haiku_model(self):
+        client = _make_mock_client('{"agent": "email", "ui_pattern": "chat"}')
+        router = IntentRouter(client=client)
+        router.route("check my messages from today")
+        call_kwargs = client.messages.create.call_args
+        assert "haiku" in call_kwargs.kwargs.get(
+            "model", call_kwargs[1].get("model", "")
+        )
+
+    def test_llm_passes_system_prompt(self):
+        client = _make_mock_client('{"agent": "email", "ui_pattern": "chat"}')
+        router = IntentRouter(client=client)
+        router.route("check my messages from today")
+        call_kwargs = client.messages.create.call_args
+        system = call_kwargs.kwargs.get("system", call_kwargs[1].get("system", ""))
+        assert "intent classifier" in system.lower()
+
+    def test_original_intent_preserved_with_llm(self):
+        client = _make_mock_client('{"agent": "email", "ui_pattern": "chat"}')
+        router = IntentRouter(client=client)
+        intent = "what did John send me yesterday"
+        result = router.route(intent)
+        assert result.original == intent

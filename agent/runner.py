@@ -66,8 +66,8 @@ class AgentRunner:
         custom_agent_store: Optional[CustomAgentStore] = None,
     ) -> None:
         self.approval_gate = approval_gate or ApprovalGate()
-        self.router = router or IntentRouter()
         self.client = client or anthropic.Anthropic()
+        self.router = router or IntentRouter(client=self.client)
         self.agents = _get_agent_registry()
         self.session_store = session_store or SessionStore()
         self.activity_store = activity_store or ActivityStore(
