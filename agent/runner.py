@@ -14,6 +14,7 @@ from agent.agents.email import EmailAgent
 from agent.agents.general import GeneralAgent
 from agent.agents.planning import PlanningAgent
 from agent.approval import ApprovalGate
+from agent.diff_parser import parse_unified_diff
 from agent.models import (
     AgentEvent,
     AgentOutput,
@@ -546,6 +547,20 @@ class AgentRunner:
                         type="whiteboard_update",
                         data="",
                         metadata={"nodes": list(agent._nodes.values())},
+                    )
+
+                # Emit diff_update after read_diff tool so Diff UI renders during streaming
+                if (
+                    tool_name == "read_diff"
+                    and routed.ui_pattern == UIPattern.DIFF
+                    and isinstance(result, str)
+                    and not result.startswith('{"error')
+                ):
+                    diff_lines = parse_unified_diff(result)
+                    yield AgentEvent(
+                        type="diff_update",
+                        data="",
+                        metadata={"lines": diff_lines},
                     )
 
             history.append({"role": "user", "content": tool_results})

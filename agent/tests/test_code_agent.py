@@ -90,6 +90,97 @@ class TestCodeAgent:
         assert "merged" in result
 
     @patch("agent.agents.code.httpx")
+    def test_execute_read_file(self, mock_httpx):
+        mock_response = MagicMock()
+        mock_response.text = json.dumps(
+            {"content": "cHJpbnQoJ2hlbGxvJyk=", "encoding": "base64"}
+        )
+        mock_response.raise_for_status = MagicMock()
+        mock_httpx.get.return_value = mock_response
+
+        result = self.agent.execute_tool(
+            "read_file", {"repo": "owner/repo", "path": "src/main.py"}
+        )
+        assert "content" in result
+        call_args = mock_httpx.get.call_args
+        assert "contents/src/main.py" in call_args[0][0]
+
+    @patch("agent.agents.code.httpx")
+    def test_execute_post_review(self, mock_httpx):
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"id": 1, "state": "COMMENTED"})
+        mock_response.raise_for_status = MagicMock()
+        mock_httpx.post.return_value = mock_response
+
+        result = self.agent.execute_tool(
+            "post_review",
+            {"repo": "owner/repo", "pr_number": 42, "body": "LGTM", "event": "COMMENT"},
+        )
+        assert "COMMENTED" in result
+
+    @patch("agent.agents.code.httpx")
+    def test_execute_approve_pr(self, mock_httpx):
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"id": 2, "state": "APPROVED"})
+        mock_response.raise_for_status = MagicMock()
+        mock_httpx.post.return_value = mock_response
+
+        result = self.agent.execute_tool(
+            "approve_pr", {"repo": "owner/repo", "pr_number": 42}
+        )
+        assert "APPROVED" in result
+        body = mock_httpx.post.call_args[1]["json"]
+        assert body["event"] == "APPROVE"
+
+    @patch("agent.agents.code.httpx")
+    def test_execute_create_branch(self, mock_httpx):
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"ref": "refs/heads/feature-x"})
+        mock_response.raise_for_status = MagicMock()
+        mock_httpx.post.return_value = mock_response
+
+        result = self.agent.execute_tool(
+            "create_branch", {"repo": "owner/repo", "branch": "feature-x"}
+        )
+        assert "feature-x" in result
+
+    @patch("agent.agents.code.httpx")
+    def test_execute_write_file(self, mock_httpx):
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"content": {"sha": "abc123"}})
+        mock_response.raise_for_status = MagicMock()
+        mock_httpx.put.return_value = mock_response
+
+        result = self.agent.execute_tool(
+            "write_file",
+            {
+                "repo": "owner/repo",
+                "path": "README.md",
+                "content": "# Hello",
+                "message": "Update readme",
+            },
+        )
+        assert "sha" in result
+
+    @patch("agent.agents.code.httpx")
+    def test_execute_push_code(self, mock_httpx):
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"sha": "def456"})
+        mock_response.raise_for_status = MagicMock()
+        mock_httpx.post.return_value = mock_response
+
+        result = self.agent.execute_tool(
+            "push_code",
+            {
+                "repo": "owner/repo",
+                "branch": "feature-x",
+                "files": [{"path": "main.py", "content": "print('hi')"}],
+                "message": "Add main",
+            },
+        )
+        assert "def456" in result
+
+    @patch("agent.agents.code.httpx")
     def test_execute_tool_handles_error(self, mock_httpx):
         mock_httpx.get.side_effect = Exception("API error")
 

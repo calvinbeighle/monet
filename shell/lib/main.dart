@@ -157,8 +157,28 @@ class MonetShellState extends State<MonetShell> {
             final approvalId = event.metadata['approval_id'] as String? ?? '';
             final toolName = event.data;
             final parameters = event.metadata['parameters'] as Map<String, dynamic>? ?? {};
-            // In chat mode, show inline approval card; otherwise show dialog
-            if (_activePattern == 'chat' || _activePattern == null) {
+            if (_activePattern == 'tinder') {
+              // In tinder mode, create a swipeable card for each approval
+              setState(() {
+                _streamingMessageIndex = null;
+                final subject = parameters['subject'] as String? ?? '';
+                final to = parameters['to'] as String? ?? '';
+                final body = parameters['body'] as String? ?? '';
+                _tinderCards.add(TinderCard(
+                  title: subject.isNotEmpty
+                      ? subject
+                      : (to.isNotEmpty ? 'Reply to $to' : toolName.replaceAll('_', ' ')),
+                  body: body.isNotEmpty ? body : parameters.entries.map((e) => '${e.key}: ${e.value}').join('\n'),
+                  metadata: {'approval_id': approvalId, ...parameters},
+                ));
+              });
+              _pendingApprovals.add(_PendingApproval(
+                id: approvalId,
+                toolName: toolName,
+                parameters: parameters,
+              ));
+            } else if (_activePattern == 'chat' || _activePattern == null) {
+              // In chat mode, show inline approval card
               setState(() {
                 _streamingMessageIndex = null;
                 _chatMessages.add(ChatMessage(
@@ -193,6 +213,17 @@ class MonetShellState extends State<MonetShell> {
                         connections: (o['connections'] as List<dynamic>?)
                                 ?.cast<String>() ??
                             [],
+                      ))
+                  .toList();
+            });
+          case 'diff_update':
+            final lines = event.metadata['lines'] as List<dynamic>? ?? [];
+            setState(() {
+              _diffLines = lines
+                  .map((l) => DiffLine(
+                        left: (l as Map<String, dynamic>)['left'] as String?,
+                        right: l['right'] as String?,
+                        type: _parseDiffType(l['type'] as String?),
                       ))
                   .toList();
             });

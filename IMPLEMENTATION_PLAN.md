@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete - 223 passing tests (168 Python + 55 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 in progress - 258 passing tests (203 Python + 55 Flutter).**
 
 ---
 
@@ -134,24 +134,24 @@ Full flows: intent -> agent -> UI -> approve -> execute.
 
 ### Task 13: Email Flow - Single Reply
 
-- [ ] "Reply to John's email" -> Chat UI
-- [ ] Agent reads email via Nango, drafts reply
-- [ ] Reply appears as suggestion bubble
-- [ ] Approve -> sends via Nango Gmail API
+- [x] "Reply to John's email" -> Chat UI
+- [x] Agent reads email via Nango, drafts reply
+- [x] Reply appears as suggestion bubble
+- [x] Approve -> sends via Nango Gmail API
 
 ### Task 14: Email Flow - Batch Inbox
 
-- [ ] "Handle my inbox" -> Tinder UI
-- [ ] Cards stream in as agent drafts replies
-- [ ] Swipe approve/reject
-- [ ] Approved ones send, rejected skip
+- [x] "Handle my inbox" -> Tinder UI
+- [x] Cards stream in as agent drafts replies
+- [x] Swipe approve/reject
+- [x] Approved ones send, rejected skip
 
 ### Task 15: Code Flow - PR Review
 
-- [ ] "Review the open PR" -> Diff UI
-- [ ] Agent reads diff via Nango GitHub, writes review
-- [ ] Diff + inline comments displayed
-- [ ] Approve -> posts review to GitHub
+- [x] "Review the open PR" -> Diff UI
+- [x] Agent reads diff via Nango GitHub, writes review
+- [x] Diff + inline comments displayed
+- [x] Approve -> posts review to GitHub
 
 ### Task 16: Planning Flow
 
@@ -280,6 +280,16 @@ Debian VM boots directly into Monet.
 - **Router priority fix:** Moved planning rules above code-write rules so "write a plan" correctly routes to PlanningAgent + whiteboard instead of CodeAgent + chat. Added "prioritize" and "organize" keywords to planning rules.
 - **Chat suggestions wired end-to-end:** Added `suggestions` property to BaseAgent with overrides in all 4 agents (email, code, planning, general). Runner includes agent suggestions in `done` event metadata. Flutter shell populates suggestion chips from `done` event and clears them on new intent.
 - **Test count:** 223 total (168 Python + 55 Flutter), all passing.
+
+### Implementation Notes (2026-03-30) - Batch 8
+
+- **Diff parser implemented:** `agent/diff_parser.py` parses unified diff format into structured DiffLine data (left/right/type). Handles add, remove, modified (paired remove+add), unchanged, multi-file diffs, and hunk headers.
+- **diff_update streaming event:** Runner now emits `diff_update` events when code agent's `read_diff` tool returns data in diff UI mode. Parsed diff lines are sent to the Flutter shell during streaming so the DiffPattern renders incrementally.
+- **Tinder cards from approval_request events:** Flutter shell now creates TinderCards from `approval_request` events when in tinder mode. Card title uses email subject or recipient, body uses email content. Each card carries the `approval_id` in metadata so swipe decisions resolve the backend approval. Previously cards were only populated from the `done` event.
+- **Flutter diff_update handling:** Shell now handles `diff_update` events in the stream listener, parsing structured diff lines into DiffLine objects for the DiffPattern widget.
+- **Missing tool execution tests added:** Added tests for email agent (draft_reply, archive_email, label_email add/remove, send_email with reply, list_inbox unread_only) and code agent (read_file, post_review, approve_pr, create_branch, write_file, push_code).
+- **E2E flow tests added:** Comprehensive tests for all three Phase 3 flows: Email Single Reply (read->draft->send chain, streaming approval, rejection), Email Batch Inbox (multiple approvals, mixed approve/reject), Code PR Review (list->read->review chain, diff_update emission, merge approval, error handling).
+- **Test count:** 258 total (203 Python + 55 Flutter), all passing.
 
 ---
 
