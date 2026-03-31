@@ -2,11 +2,11 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 361 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 395 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3. Build, typecheck, lint all clean.
 
 **Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
-2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units.
+2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units (agent store implemented, dock connected to real state).
 
 **Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 4.2 Agent AI Backend, 4.3 Agent Deployment UI.
 
@@ -182,8 +182,8 @@ These must be resolved before implementation begins:
 - [x] Neglect drift: proportional to neglect duration, toward Lost zone
 - [x] User action repositioning: reply snaps target to Active, archive drifts to archive boundary
 - [x] Collision avoidance: minimum separation distance enforcement
-- [ ] Position persistence across sessions
-- [ ] Score re-evaluation on session resume (reflect accumulated neglect)
+- [x] Position persistence across sessions
+- [x] Score re-evaluation on session resume (reflect accumulated neglect)
 - [ ] **Spec**: 03-thread-positioning
 - [ ] **Tests**: Initial placement correctness, drift toward Lost over time, snap-back on reply, collision avoidance, persistence round-trip
 
@@ -261,6 +261,7 @@ These must be resolved before implementation begins:
 - [x] Acknowledge to dismiss (no action on underlying thread)
 - [x] Auto-dismiss when condition resolves (e.g., user replied)
 - [x] Multiple alerts stack without obscuring critical content (notification area bottom-left)
+- [x] Alerts wired into drift tick runtime: evaluateAlerts() runs on every drift tick (200ms) in map-viewport.tsx; app store gains mapAlerts state with setMapAlerts/acknowledgeMapAlert
 - [x] **Spec**: 07-game-mechanics (Map Alert Notifications)
 - [x] **Tests**: Alert trigger conditions (about-to-be-lost, high-value-urgent, streak-at-risk, agent-completed), acknowledge, auto-resolve, dedup, countActiveAlerts (27 tests)
 
@@ -276,6 +277,7 @@ These must be resolved before implementation begins:
 - [x] Capacity enforcement: threads beyond capacity queued in batches
 - [x] Cooldown enforcement: no bypass, no redeployment until expired
 - [x] Output types per agent (drafts, enrichment, time proposals, archive batches, escalation flags)
+- [x] Agent store (Zustand) implemented: connects agent-manager.ts pure functions to the dock UI, managing 6 singleton agent instances with full lifecycle actions; cooldown ticking runs in the drift loop via tickCooldowns() on every drift tick
 - [x] **Spec**: 05-agent-units
 - [x] **Tests**: State machine transitions (all valid paths, reject invalid), capacity limits, cooldown timer, proposal lifecycle
 
@@ -365,3 +367,18 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Map alerts engine (Spec 07): src/features/game-mechanics/map-alerts.ts with pure functions: isAboutToBeLost (30 min window before lost threshold per thread type latency table), isHighValueUrgent (value > 0.7, opportunity window < 30 min), isStreakAtRisk (within 2h of midnight, unsafe threads, streak > 0), evaluateAlerts (dedup, auto-resolve, preserve existing), createAgentCompletedAlert, acknowledgeAlert, countActiveAlerts
 - Detail panel enhanced: thread metadata grid showing zone, lifecycle state, risk tier (color-coded), opportunity state (color-coded), urgency %, value %. ARIA attributes for accessibility (role=complementary, aria-label on panel and close button). Message timestamps displayed.
 - Test count: 361 total (27 new map alert tests + 3 new detail panel tests), all passing
+
+### Implementation Notes - Agent Store & Alert Wiring (2026-03-31)
+
+- Agent store (src/lib/stores/agent-store.ts): Zustand store managing 6 singleton agent instances with full lifecycle actions (deploy, startWork, complete, fail, beginCooldown, tickCooldowns, recall, resolve). Integrates agent-manager.ts pure functions.
+- Agent dock (src/components/agent-dock.tsx): Now reads real status from agent store. Shows idle/deploying/working/done/failed/cooldown states with color-coded labels, thread count badges, and visual dimming for cooldown.
+- Map alerts wired into runtime: evaluateAlerts() runs on every drift tick (200ms) in map-viewport.tsx. App store gains mapAlerts state with setMapAlerts/acknowledgeMapAlert. Notification area displays active map alerts alongside shell notifications with severity-coded styling.
+- Cooldown ticking: useAgentStore.tickCooldowns() called on every drift tick to auto-transition agents from cooldown to idle.
+- Test count: 385 total, all passing
+
+### Implementation Notes - Position Persistence (2026-03-31)
+
+- Persistence manager (src/features/sync/persistence-manager.ts): Connects thread store to IndexedDB for position persistence across sessions. loadPersistedThreads re-evaluates urgency/value scores and neglect duration on session resume per Spec 03. saveThreadState batches writes to IndexedDB. startPeriodicPersist/stopPeriodicPersist manage a 5-second interval. flushPersist for immediate save (beforeunload).
+- App.tsx initialization flow: async load persisted threads -> set in thread store -> start periodic persist -> transition to active. beforeunload handler flushes to IndexedDB. Error fallback proceeds without persisted data.
+- App.test.tsx updated: mocks persistence manager to avoid IndexedDB dependency in jsdom, tests properly handle async initialization state.
+- Test count: 395 total, all passing

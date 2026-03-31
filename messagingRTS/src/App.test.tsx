@@ -1,10 +1,19 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { useAppStore } from "./lib/stores/app-store";
 import { useThreadStore } from "./lib/stores/thread-store";
 import { createThread } from "./lib/types";
+
+// Mock persistence manager so App init doesn't hit IndexedDB
+vi.mock("./features/sync/persistence-manager", () => ({
+  loadPersistedThreads: vi.fn(async () => []),
+  startPeriodicPersist: vi.fn(),
+  stopPeriodicPersist: vi.fn(),
+  flushPersist: vi.fn(async () => {}),
+  saveThreadState: vi.fn(async () => {}),
+}));
 
 function renderApp() {
   const queryClient = new QueryClient({
@@ -33,7 +42,10 @@ function resetStores() {
 }
 
 describe("App shell", () => {
-  beforeEach(resetStores);
+  beforeEach(() => {
+    resetStores();
+    useAppStore.setState({ shellState: "active" });
+  });
 
   it("renders the application shell with all layout regions", () => {
     renderApp();
@@ -67,10 +79,10 @@ describe("App shell", () => {
 describe("Shell lifecycle states", () => {
   beforeEach(resetStores);
 
-  it("shows initializing state then transitions to active", () => {
+  it("shows initializing state before persistence loads", () => {
     renderApp();
-    // After mount, should transition to active (no longer show initializing)
-    expect(screen.getByTestId("app-shell")).toBeInTheDocument();
+    // Async init hasn't resolved yet, so initializing UI is shown
+    expect(screen.getByTestId("shell-initializing")).toBeInTheDocument();
   });
 
   it("shows unauthenticated state with auth prompt", () => {

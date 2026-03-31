@@ -16,6 +16,13 @@ import {
 } from "./components/deployment-history-panel";
 import { SessionSummaryModal, type SessionSummaryData } from "./components/session-summary-modal";
 import { NotificationArea } from "./components/notification-area";
+import {
+  loadPersistedThreads,
+  startPeriodicPersist,
+  stopPeriodicPersist,
+  flushPersist,
+} from "./features/sync/persistence-manager";
+import { useThreadStore } from "./lib/stores";
 
 export function App() {
   const shellState = useAppStore((s) => s.shellState);
@@ -61,11 +68,44 @@ export function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, [setViewportDimensions]);
 
-  // Transition from initializing to active (auth will gate this later)
+  // Initialization: load persisted threads, start periodic persist, transition to active
   useEffect(() => {
-    if (shellState === "initializing") {
-      setShellState("active");
-    }
+    if (shellState !== "initializing") return;
+
+    let cancelled = false;
+
+    const init = async () => {
+      try {
+        const persisted = await loadPersistedThreads();
+        if (cancelled) return;
+
+        if (persisted.length > 0) {
+          useThreadStore.getState().setThreads(persisted);
+        }
+
+        startPeriodicPersist();
+        setShellState("active");
+      } catch (err) {
+        console.warn("[App] Failed to load persisted threads:", err);
+        if (!cancelled) {
+          setShellState("active"); // proceed without persisted data
+        }
+      }
+    };
+
+    init();
+
+    // Flush to IndexedDB before page unload
+    const handleBeforeUnload = () => {
+      flushPersist();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      cancelled = true;
+      stopPeriodicPersist();
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
   }, [shellState, setShellState]);
 
   // Focus zone keyboard navigation (Tab cycles through zones per Spec 12)
