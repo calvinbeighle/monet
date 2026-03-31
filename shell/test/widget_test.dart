@@ -20,10 +20,13 @@ import 'package:shell/ui/patterns/diff.dart';
 import 'package:shell/ui/patterns/whiteboard.dart';
 import 'package:shell/ui/status_bar.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_animate/flutter_animate.dart';
 
 // -- MonetApp tests --
 
 void main() {
+  // Disable flutter_animate durations in tests to prevent pending timer errors
+  Animate.restartOnHotReload = false;
   group('MonetApp', () {
     setUp(() {
       // Initialize SharedPreferences with empty values for test isolation
@@ -186,6 +189,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('1 of 2'), findsOneWidget);
       expect(find.text('Email 1'), findsOneWidget);
     });
@@ -196,6 +200,7 @@ void main() {
           body: TinderPattern(cards: const []),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('All done'), findsOneWidget);
     });
 
@@ -207,6 +212,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       final undoButton = find.byIcon(Icons.undo);
       expect(undoButton, findsOneWidget);
     });
@@ -228,6 +234,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
 
       // Swipe right past threshold (100px)
       final card = find.text('Card 1');
@@ -255,6 +262,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
 
       final card = find.text('Card 1');
       await tester.drag(card, const Offset(-150, 0));
@@ -581,6 +589,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('Before'), findsOneWidget);
       expect(find.text('After'), findsOneWidget);
     });
@@ -596,6 +605,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('old line', findRichText: true), findsOneWidget);
       expect(find.text('new line', findRichText: true), findsOneWidget);
     });
@@ -609,6 +619,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('Approve All'), findsOneWidget);
       expect(find.text('Reject All'), findsOneWidget);
     });
@@ -623,6 +634,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       await tester.tap(find.text('Approve All'));
       expect(decision, true);
     });
@@ -637,6 +649,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       await tester.tap(find.text('Reject All'));
       expect(decision, false);
     });
@@ -647,6 +660,7 @@ void main() {
           body: DiffPattern(lines: const []),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('Approve All'), findsNothing);
     });
 
@@ -664,6 +678,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       // Lines render via RichText with syntax highlighting
       expect(find.text('def hello():', findRichText: true), findsOneWidget);
       expect(find.text('async def hello():', findRichText: true), findsOneWidget);
@@ -685,6 +700,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('x = "hello" # comment', findRichText: true), findsOneWidget);
       expect(find.text('x = "world" # updated', findRichText: true), findsOneWidget);
     });
@@ -784,6 +800,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('Task A'), findsOneWidget);
       expect(find.text('Task B'), findsOneWidget);
     });
@@ -804,6 +821,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('Description text'), findsOneWidget);
     });
 
@@ -819,6 +837,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       await tester.tap(find.text('Tap Me'));
       expect(tappedId, 'n1');
     });
@@ -829,6 +848,7 @@ void main() {
           body: WhiteboardPattern(nodes: const []),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.byType(InteractiveViewer), findsOneWidget);
     });
 
@@ -848,6 +868,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       expect(find.text('High Priority'), findsOneWidget);
       // Priority dot should be rendered (8x8 circle container)
       final decoratedBoxes = find.byType(Container);
@@ -874,6 +895,7 @@ void main() {
           ),
         ),
       ));
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       // Perform a drag gesture on the node
       final nodeFinder = find.text('Drag Me');
       await tester.drag(nodeFinder, const Offset(50, 30));
@@ -1081,14 +1103,14 @@ void main() {
 
     testWidgets('flow progress bar hidden when no flow active', (tester) async {
       await tester.pumpWidget(buildShell());
-      await tester.pump();
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       // No flow steps -> no Continue button
       expect(find.text('Continue'), findsNothing);
     });
 
     testWidgets('MonetShellState has flow fields initialized', (tester) async {
       await tester.pumpWidget(buildShell());
-      await tester.pump();
+      await tester.pumpAndSettle(); // settle flutter_animate animations
       final state = tester.state<MonetShellState>(find.byType(MonetShell));
       // Flow state defaults
       expect(state, isNotNull);

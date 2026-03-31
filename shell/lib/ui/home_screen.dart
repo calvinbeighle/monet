@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
 import '../services/agent_client.dart';
@@ -93,17 +94,35 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 24),
-              _buildGreeting(),
+              _buildGreeting()
+                  .animate()
+                  .fadeIn(duration: 400.ms, curve: Curves.easeOut)
+                  .slideY(begin: 0.05, end: 0, duration: 400.ms, curve: Curves.easeOut),
               const SizedBox(height: 20),
-              _buildVoicePrompt(),
+              _buildVoicePrompt()
+                  .animate(delay: 80.ms)
+                  .fadeIn(duration: 400.ms, curve: Curves.easeOut)
+                  .slideY(begin: 0.08, end: 0, duration: 400.ms, curve: Curves.easeOut),
               const SizedBox(height: 28),
-              _buildQuickActions(),
+              _buildQuickActions()
+                  .animate(delay: 160.ms)
+                  .fadeIn(duration: 400.ms, curve: Curves.easeOut)
+                  .slideY(begin: 0.08, end: 0, duration: 400.ms, curve: Curves.easeOut),
               const SizedBox(height: 32),
-              _buildConnectedTools(),
+              _buildConnectedTools()
+                  .animate(delay: 240.ms)
+                  .fadeIn(duration: 400.ms, curve: Curves.easeOut)
+                  .slideY(begin: 0.08, end: 0, duration: 400.ms, curve: Curves.easeOut),
               const SizedBox(height: 32),
-              _buildAgentOverview(),
+              _buildAgentOverview()
+                  .animate(delay: 320.ms)
+                  .fadeIn(duration: 400.ms, curve: Curves.easeOut)
+                  .slideY(begin: 0.08, end: 0, duration: 400.ms, curve: Curves.easeOut),
               const SizedBox(height: 32),
-              _buildRecentActivity(),
+              _buildRecentActivity()
+                  .animate(delay: 400.ms)
+                  .fadeIn(duration: 400.ms, curve: Curves.easeOut)
+                  .slideY(begin: 0.08, end: 0, duration: 400.ms, curve: Curves.easeOut),
               const SizedBox(height: 24),
             ],
           ),

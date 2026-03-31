@@ -953,9 +953,30 @@ class MonetShellState extends State<MonetShell> {
         );
     }
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      switchInCurve: Curves.easeOut,
-      switchOutCurve: Curves.easeIn,
+      duration: const Duration(milliseconds: 350),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final scaleAnimation = Tween<double>(begin: 0.96, end: 1.0).animate(
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+        );
+        final slideAnimation = Tween<Offset>(
+          begin: const Offset(0, 0.015),
+          end: Offset.zero,
+        ).animate(
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+        );
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: scaleAnimation,
+            child: SlideTransition(
+              position: slideAnimation,
+              child: child,
+            ),
+          ),
+        );
+      },
       child: child,
     );
   }

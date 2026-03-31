@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'monet_theme.dart';
+
 class ConnectedTool {
   final String name;
   final bool connected;
@@ -51,6 +53,8 @@ class StatusBar extends StatelessWidget {
   final ValueChanged<int>? onBrightnessChanged;
   final VoidCallback? onPowerTap;
   final VoidCallback? onAgentsTap;
+  final bool isDarkTheme;
+  final VoidCallback? onThemeToggle;
 
   const StatusBar({
     super.key,
@@ -65,56 +69,75 @@ class StatusBar extends StatelessWidget {
     this.onBrightnessChanged,
     this.onPowerTap,
     this.onAgentsTap,
+    this.isDarkTheme = true,
+    this.onThemeToggle,
   });
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return Container(
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0A0F),
+        color: c.scaffoldBg,
         border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          top: BorderSide(color: c.border),
         ),
       ),
       child: Row(
         children: [
-          ...tools.map(_buildToolIndicator),
-          if (onAgentsTap != null) _buildAgentsButton(),
+          ...tools.map((tool) => _buildToolIndicator(tool, c)),
+          if (onAgentsTap != null) _buildAgentsButton(c),
           const Spacer(),
-          _buildWifiIndicator(),
+          _buildThemeToggle(c),
           const SizedBox(width: 12),
-          _buildVolumeIndicator(),
+          _buildWifiIndicator(c),
           const SizedBox(width: 12),
-          _buildBrightnessIndicator(),
+          _buildVolumeIndicator(c),
+          const SizedBox(width: 12),
+          _buildBrightnessIndicator(c),
           if (activeAgent != null) ...[
             const SizedBox(width: 12),
-            _buildAgentIndicator(),
+            _buildAgentIndicator(c),
           ],
           if (activePattern != null) ...[
             const SizedBox(width: 12),
-            _buildPatternBadge(),
+            _buildPatternBadge(c),
           ],
           const SizedBox(width: 12),
-          _buildPowerButton(),
+          _buildPowerButton(c),
           if (onLogout != null) ...[
             const SizedBox(width: 12),
-            _buildLogoutButton(),
+            _buildLogoutButton(c),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildAgentsButton() {
+  Widget _buildThemeToggle(MonetColors c) {
+    return GestureDetector(
+      onTap: onThemeToggle,
+      child: Tooltip(
+        message: isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme',
+        child: Icon(
+          isDarkTheme ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+          size: 14,
+          color: c.textTertiary,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAgentsButton(MonetColors c) {
     return GestureDetector(
       onTap: onAgentsTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(4),
-          color: Colors.white.withValues(alpha: 0.06),
+          color: c.hoverOverlay,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -122,13 +145,13 @@ class StatusBar extends StatelessWidget {
             Icon(
               Icons.smart_toy_outlined,
               size: 13,
-              color: Colors.white.withValues(alpha: 0.5),
+              color: c.textTertiary,
             ),
             const SizedBox(width: 4),
             Text(
               'Agents',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
+                color: c.textTertiary,
                 fontSize: 11,
               ),
             ),
@@ -138,7 +161,7 @@ class StatusBar extends StatelessWidget {
     );
   }
 
-  Widget _buildToolIndicator(ConnectedTool tool) {
+  Widget _buildToolIndicator(ConnectedTool tool, MonetColors c) {
     return Padding(
       padding: const EdgeInsets.only(right: 12),
       child: Row(
@@ -149,14 +172,14 @@ class StatusBar extends StatelessWidget {
             height: 8,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: tool.connected ? Colors.green : Colors.grey,
+              color: tool.connected ? c.success : Colors.grey,
             ),
           ),
           const SizedBox(width: 6),
           Text(
             tool.name,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
+              color: c.textTertiary,
               fontSize: 12,
             ),
           ),
@@ -165,7 +188,7 @@ class StatusBar extends StatelessWidget {
     );
   }
 
-  Widget _buildWifiIndicator() {
+  Widget _buildWifiIndicator(MonetColors c) {
     final connected = systemStatus.wifiConnected;
     final signal = systemStatus.wifiSignal;
     IconData icon;
@@ -188,15 +211,13 @@ class StatusBar extends StatelessWidget {
         child: Icon(
           icon,
           size: 14,
-          color: connected
-              ? Colors.white.withValues(alpha: 0.6)
-              : Colors.white.withValues(alpha: 0.3),
+          color: connected ? c.textSecondary : c.textMeta,
         ),
       ),
     );
   }
 
-  Widget _buildVolumeIndicator() {
+  Widget _buildVolumeIndicator(MonetColors c) {
     final muted = systemStatus.volumeMuted;
     final level = systemStatus.volumeLevel;
     IconData icon;
@@ -218,15 +239,13 @@ class StatusBar extends StatelessWidget {
             Icon(
               icon,
               size: 14,
-              color: muted
-                  ? Colors.white.withValues(alpha: 0.3)
-                  : Colors.white.withValues(alpha: 0.6),
+              color: muted ? c.textMeta : c.textSecondary,
             ),
             const SizedBox(width: 4),
             Text(
               muted ? 'Mute' : '$level%',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
+                color: c.textTertiary,
                 fontSize: 11,
               ),
             ),
@@ -236,7 +255,7 @@ class StatusBar extends StatelessWidget {
     );
   }
 
-  Widget _buildBrightnessIndicator() {
+  Widget _buildBrightnessIndicator(MonetColors c) {
     final level = systemStatus.brightnessLevel;
     return GestureDetector(
       onTap: () => onBrightnessChanged?.call(level),
@@ -248,13 +267,13 @@ class StatusBar extends StatelessWidget {
             Icon(
               level > 50 ? Icons.brightness_high : Icons.brightness_low,
               size: 14,
-              color: Colors.white.withValues(alpha: 0.6),
+              color: c.textSecondary,
             ),
             const SizedBox(width: 4),
             Text(
               '$level%',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.4),
+                color: c.textTertiary,
                 fontSize: 11,
               ),
             ),
@@ -264,7 +283,7 @@ class StatusBar extends StatelessWidget {
     );
   }
 
-  Widget _buildAgentIndicator() {
+  Widget _buildAgentIndicator(MonetColors c) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -273,14 +292,14 @@ class StatusBar extends StatelessWidget {
           height: 12,
           child: CircularProgressIndicator(
             strokeWidth: 1.5,
-            color: const Color(0xFF7C6EF0),
+            color: c.primary,
           ),
         ),
         const SizedBox(width: 8),
         Text(
           activeAgent!,
           style: TextStyle(
-            color: const Color(0xFF7C6EF0),
+            color: c.primary,
             fontSize: 12,
           ),
         ),
@@ -288,24 +307,24 @@ class StatusBar extends StatelessWidget {
     );
   }
 
-  Widget _buildPatternBadge() {
+  Widget _buildPatternBadge(MonetColors c) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(4),
-        color: Colors.white.withValues(alpha: 0.08),
+        color: c.activeOverlay,
       ),
       child: Text(
         activePattern!,
         style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.5),
+          color: c.textTertiary,
           fontSize: 11,
         ),
       ),
     );
   }
 
-  Widget _buildPowerButton() {
+  Widget _buildPowerButton(MonetColors c) {
     return GestureDetector(
       onTap: onPowerTap,
       child: Tooltip(
@@ -313,24 +332,24 @@ class StatusBar extends StatelessWidget {
         child: Icon(
           Icons.power_settings_new,
           size: 14,
-          color: Colors.white.withValues(alpha: 0.4),
+          color: c.textTertiary,
         ),
       ),
     );
   }
 
-  Widget _buildLogoutButton() {
+  Widget _buildLogoutButton(MonetColors c) {
     return GestureDetector(
       onTap: onLogout,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.logout, size: 14, color: Colors.white.withValues(alpha: 0.4)),
+          Icon(Icons.logout, size: 14, color: c.textTertiary),
           const SizedBox(width: 4),
           Text(
             'Logout',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4),
+              color: c.textTertiary,
               fontSize: 12,
             ),
           ),

@@ -8,8 +8,11 @@ import {
   fetchHistoryChanges,
   sendReply,
   archiveThread,
+  createDraft,
+  updateDraft,
+  deleteDraft,
 } from "../auth/gmail-client";
-import type { GmailHistoryResponse, SendReplyPayload } from "../auth/gmail-client";
+import type { GmailHistoryResponse, SendReplyPayload, DraftPayload } from "../auth/gmail-client";
 import { performInitialLoad, convertGmailThread } from "./thread-fetcher";
 import { useThreadStore } from "../../lib/stores";
 import { useSyncStore } from "../../lib/stores/sync-store";
@@ -23,6 +26,9 @@ let _fetchThreadDetail = fetchThreadDetail;
 let _performInitialLoad = performInitialLoad;
 let _sendReply = sendReply;
 let _archiveThread = archiveThread;
+let _createDraft = createDraft;
+let _updateDraft = updateDraft;
+let _deleteDraft = deleteDraft;
 
 export function _setEngineFetchFns(fns: {
   fetchHistoryChanges?: typeof fetchHistoryChanges;
@@ -30,12 +36,18 @@ export function _setEngineFetchFns(fns: {
   performInitialLoad?: typeof performInitialLoad;
   sendReply?: typeof sendReply;
   archiveThread?: typeof archiveThread;
+  createDraft?: typeof createDraft;
+  updateDraft?: typeof updateDraft;
+  deleteDraft?: typeof deleteDraft;
 }): void {
   if (fns.fetchHistoryChanges) _fetchHistoryChanges = fns.fetchHistoryChanges;
   if (fns.fetchThreadDetail) _fetchThreadDetail = fns.fetchThreadDetail;
   if (fns.performInitialLoad) _performInitialLoad = fns.performInitialLoad;
   if (fns.sendReply) _sendReply = fns.sendReply;
   if (fns.archiveThread) _archiveThread = fns.archiveThread;
+  if (fns.createDraft) _createDraft = fns.createDraft;
+  if (fns.updateDraft) _updateDraft = fns.updateDraft;
+  if (fns.deleteDraft) _deleteDraft = fns.deleteDraft;
 }
 
 export function _resetEngineFetchFns(): void {
@@ -44,6 +56,9 @@ export function _resetEngineFetchFns(): void {
   _performInitialLoad = performInitialLoad;
   _sendReply = sendReply;
   _archiveThread = archiveThread;
+  _createDraft = createDraft;
+  _updateDraft = updateDraft;
+  _deleteDraft = deleteDraft;
 }
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -354,6 +369,20 @@ async function executeAction(action: ActionQueueEntry): Promise<void> {
     }
     case "archive": {
       await _archiveThread(action.threadId);
+      break;
+    }
+    case "draft-save": {
+      const payload = action.payload as DraftPayload;
+      if (payload.draftId) {
+        await _updateDraft(payload.draftId, payload);
+      } else {
+        await _createDraft(payload);
+      }
+      break;
+    }
+    case "draft-discard": {
+      const { draftId } = action.payload as { draftId: string };
+      await _deleteDraft(draftId);
       break;
     }
     default:

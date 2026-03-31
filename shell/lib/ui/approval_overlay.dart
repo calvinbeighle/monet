@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/agent_client.dart';
+import 'monet_theme.dart';
 
 /// Shows a modal dialog when the agent requests approval for a sensitive action.
 /// The user must approve or reject before the agent continues.
@@ -57,8 +58,9 @@ class ApprovalOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return Dialog(
-      backgroundColor: const Color(0xFF12121A),
+      backgroundColor: c.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -68,13 +70,13 @@ class ApprovalOverlay extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.shield_outlined, color: Color(0xFF7C6EF0), size: 24),
+                Icon(Icons.shield_outlined, color: c.primary, size: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     'Approval Required',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: c.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
@@ -87,7 +89,7 @@ class ApprovalOverlay extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF0A0A0F),
+                color: c.scaffoldBg,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -95,8 +97,8 @@ class ApprovalOverlay extends StatelessWidget {
                 children: [
                   Text(
                     _displayName,
-                    style: const TextStyle(
-                      color: Color(0xFF7C6EF0),
+                    style: TextStyle(
+                      color: c.primary,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
@@ -104,8 +106,8 @@ class ApprovalOverlay extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     _formatParameters(),
-                    style: const TextStyle(
-                      color: Colors.white70,
+                    style: TextStyle(
+                      color: c.textSecondary,
                       fontSize: 13,
                       fontFamily: 'monospace',
                       height: 1.5,
@@ -121,8 +123,8 @@ class ApprovalOverlay extends StatelessWidget {
                   child: OutlinedButton(
                     onPressed: () => _reject(context),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red.shade300,
-                      side: BorderSide(color: Colors.red.shade300.withValues(alpha: 0.5)),
+                      foregroundColor: c.error,
+                      side: BorderSide(color: c.error.withValues(alpha: 0.5)),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     child: const Text('Reject'),
@@ -133,7 +135,7 @@ class ApprovalOverlay extends StatelessWidget {
                   child: FilledButton(
                     onPressed: () => _approve(context),
                     style: FilledButton.styleFrom(
-                      backgroundColor: Colors.green.shade700,
+                      backgroundColor: c.success,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
                     child: const Text('Approve'),

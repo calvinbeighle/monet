@@ -1,7 +1,8 @@
 """Trace Messaging data endpoints - factory-function router pattern.
 
 Exposes local data sources (Arc browser, git history, Claude sessions,
-calendar) and proxies Gmail API calls through Nango.
+calendar), proxies Gmail API calls through Nango, and proxies Claude AI
+calls for workstream detection, context linking, and summarization.
 
 Register with:
     from agent.trace_router import make_trace_router
@@ -11,6 +12,7 @@ Register with:
 import asyncio
 import json
 import logging
+import os
 import sqlite3
 import time
 from datetime import datetime, timezone, timedelta
@@ -18,10 +20,26 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
+import anthropic
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from agent.nango import nango_proxy_request
+
+# Global rate limiter for Claude AI calls (max 3 concurrent)
+_ai_semaphore = asyncio.Semaphore(3)
+_ai_client: anthropic.AsyncAnthropic | None = None
+
+AI_MODEL = os.environ.get("TRACE_AI_MODEL", "claude-sonnet-4-6")
+
+
+def _get_ai_client() -> anthropic.AsyncAnthropic:
+    """Lazily create the async Anthropic client."""
+    global _ai_client
+    if _ai_client is None:
+        _ai_client = anthropic.AsyncAnthropic()
+    return _ai_client
+
 
 logger = logging.getLogger(__name__)
 
@@ -885,5 +903,413 @@ def make_trace_router(nango_mgr) -> APIRouter:
             None,
             body,
         )
+
+    # -------------------------------------------------------------------------
+    # AI Proxy Endpoints (2.0c) - Claude API for workstream intelligence
+    # -------------------------------------------------------------------------
+
+    async def _call_claude(system: str, user_msg: str) -> str:
+        """Rate-limited Claude API call. Returns the text content of the response.
+
+        Raises on failure with structured error info.
+        """
+        client = _get_ai_client()
+        async with _ai_semaphore:
+            response = await client.messages.create(
+                model=AI_MODEL,
+                max_tokens=4096,
+                system=system,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            # Extract text from content blocks
+            for block in response.content:
+                if block.type == "text":
+                    return block.text
+            return ""
+
+    @router.post("/ai/detect")
+    async def ai_detect(request: Request):
+        """Workstream detection - cluster activities into workstreams.
+
+        Accepts: { activities: [{activityId, source, title, participants, timestamp, labels, preview, metadata}] }
+        Returns: { workstreams: [{name, description, activityIds, confidence, rationale, participants}] }
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        activities = body.get("activities", [])
+        if not activities:
+            return {"workstreams": []}
+
+        # Token limit guard: cap at 200 activities, prioritize recent
+        if len(activities) > 200:
+            activities = sorted(
+                activities, key=lambda a: a.get("timestamp", 0), reverse=True
+            )[:200]
+
+        # Build compact representation for Claude (titles/participants/timestamps only)
+        activity_lines = []
+        for a in activities:
+            participants = ", ".join(
+                p.get("email", p.get("displayName", "unknown"))
+                for p in a.get("participants", [])
+            )
+            labels = ", ".join(a.get("labels", []))
+            source = a.get("source", "unknown")
+            line = (
+                f"- [{a.get('activityId', '')}] ({source}) "
+                f"{a.get('title', 'Untitled')} | "
+                f"participants: {participants or 'none'} | "
+                f"labels: {labels or 'none'} | "
+                f"ts: {a.get('timestamp', 0)}"
+            )
+            if a.get("preview"):
+                line += f" | preview: {a['preview'][:100]}"
+            activity_lines.append(line)
+
+        system_prompt = """You are a workstream detection engine for a productivity tool. Your job is to cluster activity records from multiple sources (email, calendar, browser, git, Claude Code sessions, CRM) into coherent workstreams.
+
+A workstream is a cluster of activities that relate to the same project, relationship, or initiative. Signal weights (highest to lowest):
+1. Participant overlap (shared email addresses are the strongest signal)
+2. Topic/keyword overlap in titles and previews
+3. Project association (same git repo, Arc space, Claude project)
+4. Temporal proximity (same day/hour biases grouping)
+5. CRM association (same deal/company)
+6. Label/tag overlap
+
+Rules:
+- Minimum cluster: 2 activities from 2+ different sources
+- Generate a descriptive name for each workstream (e.g., "Acme Corp Proposal", "tracemessaging Development")
+- Generate a one-sentence description
+- Assign a confidence score 0-1 for each cluster
+- Provide a one-sentence rationale for why these activities belong together
+- Activities that don't fit any cluster should NOT be included in any workstream
+- If two potential workstreams share >60% participants and >40% topic keywords, consider merging them
+
+Respond with ONLY valid JSON, no markdown formatting."""
+
+        user_msg = f"""Cluster these {len(activities)} activities into workstreams:
+
+{chr(10).join(activity_lines)}
+
+Respond with this exact JSON structure:
+{{
+  "workstreams": [
+    {{
+      "name": "Descriptive Workstream Name",
+      "description": "One sentence describing this workstream",
+      "activityIds": ["id1", "id2"],
+      "confidence": 0.85,
+      "rationale": "One sentence explaining the clustering",
+      "participants": ["email1@example.com", "email2@example.com"]
+    }}
+  ]
+}}"""
+
+        try:
+            raw = await _call_claude(system_prompt, user_msg)
+            # Strip markdown code fences if present
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+            result = json.loads(cleaned)
+            return result
+        except anthropic.RateLimitError as e:
+            logger.warning("AI detect rate limited: %s", e)
+            return JSONResponse(
+                {"error": "rate_limited", "retry_after": 30},
+                status_code=429,
+            )
+        except anthropic.APIError as e:
+            logger.error("AI detect API error: %s", e)
+            return JSONResponse(
+                {"error": "ai_unavailable", "message": str(e)},
+                status_code=502,
+            )
+        except json.JSONDecodeError as e:
+            logger.error("AI detect returned invalid JSON: %s (raw: %s)", e, raw[:500])
+            return JSONResponse(
+                {"error": "parse_error", "message": "AI returned invalid JSON"},
+                status_code=502,
+            )
+        except Exception as e:
+            logger.exception("AI detect unexpected error: %s", e)
+            return JSONResponse(
+                {"error": "internal", "message": str(e)},
+                status_code=500,
+            )
+
+    @router.post("/ai/link")
+    async def ai_link(request: Request):
+        """Context linking - assign a new activity to an existing workstream.
+
+        Accepts: {
+            activity: {activityId, source, title, participants, timestamp, labels, preview},
+            candidates: [{workstreamId, name, description, recentActivityTitles, participants}]
+        }
+        Returns: { workstreamId: string|null, confidence: number, rationale: string }
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        activity = body.get("activity")
+        candidates = body.get("candidates", [])
+
+        if not activity:
+            return JSONResponse({"error": "activity is required"}, status_code=400)
+        if not candidates:
+            return {
+                "workstreamId": None,
+                "confidence": 0,
+                "rationale": "No candidate workstreams available",
+            }
+
+        # Cap candidates at 5
+        candidates = candidates[:5]
+
+        activity_desc = (
+            f"[{activity.get('activityId', '')}] ({activity.get('source', 'unknown')}) "
+            f"{activity.get('title', 'Untitled')} | "
+            f"participants: {', '.join(p.get('email', '') for p in activity.get('participants', []))} | "
+            f"labels: {', '.join(activity.get('labels', []))}"
+        )
+        if activity.get("preview"):
+            activity_desc += f" | preview: {activity['preview'][:200]}"
+
+        candidate_lines = []
+        for c in candidates:
+            participants = ", ".join(c.get("participants", [])[:10])
+            recent = "; ".join(c.get("recentActivityTitles", [])[:5])
+            candidate_lines.append(
+                f"- workstreamId: {c.get('workstreamId', '')} | "
+                f"name: {c.get('name', '')} | "
+                f"description: {c.get('description', '')} | "
+                f"participants: {participants} | "
+                f"recent activities: {recent}"
+            )
+
+        system_prompt = """You are a context linking engine. Given a new activity and candidate workstreams, determine which workstream (if any) the activity belongs to.
+
+Evaluate based on:
+1. Participant overlap (strongest signal)
+2. Topic/keyword match with workstream name, description, and recent activities
+3. Source-level associations (same repo, same calendar series, same email thread)
+
+Confidence scoring:
+- >= 0.7: strong match, auto-assign
+- 0.4-0.7: uncertain, flag for review
+- < 0.4: no good match, leave unassigned
+
+If no workstream is a good fit, return null for workstreamId with confidence < 0.4.
+
+Respond with ONLY valid JSON, no markdown formatting."""
+
+        user_msg = f"""New activity:
+{activity_desc}
+
+Candidate workstreams:
+{chr(10).join(candidate_lines)}
+
+Respond with this exact JSON structure:
+{{
+  "workstreamId": "the-matching-workstream-id-or-null",
+  "confidence": 0.85,
+  "rationale": "One sentence explaining the assignment decision"
+}}"""
+
+        try:
+            raw = await _call_claude(system_prompt, user_msg)
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+            result = json.loads(cleaned)
+            return result
+        except anthropic.RateLimitError:
+            return JSONResponse(
+                {"error": "rate_limited", "retry_after": 30}, status_code=429
+            )
+        except anthropic.APIError as e:
+            logger.error("AI link API error: %s", e)
+            return JSONResponse(
+                {"error": "ai_unavailable", "message": str(e)}, status_code=502
+            )
+        except json.JSONDecodeError:
+            logger.error("AI link returned invalid JSON: %s", raw[:500])
+            return JSONResponse({"error": "parse_error"}, status_code=502)
+        except Exception as e:
+            logger.exception("AI link unexpected error: %s", e)
+            return JSONResponse(
+                {"error": "internal", "message": str(e)}, status_code=500
+            )
+
+    @router.post("/ai/summarize")
+    async def ai_summarize(request: Request):
+        """Generate AI summary for a workstream.
+
+        Accepts: {
+            workstream: {name, description, participants},
+            activities: [{activityId, source, title, timestamp, preview, participants}],
+            previousSummary: string|null,
+            crmContext: [{email, company, dealNames, lifecycleStage}]
+        }
+        Returns: {
+            statusSummary: string,
+            keyDevelopments: [string],
+            recommendedAction: {type, description, targetActivityId, confidence},
+            urgency: "low"|"medium"|"high",
+            generatedAt: number
+        }
+        """
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+        workstream = body.get("workstream", {})
+        activities = body.get("activities", [])
+        previous_summary = body.get("previousSummary")
+        crm_context = body.get("crmContext", [])
+
+        if not activities:
+            return {
+                "statusSummary": "No activities in this workstream yet.",
+                "keyDevelopments": [],
+                "recommendedAction": {
+                    "type": "no-action",
+                    "description": "No activities to act on",
+                    "targetActivityId": None,
+                    "confidence": 1.0,
+                },
+                "urgency": "low",
+                "generatedAt": int(time.time() * 1000),
+            }
+
+        # Token limit guard: cap at 100 activities
+        if len(activities) > 100:
+            sorted_acts = sorted(
+                activities, key=lambda a: a.get("timestamp", 0), reverse=True
+            )
+            activities = sorted_acts[:100]
+            omitted = len(sorted_acts) - 100
+        else:
+            omitted = 0
+
+        activity_lines = []
+        for a in activities:
+            participants = ", ".join(
+                p.get("email", p.get("displayName", ""))
+                for p in a.get("participants", [])
+            )
+            ts = a.get("timestamp", 0)
+            ts_str = (
+                datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime(
+                    "%Y-%m-%d %H:%M UTC"
+                )
+                if ts
+                else "unknown"
+            )
+            line = (
+                f"- [{a.get('activityId', '')}] ({a.get('source', 'unknown')}) "
+                f"{ts_str}: {a.get('title', 'Untitled')}"
+            )
+            if participants:
+                line += f" | from: {participants}"
+            if a.get("preview"):
+                line += f" | {a['preview'][:150]}"
+            activity_lines.append(line)
+
+        crm_lines = []
+        for c in crm_context:
+            deals = ", ".join(c.get("dealNames", []))
+            crm_lines.append(
+                f"- {c.get('email', 'unknown')}: {c.get('company', 'unknown')} | "
+                f"deals: {deals or 'none'} | stage: {c.get('lifecycleStage', 'unknown')}"
+            )
+
+        system_prompt = """You are a workstream summary engine for a productivity tool. Generate a concise, actionable summary for the given workstream.
+
+Output requirements:
+- statusSummary: 2-3 sentences describing current state
+- keyDevelopments: up to 3 bullet points of what changed recently (or empty if no notable changes)
+- recommendedAction: the single most important next action. Types: reply-email, schedule-meeting, review-document, follow-up, archive-workstream, no-action. Must reference a specific activityId when applicable.
+- urgency: low (informational), medium (needs attention within 24h), high (overdue or time-sensitive)
+
+Urgency signals:
+- Time since last response in email threads
+- Upcoming deadlines from calendar events
+- Deal stage progression from CRM
+- Explicit urgency in message content
+
+If a previous summary is provided, highlight what CHANGED since then (don't repeat the same observations).
+
+Respond with ONLY valid JSON, no markdown formatting."""
+
+        prev_context = ""
+        if previous_summary:
+            prev_context = f"\nPrevious summary (highlight changes since this):\n{previous_summary}\n"
+
+        omitted_note = ""
+        if omitted > 0:
+            omitted_note = f"\n(Note: {omitted} older activities omitted for brevity)\n"
+
+        user_msg = f"""Workstream: {workstream.get("name", "Unknown")}
+Description: {workstream.get("description", "No description")}
+{prev_context}{omitted_note}
+Activities ({len(activities)} shown):
+{chr(10).join(activity_lines)}
+
+{"CRM context:" + chr(10) + chr(10).join(crm_lines) if crm_lines else ""}
+
+Respond with this exact JSON structure:
+{{
+  "statusSummary": "2-3 sentence summary",
+  "keyDevelopments": ["bullet 1", "bullet 2"],
+  "recommendedAction": {{
+    "type": "reply-email|schedule-meeting|review-document|follow-up|archive-workstream|no-action",
+    "description": "Specific action description",
+    "targetActivityId": "activity-id-or-null",
+    "confidence": 0.8
+  }},
+  "urgency": "low|medium|high"
+}}"""
+
+        try:
+            raw = await _call_claude(system_prompt, user_msg)
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+            result = json.loads(cleaned)
+            result["generatedAt"] = int(time.time() * 1000)
+            return result
+        except anthropic.RateLimitError:
+            return JSONResponse(
+                {"error": "rate_limited", "retry_after": 30}, status_code=429
+            )
+        except anthropic.APIError as e:
+            logger.error("AI summarize API error: %s", e)
+            return JSONResponse(
+                {"error": "ai_unavailable", "message": str(e)}, status_code=502
+            )
+        except json.JSONDecodeError:
+            logger.error("AI summarize returned invalid JSON: %s", raw[:500])
+            return JSONResponse({"error": "parse_error"}, status_code=502)
+        except Exception as e:
+            logger.exception("AI summarize unexpected error: %s", e)
+            return JSONResponse(
+                {"error": "internal", "message": str(e)}, status_code=500
+            )
 
     return router

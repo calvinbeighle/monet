@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../monet_theme.dart';
 
 enum DiffType { unchanged, added, removed, modified }
 
@@ -119,23 +121,23 @@ class _DiffPatternState extends State<DiffPattern> {
     super.dispose();
   }
 
-  Color _leftBackground(DiffType type) {
+  Color _leftBackground(DiffType type, MonetColors c) {
     switch (type) {
       case DiffType.removed:
-        return Colors.red.withValues(alpha: 0.1);
+        return c.error.withValues(alpha: 0.1);
       case DiffType.modified:
-        return Colors.red.withValues(alpha: 0.1);
+        return c.error.withValues(alpha: 0.1);
       default:
         return Colors.transparent;
     }
   }
 
-  Color _rightBackground(DiffType type) {
+  Color _rightBackground(DiffType type, MonetColors c) {
     switch (type) {
       case DiffType.added:
-        return Colors.green.withValues(alpha: 0.1);
+        return c.success.withValues(alpha: 0.1);
       case DiffType.modified:
-        return Colors.green.withValues(alpha: 0.1);
+        return c.success.withValues(alpha: 0.1);
       default:
         return Colors.transparent;
     }
@@ -145,20 +147,32 @@ class _DiffPatternState extends State<DiffPattern> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        _buildHeader(),
-        Expanded(child: _buildDiffView()),
-        if (widget.onDecision != null) _buildActions(),
+        _buildHeader()
+            .animate()
+            .fadeIn(duration: 300.ms, curve: Curves.easeOut)
+            .slideY(begin: -0.3, end: 0, duration: 300.ms, curve: Curves.easeOut),
+        Expanded(
+          child: _buildDiffView()
+              .animate(delay: 150.ms)
+              .fadeIn(duration: 400.ms, curve: Curves.easeOut),
+        ),
+        if (widget.onDecision != null)
+          _buildActions()
+              .animate(delay: 300.ms)
+              .fadeIn(duration: 300.ms, curve: Curves.easeOut)
+              .slideY(begin: 0.3, end: 0, duration: 300.ms, curve: Curves.easeOut),
       ],
     );
   }
 
   Widget _buildHeader() {
+    final c = MonetColors.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF12121A),
+        color: c.surface,
         border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          bottom: BorderSide(color: c.border),
         ),
       ),
       child: Row(
@@ -166,8 +180,8 @@ class _DiffPatternState extends State<DiffPattern> {
           Expanded(
             child: Text(
               widget.leftTitle,
-              style: const TextStyle(
-                color: Colors.white70,
+              style: TextStyle(
+                color: c.textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -176,15 +190,15 @@ class _DiffPatternState extends State<DiffPattern> {
           Container(
             width: 1,
             height: 20,
-            color: Colors.white.withValues(alpha: 0.1),
+            color: c.border,
           ),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(left: 16),
               child: Text(
                 widget.rightTitle,
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: c.textSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
@@ -197,6 +211,7 @@ class _DiffPatternState extends State<DiffPattern> {
   }
 
   Widget _buildDiffView() {
+    final c = MonetColors.of(context);
     return ListView.builder(
       controller: _scrollController,
       itemCount: widget.lines.length,
@@ -208,7 +223,7 @@ class _DiffPatternState extends State<DiffPattern> {
             children: [
               Expanded(
                 child: Container(
-                  color: _leftBackground(line.type),
+                  color: _leftBackground(line.type, c),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                   child: RichText(
@@ -217,8 +232,8 @@ class _DiffPatternState extends State<DiffPattern> {
                       children: SyntaxHighlighter.highlight(
                         line.left ?? '',
                         line.type == DiffType.removed || line.type == DiffType.modified
-                            ? Colors.red.shade300
-                            : Colors.white70,
+                            ? c.error
+                            : c.textSecondary,
                       ),
                     ),
                   ),
@@ -226,11 +241,11 @@ class _DiffPatternState extends State<DiffPattern> {
               ),
               Container(
                 width: 1,
-                color: Colors.white.withValues(alpha: 0.05),
+                color: c.borderSubtle,
               ),
               Expanded(
                 child: Container(
-                  color: _rightBackground(line.type),
+                  color: _rightBackground(line.type, c),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                   child: RichText(
@@ -239,8 +254,8 @@ class _DiffPatternState extends State<DiffPattern> {
                       children: SyntaxHighlighter.highlight(
                         line.right ?? '',
                         line.type == DiffType.added || line.type == DiffType.modified
-                            ? Colors.green.shade300
-                            : Colors.white70,
+                            ? c.success
+                            : c.textSecondary,
                       ),
                     ),
                   ),
@@ -254,12 +269,13 @@ class _DiffPatternState extends State<DiffPattern> {
   }
 
   Widget _buildActions() {
+    final c = MonetColors.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFF0A0A0F),
+        color: c.scaffoldBg,
         border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          top: BorderSide(color: c.border),
         ),
       ),
       child: Row(
@@ -270,8 +286,8 @@ class _DiffPatternState extends State<DiffPattern> {
             icon: const Icon(Icons.close, size: 18),
             label: const Text('Reject All'),
             style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red.shade300,
-              side: BorderSide(color: Colors.red.shade300.withValues(alpha: 0.5)),
+              foregroundColor: c.error,
+              side: BorderSide(color: c.error.withValues(alpha: 0.5)),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),
@@ -281,7 +297,7 @@ class _DiffPatternState extends State<DiffPattern> {
             icon: const Icon(Icons.check, size: 18),
             label: const Text('Approve All'),
             style: FilledButton.styleFrom(
-              backgroundColor: Colors.green.shade700,
+              backgroundColor: c.success,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
           ),

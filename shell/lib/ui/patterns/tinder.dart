@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../monet_theme.dart';
 
 class TinderCard {
   final String title;
@@ -132,8 +134,12 @@ class TinderPatternState extends State<TinderPattern>
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     if (_isComplete) {
-      return _buildSummary();
+      return _buildSummary(c)
+          .animate()
+          .fadeIn(duration: 400.ms, curve: Curves.easeOut)
+          .scale(begin: const Offset(0.95, 0.95), end: const Offset(1, 1), duration: 400.ms, curve: Curves.easeOutCubic);
     }
     return Column(
       children: [
@@ -141,17 +147,22 @@ class TinderPatternState extends State<TinderPattern>
           padding: const EdgeInsets.all(16),
           child: Text(
             '${_currentIndex + 1} of ${widget.cards.length}',
-            style: const TextStyle(
-              color: Colors.white70,
+            style: TextStyle(
+              color: c.textSecondary,
               fontSize: 14,
             ),
           ),
-        ),
+        )
+            .animate()
+            .fadeIn(duration: 300.ms, curve: Curves.easeOut),
         Expanded(
           child: Center(
-            child: _buildCardStack(),
+            child: _buildCardStack(c),
           ),
-        ),
+        )
+            .animate(delay: 100.ms)
+            .fadeIn(duration: 400.ms, curve: Curves.easeOut)
+            .scale(begin: const Offset(0.92, 0.92), end: const Offset(1, 1), duration: 500.ms, curve: Curves.easeOutCubic),
         Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -160,23 +171,25 @@ class TinderPatternState extends State<TinderPattern>
               IconButton(
                 onPressed: _currentIndex > 0 ? undo : null,
                 icon: const Icon(Icons.undo),
-                color: Colors.white70,
-                disabledColor: Colors.white24,
+                color: c.textSecondary,
+                disabledColor: c.textHint,
               ),
             ],
           ),
-        ),
+        )
+            .animate(delay: 250.ms)
+            .fadeIn(duration: 300.ms, curve: Curves.easeOut),
       ],
     );
   }
 
-  Widget _buildCardStack() {
+  Widget _buildCardStack(MonetColors c) {
     final List<Widget> stack = [];
 
     // Show next card behind current
     if (_currentIndex + 1 < widget.cards.length) {
       stack.add(
-        _buildCard(widget.cards[_currentIndex + 1], behind: true),
+        _buildCard(widget.cards[_currentIndex + 1], c, behind: true),
       );
     }
 
@@ -192,6 +205,7 @@ class TinderPatternState extends State<TinderPattern>
               angle: _dragOffset.dx * 0.001,
               child: _buildCard(
                 widget.cards[_currentIndex],
+                c,
                 dragOffset: _dragOffset,
               ),
             ),
@@ -206,16 +220,16 @@ class TinderPatternState extends State<TinderPattern>
     );
   }
 
-  Widget _buildCard(TinderCard card, {
+  Widget _buildCard(TinderCard card, MonetColors c, {
     bool behind = false,
     Offset dragOffset = Offset.zero,
   }) {
     final swipeProgress = (dragOffset.dx / 100).clamp(-1.0, 1.0);
     Color? overlayColor;
     if (swipeProgress > 0.2) {
-      overlayColor = Colors.green.withValues(alpha: swipeProgress * 0.3);
+      overlayColor = c.success.withValues(alpha: swipeProgress * 0.3);
     } else if (swipeProgress < -0.2) {
-      overlayColor = Colors.red.withValues(alpha: -swipeProgress * 0.3);
+      overlayColor = c.error.withValues(alpha: -swipeProgress * 0.3);
     }
 
     return AnimatedScale(
@@ -225,10 +239,10 @@ class TinderPatternState extends State<TinderPattern>
         width: 340,
         height: 420,
         decoration: BoxDecoration(
-          color: const Color(0xFF12121A),
+          color: c.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: overlayColor ?? Colors.white10,
+            color: overlayColor ?? c.border,
             width: overlayColor != null ? 2 : 1,
           ),
         ),
@@ -241,8 +255,8 @@ class TinderPatternState extends State<TinderPattern>
                 children: [
                   Text(
                     card.title,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: c.textPrimary,
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
                     ),
@@ -254,8 +268,8 @@ class TinderPatternState extends State<TinderPattern>
                     child: SingleChildScrollView(
                       child: Text(
                         card.body,
-                        style: const TextStyle(
-                          color: Colors.white70,
+                        style: TextStyle(
+                          color: c.textSecondary,
                           fontSize: 15,
                           height: 1.5,
                         ),
@@ -275,7 +289,7 @@ class TinderPatternState extends State<TinderPattern>
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     border: Border.all(
-                      color: swipeProgress > 0 ? Colors.green : Colors.red,
+                      color: swipeProgress > 0 ? c.success : c.error,
                       width: 2,
                     ),
                     borderRadius: BorderRadius.circular(8),
@@ -283,7 +297,7 @@ class TinderPatternState extends State<TinderPattern>
                   child: Text(
                     swipeProgress > 0 ? 'APPROVE' : 'REJECT',
                     style: TextStyle(
-                      color: swipeProgress > 0 ? Colors.green : Colors.red,
+                      color: swipeProgress > 0 ? c.success : c.error,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -296,21 +310,21 @@ class TinderPatternState extends State<TinderPattern>
     );
   }
 
-  Widget _buildSummary() {
+  Widget _buildSummary(MonetColors c) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
+          Icon(
             Icons.check_circle_outline,
-            color: Colors.white70,
+            color: c.textSecondary,
             size: 64,
           ),
           const SizedBox(height: 24),
-          const Text(
+          Text(
             'All done',
             style: TextStyle(
-              color: Colors.white,
+              color: c.textPrimary,
               fontSize: 24,
               fontWeight: FontWeight.w600,
             ),
@@ -321,16 +335,18 @@ class TinderPatternState extends State<TinderPattern>
             children: [
               _buildCountBadge(
                 Icons.check,
-                Colors.green,
+                c.success,
                 approvedCount,
                 'approved',
+                c,
               ),
               const SizedBox(width: 32),
               _buildCountBadge(
                 Icons.close,
-                Colors.red,
+                c.error,
                 rejectedCount,
                 'rejected',
+                c,
               ),
             ],
           ),
@@ -340,7 +356,7 @@ class TinderPatternState extends State<TinderPattern>
   }
 
   Widget _buildCountBadge(
-      IconData icon, Color color, int count, String label) {
+      IconData icon, Color color, int count, String label, MonetColors c) {
     return Column(
       children: [
         Icon(icon, color: color, size: 32),
@@ -355,8 +371,8 @@ class TinderPatternState extends State<TinderPattern>
         ),
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white54,
+          style: TextStyle(
+            color: c.textTertiary,
             fontSize: 14,
           ),
         ),

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/agent_client.dart';
+import 'monet_theme.dart';
 
 /// Icon mapping for each agent type
 IconData _agentIcon(String name) {
@@ -29,32 +30,32 @@ IconData _agentIcon(String name) {
 }
 
 /// Color mapping for each agent type
-Color _agentColor(String name) {
+Color _agentColor(String name, MonetColors c) {
   switch (name) {
     case 'email':
-      return const Color(0xFF7C6EF0); // purple
+      return c.agentEmail;
     case 'code':
-      return const Color(0xFF4EC9B0); // teal
+      return c.agentCode;
     case 'planning':
-      return const Color(0xFFE5A84B); // amber
+      return c.agentPlanning;
     case 'general':
-      return const Color(0xFF6EA8F0); // blue
+      return c.agentGeneral;
     case 'writing':
-      return const Color(0xFFE08050); // orange
+      return c.agentWriting;
     default:
-      return const Color(0xFFA080D0); // custom agents get a soft violet
+      return c.agentCustom;
   }
 }
 
 /// Status indicator color
-Color _statusColor(String status) {
+Color _statusColor(String status, MonetColors c) {
   switch (status) {
     case 'working':
-      return const Color(0xFF4EC9B0);
+      return c.success;
     case 'idle':
-      return const Color(0xFF666666);
+      return c.textMeta;
     default:
-      return const Color(0xFF666666);
+      return c.textMeta;
   }
 }
 
@@ -127,9 +128,10 @@ class AgentsDashboardState extends State<AgentsDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     if (_loading && _agents.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF7C6EF0)),
+      return Center(
+        child: CircularProgressIndicator(color: c.primary),
       );
     }
 
@@ -138,16 +140,16 @@ class AgentsDashboardState extends State<AgentsDashboard> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: Color(0xFF666666), size: 48),
+            Icon(Icons.error_outline, color: c.textMeta, size: 48),
             const SizedBox(height: 16),
             Text(
               'Could not load agents',
-              style: TextStyle(color: Colors.white.withAlpha(180), fontSize: 16),
+              style: TextStyle(color: c.textPrimary, fontSize: 16),
             ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _loadData,
-              child: const Text('Retry', style: TextStyle(color: Color(0xFF7C6EF0))),
+              child: Text('Retry', style: TextStyle(color: c.primary)),
             ),
           ],
         ),
@@ -162,6 +164,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
   }
 
   Widget _buildOverview() {
+    final c = MonetColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -173,7 +176,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
               Text(
                 'Your Agents',
                 style: TextStyle(
-                  color: Colors.white.withAlpha(220),
+                  color: c.textPrimary,
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
                 ),
@@ -184,25 +187,25 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF4EC9B0).withAlpha(30),
+                    color: c.success.withAlpha(30),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const SizedBox(
+                      SizedBox(
                         width: 12,
                         height: 12,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Color(0xFF4EC9B0),
+                          color: c.success,
                         ),
                       ),
                       const SizedBox(width: 6),
                       Text(
                         '${_agents.where((a) => a.stats.currentStatus == 'working').length} working',
-                        style: const TextStyle(
-                          color: Color(0xFF4EC9B0),
+                        style: TextStyle(
+                          color: c.success,
                           fontSize: 12,
                         ),
                       ),
@@ -237,7 +240,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   Text(
                     'Recent Activity',
                     style: TextStyle(
-                      color: Colors.white.withAlpha(160),
+                      color: c.textSecondary,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
@@ -257,7 +260,8 @@ class AgentsDashboardState extends State<AgentsDashboard> {
 
   /// Each agent rendered as a visual entity card - not a table row.
   Widget _buildAgentCard(AgentInfo agent) {
-    final color = _agentColor(agent.name);
+    final c = MonetColors.of(context);
+    final color = _agentColor(agent.name, c);
     final icon = _agentIcon(agent.name);
     final status = agent.stats.currentStatus;
     final isWorking = status == 'working';
@@ -268,10 +272,10 @@ class AgentsDashboardState extends State<AgentsDashboard> {
         width: 200,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF12121A),
+          color: c.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isWorking ? color.withAlpha(100) : Colors.white.withAlpha(15),
+            color: isWorking ? color.withAlpha(100) : c.border,
             width: isWorking ? 1.5 : 1,
           ),
         ),
@@ -296,10 +300,10 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   width: 10,
                   height: 10,
                   decoration: BoxDecoration(
-                    color: _statusColor(status),
+                    color: _statusColor(status, c),
                     shape: BoxShape.circle,
                     boxShadow: isWorking
-                        ? [BoxShadow(color: _statusColor(status).withAlpha(100), blurRadius: 6)]
+                        ? [BoxShadow(color: _statusColor(status, c).withAlpha(100), blurRadius: 6)]
                         : null,
                   ),
                 ),
@@ -311,7 +315,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
             Text(
               agent.name[0].toUpperCase() + agent.name.substring(1),
               style: TextStyle(
-                color: Colors.white.withAlpha(220),
+                color: c.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
@@ -322,7 +326,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
             Text(
               agent.description,
               style: TextStyle(
-                color: Colors.white.withAlpha(100),
+                color: c.textTertiary,
                 fontSize: 12,
                 height: 1.3,
               ),
@@ -361,7 +365,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   Text(
                     _timeAgo(agent.stats.lastRunAt),
                     style: TextStyle(
-                      color: Colors.white.withAlpha(60),
+                      color: c.textMeta,
                       fontSize: 11,
                     ),
                   ),
@@ -375,16 +379,17 @@ class AgentsDashboardState extends State<AgentsDashboard> {
 
   /// "Create Agent" card - opens a dialog to define a new custom agent.
   Widget _buildCreateAgentCard() {
+    final c = MonetColors.of(context);
     return GestureDetector(
       onTap: () => _showCreateAgentDialog(),
       child: Container(
         width: 200,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFF12121A),
+          color: c.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: Colors.white.withAlpha(15),
+            color: c.border,
             width: 1,
           ),
         ),
@@ -396,16 +401,16 @@ class AgentsDashboardState extends State<AgentsDashboard> {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: Colors.white.withAlpha(8),
+                color: c.activeOverlay,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(Icons.add, color: Colors.white.withAlpha(120), size: 24),
+              child: Icon(Icons.add, color: c.textSecondary, size: 24),
             ),
             const SizedBox(height: 14),
             Text(
               'Create Agent',
               style: TextStyle(
-                color: Colors.white.withAlpha(180),
+                color: c.textPrimary,
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
@@ -414,7 +419,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
             Text(
               'Build a custom agent with your own instructions',
               style: TextStyle(
-                color: Colors.white.withAlpha(80),
+                color: c.textMeta,
                 fontSize: 12,
                 height: 1.3,
               ),
@@ -439,13 +444,14 @@ class AgentsDashboardState extends State<AgentsDashboard> {
   }
 
   Widget _buildMiniStat(String value, String label) {
+    final c = MonetColors.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           value,
           style: TextStyle(
-            color: Colors.white.withAlpha(180),
+            color: c.textPrimary,
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -454,7 +460,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
         Text(
           label,
           style: TextStyle(
-            color: Colors.white.withAlpha(60),
+            color: c.textMeta,
             fontSize: 11,
           ),
         ),
@@ -463,24 +469,25 @@ class AgentsDashboardState extends State<AgentsDashboard> {
   }
 
   Widget _buildActivityRow(AgentActivity activity) {
-    final color = _agentColor(activity.agentName);
+    final c = MonetColors.of(context);
+    final color = _agentColor(activity.agentName, c);
     final statusIcon = activity.status == 'completed'
         ? Icons.check_circle_outline
         : activity.status == 'error'
             ? Icons.error_outline
             : Icons.hourglass_top;
     final statusColor = activity.status == 'completed'
-        ? const Color(0xFF4EC9B0)
+        ? c.success
         : activity.status == 'error'
-            ? const Color(0xFFE05050)
-            : const Color(0xFFE5A84B);
+            ? c.error
+            : c.agentPlanning;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF0E0E14),
+          color: c.surfaceTertiary,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -491,7 +498,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
               child: Text(
                 activity.intent,
                 style: TextStyle(
-                  color: Colors.white.withAlpha(160),
+                  color: c.textSecondary,
                   fontSize: 13,
                 ),
                 maxLines: 1,
@@ -504,7 +511,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
             Text(
               _timeAgo(activity.startedAt),
               style: TextStyle(
-                color: Colors.white.withAlpha(60),
+                color: c.textMeta,
                 fontSize: 11,
               ),
             ),
@@ -516,6 +523,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
 
   /// Detail view for a single agent - shows tools, history, config
   Widget _buildAgentDetail(String agentName) {
+    final c = MonetColors.of(context);
     final agent = _agents.cast<AgentInfo?>().firstWhere(
           (a) => a?.name == agentName,
           orElse: () => null,
@@ -524,7 +532,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
       return const Center(child: Text('Agent not found'));
     }
 
-    final color = _agentColor(agentName);
+    final color = _agentColor(agentName, c);
     final agentActivity =
         _recentActivity.where((a) => a.agentName == agentName).toList();
 
@@ -541,12 +549,12 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF12121A),
+                    color: c.surface,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     Icons.arrow_back,
-                    color: Colors.white.withAlpha(160),
+                    color: c.textSecondary,
                     size: 18,
                   ),
                 ),
@@ -568,7 +576,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   Text(
                     agentName[0].toUpperCase() + agentName.substring(1),
                     style: TextStyle(
-                      color: Colors.white.withAlpha(220),
+                      color: c.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
@@ -576,7 +584,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   Text(
                     agent.description,
                     style: TextStyle(
-                      color: Colors.white.withAlpha(100),
+                      color: c.textTertiary,
                       fontSize: 12,
                     ),
                   ),
@@ -590,12 +598,12 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFE05050).withAlpha(15),
+                      color: c.error.withAlpha(15),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.delete_outline,
-                      color: Color(0xFFE05050),
+                      color: c.error,
                       size: 18,
                     ),
                   ),
@@ -606,13 +614,13 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFA080D0).withAlpha(25),
+                    color: c.agentCustom.withAlpha(25),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Text(
+                  child: Text(
                     'Custom',
                     style: TextStyle(
-                      color: Color(0xFFA080D0),
+                      color: c.agentCustom,
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
                     ),
@@ -623,14 +631,14 @@ class AgentsDashboardState extends State<AgentsDashboard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: _statusColor(agent.stats.currentStatus).withAlpha(25),
+                  color: _statusColor(agent.stats.currentStatus, c).withAlpha(25),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   agent.stats.currentStatus[0].toUpperCase() +
                       agent.stats.currentStatus.substring(1),
                   style: TextStyle(
-                    color: _statusColor(agent.stats.currentStatus),
+                    color: _statusColor(agent.stats.currentStatus, c),
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
@@ -654,11 +662,11 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   children: [
                     _buildStatCard('Total Runs', '${agent.stats.totalRuns}', color),
                     const SizedBox(width: 12),
-                    _buildStatCard('Completed', '${agent.stats.completed}', const Color(0xFF4EC9B0)),
+                    _buildStatCard('Completed', '${agent.stats.completed}', c.success),
                     const SizedBox(width: 12),
-                    _buildStatCard('Errors', '${agent.stats.errors}', const Color(0xFFE05050)),
+                    _buildStatCard('Errors', '${agent.stats.errors}', c.error),
                     const SizedBox(width: 12),
-                    _buildStatCard('Tool Calls', '${agent.stats.totalToolCalls}', const Color(0xFF6EA8F0)),
+                    _buildStatCard('Tool Calls', '${agent.stats.totalToolCalls}', c.agentGeneral),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -679,12 +687,12 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF12121A),
+                          color: c.surface,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: needsApproval
-                                ? const Color(0xFFE5A84B).withAlpha(60)
-                                : Colors.white.withAlpha(10),
+                                ? c.agentPlanning.withAlpha(60)
+                                : c.border,
                           ),
                         ),
                         child: Row(
@@ -693,7 +701,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                             Text(
                               tool,
                               style: TextStyle(
-                                color: Colors.white.withAlpha(160),
+                                color: c.textSecondary,
                                 fontSize: 12,
                                 fontFamily: 'monospace',
                               ),
@@ -702,7 +710,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                               const SizedBox(width: 6),
                               Icon(
                                 Icons.shield_outlined,
-                                color: const Color(0xFFE5A84B).withAlpha(180),
+                                color: c.agentPlanning.withAlpha(180),
                                 size: 14,
                               ),
                             ],
@@ -723,7 +731,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                     child: Text(
                       'No activity yet',
                       style: TextStyle(
-                        color: Colors.white.withAlpha(60),
+                        color: c.textMeta,
                         fontSize: 13,
                       ),
                     ),
@@ -741,11 +749,12 @@ class AgentsDashboardState extends State<AgentsDashboard> {
   }
 
   Widget _buildStatCard(String label, String value, Color color) {
+    final c = MonetColors.of(context);
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFF12121A),
+          color: c.surface,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -763,7 +772,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
             Text(
               label,
               style: TextStyle(
-                color: Colors.white.withAlpha(80),
+                color: c.textMeta,
                 fontSize: 11,
               ),
             ),
@@ -774,10 +783,11 @@ class AgentsDashboardState extends State<AgentsDashboard> {
   }
 
   Widget _buildSectionHeader(String title) {
+    final c = MonetColors.of(context);
     return Text(
       title,
       style: TextStyle(
-        color: Colors.white.withAlpha(140),
+        color: c.textSecondary,
         fontSize: 13,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.5,
@@ -786,6 +796,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
   }
 
   Widget _buildSchedulesSection(String agentName, Color color) {
+    final c = MonetColors.of(context);
     final agentSchedules = _schedules.where((s) => s.agentName == agentName).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -824,7 +835,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
             child: Text(
               'No schedules. Add one to run this agent automatically.',
               style: TextStyle(
-                color: Colors.white.withAlpha(60),
+                color: c.textMeta,
                 fontSize: 13,
               ),
             ),
@@ -836,24 +847,25 @@ class AgentsDashboardState extends State<AgentsDashboard> {
   }
 
   Widget _buildScheduleRow(AgentSchedule schedule, Color color) {
+    final c = MonetColors.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF0E0E14),
+          color: c.surfaceTertiary,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: schedule.enabled
                 ? color.withAlpha(30)
-                : Colors.white.withAlpha(8),
+                : c.activeOverlay,
           ),
         ),
         child: Row(
           children: [
             Icon(
               Icons.schedule,
-              color: schedule.enabled ? color : Colors.white.withAlpha(40),
+              color: schedule.enabled ? color : c.textHint,
               size: 16,
             ),
             const SizedBox(width: 10),
@@ -864,7 +876,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   Text(
                     schedule.intent,
                     style: TextStyle(
-                      color: Colors.white.withAlpha(schedule.enabled ? 180 : 80),
+                      color: schedule.enabled ? c.textPrimary : c.textMeta,
                       fontSize: 13,
                     ),
                     maxLines: 1,
@@ -876,7 +888,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                     style: TextStyle(
                       color: schedule.enabled
                           ? color.withAlpha(140)
-                          : Colors.white.withAlpha(40),
+                          : c.textHint,
                       fontSize: 11,
                     ),
                   ),
@@ -897,7 +909,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 child: Icon(
                   schedule.enabled ? Icons.pause_circle_outline : Icons.play_circle_outline,
                   color: schedule.enabled
-                      ? Colors.white.withAlpha(80)
+                      ? c.textMeta
                       : color.withAlpha(140),
                   size: 20,
                 ),
@@ -916,7 +928,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 padding: const EdgeInsets.all(6),
                 child: Icon(
                   Icons.close,
-                  color: Colors.white.withAlpha(40),
+                  color: c.textHint,
                   size: 16,
                 ),
               ),
@@ -938,22 +950,23 @@ class AgentsDashboardState extends State<AgentsDashboard> {
   }
 
   void _confirmDeleteAgent(String agentName) {
+    final c = MonetColors.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF12121A),
+        backgroundColor: c.surface,
         title: Text(
           'Delete $agentName?',
-          style: const TextStyle(color: Colors.white, fontSize: 16),
+          style: TextStyle(color: c.textPrimary, fontSize: 16),
         ),
         content: Text(
           'This will permanently remove this custom agent and its configuration.',
-          style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 14),
+          style: TextStyle(color: c.textSecondary, fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('Cancel', style: TextStyle(color: Colors.white.withAlpha(140))),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
           ),
           TextButton(
             onPressed: () async {
@@ -973,7 +986,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 }
               }
             },
-            child: const Text('Delete', style: TextStyle(color: Color(0xFFE05050))),
+            child: Text('Delete', style: TextStyle(color: c.error)),
           ),
         ],
       ),
@@ -981,11 +994,12 @@ class AgentsDashboardState extends State<AgentsDashboard> {
   }
 
   Widget _buildDetailActivityRow(AgentActivity activity) {
+    final c = MonetColors.of(context);
     final statusColor = activity.status == 'completed'
-        ? const Color(0xFF4EC9B0)
+        ? c.success
         : activity.status == 'error'
-            ? const Color(0xFFE05050)
-            : const Color(0xFFE5A84B);
+            ? c.error
+            : c.agentPlanning;
     final duration = activity.duration;
     final durationStr = duration != null
         ? '${duration.inSeconds}s'
@@ -996,7 +1010,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFF0E0E14),
+          color: c.surfaceTertiary,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Column(
@@ -1017,7 +1031,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   child: Text(
                     activity.intent,
                     style: TextStyle(
-                      color: Colors.white.withAlpha(180),
+                      color: c.textPrimary,
                       fontSize: 13,
                     ),
                     maxLines: 1,
@@ -1027,7 +1041,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 Text(
                   durationStr,
                   style: TextStyle(
-                    color: Colors.white.withAlpha(60),
+                    color: c.textMeta,
                     fontSize: 11,
                   ),
                 ),
@@ -1038,7 +1052,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
               Text(
                 activity.summary!,
                 style: TextStyle(
-                  color: Colors.white.withAlpha(80),
+                  color: c.textMeta,
                   fontSize: 12,
                 ),
                 maxLines: 2,
@@ -1049,8 +1063,8 @@ class AgentsDashboardState extends State<AgentsDashboard> {
               const SizedBox(height: 6),
               Text(
                 activity.errorMessage!,
-                style: const TextStyle(
-                  color: Color(0xFFE05050),
+                style: TextStyle(
+                  color: c.error,
                   fontSize: 12,
                 ),
                 maxLines: 2,
@@ -1063,7 +1077,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 Text(
                   _timeAgo(activity.startedAt),
                   style: TextStyle(
-                    color: Colors.white.withAlpha(40),
+                    color: c.textHint,
                     fontSize: 11,
                   ),
                 ),
@@ -1072,7 +1086,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   Text(
                     '${activity.toolCallsCount} tool calls',
                     style: TextStyle(
-                      color: Colors.white.withAlpha(40),
+                      color: c.textHint,
                       fontSize: 11,
                     ),
                   ),
@@ -1082,7 +1096,7 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                   Text(
                     '${activity.approvalsCount} approvals',
                     style: TextStyle(
-                      color: Colors.white.withAlpha(40),
+                      color: c.textHint,
                       fontSize: 11,
                     ),
                   ),
@@ -1176,8 +1190,9 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return Dialog(
-      backgroundColor: const Color(0xFF12121A),
+      backgroundColor: c.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480, maxHeight: 600),
@@ -1190,12 +1205,12 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
               // Header
               Row(
                 children: [
-                  const Icon(Icons.smart_toy_outlined, color: Color(0xFFA080D0), size: 24),
+                  Icon(Icons.smart_toy_outlined, color: c.agentCustom, size: 24),
                   const SizedBox(width: 12),
                   Text(
                     'Create Agent',
                     style: TextStyle(
-                      color: Colors.white.withAlpha(220),
+                      color: c.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1213,28 +1228,28 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
               const SizedBox(height: 12),
 
               // System prompt field (multiline)
-              Text('Instructions', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+              Text('Instructions', style: TextStyle(color: c.textSecondary, fontSize: 12)),
               const SizedBox(height: 4),
               TextField(
                 controller: _promptController,
                 maxLines: 4,
-                style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 14),
+                style: TextStyle(color: c.textPrimary, fontSize: 14),
                 decoration: InputDecoration(
                   hintText: 'Tell the agent how to behave...',
-                  hintStyle: TextStyle(color: Colors.white.withAlpha(40)),
+                  hintStyle: TextStyle(color: c.textHint),
                   filled: true,
-                  fillColor: const Color(0xFF0A0A0F),
+                  fillColor: c.scaffoldBg,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+                    borderSide: BorderSide(color: c.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+                    borderSide: BorderSide(color: c.border),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFA080D0)),
+                    borderSide: BorderSide(color: c.agentCustom),
                   ),
                   contentPadding: const EdgeInsets.all(12),
                 ),
@@ -1242,7 +1257,7 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
               const SizedBox(height: 16),
 
               // Tool sets
-              Text('Tool Access', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+              Text('Tool Access', style: TextStyle(color: c.textSecondary, fontSize: 12)),
               const SizedBox(height: 6),
               Wrap(
                 spacing: 8,
@@ -1260,16 +1275,16 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: selected ? const Color(0xFFA080D0).withAlpha(25) : const Color(0xFF0A0A0F),
+                        color: selected ? c.agentCustom.withAlpha(25) : c.scaffoldBg,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: selected ? const Color(0xFFA080D0).withAlpha(100) : Colors.white.withAlpha(15),
+                          color: selected ? c.agentCustom.withAlpha(100) : c.border,
                         ),
                       ),
                       child: Text(
                         entry.value,
                         style: TextStyle(
-                          color: selected ? const Color(0xFFA080D0) : Colors.white.withAlpha(100),
+                          color: selected ? c.agentCustom : c.textTertiary,
                           fontSize: 12,
                         ),
                       ),
@@ -1280,7 +1295,7 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
               const SizedBox(height: 16),
 
               // UI pattern
-              Text('Default UI', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+              Text('Default UI', style: TextStyle(color: c.textSecondary, fontSize: 12)),
               const SizedBox(height: 6),
               Wrap(
                 spacing: 8,
@@ -1291,16 +1306,16 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: selected ? const Color(0xFFA080D0).withAlpha(25) : const Color(0xFF0A0A0F),
+                        color: selected ? c.agentCustom.withAlpha(25) : c.scaffoldBg,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: selected ? const Color(0xFFA080D0).withAlpha(100) : Colors.white.withAlpha(15),
+                          color: selected ? c.agentCustom.withAlpha(100) : c.border,
                         ),
                       ),
                       child: Text(
                         entry.value,
                         style: TextStyle(
-                          color: selected ? const Color(0xFFA080D0) : Colors.white.withAlpha(100),
+                          color: selected ? c.agentCustom : c.textTertiary,
                           fontSize: 12,
                         ),
                       ),
@@ -1312,7 +1327,7 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
               // Error
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Color(0xFFE05050), fontSize: 12)),
+                Text(_error!, style: TextStyle(color: c.error, fontSize: 12)),
               ],
 
               const SizedBox(height: 20),
@@ -1323,13 +1338,13 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
                 children: [
                   TextButton(
                     onPressed: _creating ? null : () => Navigator.of(context).pop(),
-                    child: Text('Cancel', style: TextStyle(color: Colors.white.withAlpha(140))),
+                    child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
                     onPressed: _creating ? null : _create,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFA080D0),
+                      backgroundColor: c.agentCustom,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
@@ -1351,30 +1366,31 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
   }
 
   Widget _buildField(String label, TextEditingController controller, String hint) {
+    final c = MonetColors.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+        Text(label, style: TextStyle(color: c.textSecondary, fontSize: 12)),
         const SizedBox(height: 4),
         TextField(
           controller: controller,
-          style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 14),
+          style: TextStyle(color: c.textPrimary, fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: TextStyle(color: Colors.white.withAlpha(40)),
+            hintStyle: TextStyle(color: c.textHint),
             filled: true,
-            fillColor: const Color(0xFF0A0A0F),
+            fillColor: c.scaffoldBg,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+              borderSide: BorderSide(color: c.border),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+              borderSide: BorderSide(color: c.border),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFA080D0)),
+              borderSide: BorderSide(color: c.agentCustom),
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           ),
@@ -1459,8 +1475,9 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return Dialog(
-      backgroundColor: const Color(0xFF12121A),
+      backgroundColor: c.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420, maxHeight: 480),
@@ -1473,12 +1490,12 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
               // Header
               Row(
                 children: [
-                  const Icon(Icons.schedule, color: Color(0xFF7C6EF0), size: 22),
+                  Icon(Icons.schedule, color: c.primary, size: 22),
                   const SizedBox(width: 10),
                   Text(
                     'Schedule ${widget.agentName[0].toUpperCase()}${widget.agentName.substring(1)}',
                     style: TextStyle(
-                      color: Colors.white.withAlpha(220),
+                      color: c.textPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1489,27 +1506,27 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
 
               // Intent field
               Text('What should it do?',
-                  style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+                  style: TextStyle(color: c.textSecondary, fontSize: 12)),
               const SizedBox(height: 4),
               TextField(
                 controller: _intentController,
-                style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 14),
+                style: TextStyle(color: c.textPrimary, fontSize: 14),
                 decoration: InputDecoration(
                   hintText: 'e.g., Summarize my inbox',
-                  hintStyle: TextStyle(color: Colors.white.withAlpha(40)),
+                  hintStyle: TextStyle(color: c.textHint),
                   filled: true,
-                  fillColor: const Color(0xFF0A0A0F),
+                  fillColor: c.scaffoldBg,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+                    borderSide: BorderSide(color: c.border),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+                    borderSide: BorderSide(color: c.border),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFF7C6EF0)),
+                    borderSide: BorderSide(color: c.primary),
                   ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 ),
@@ -1518,7 +1535,7 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
 
               // Schedule type
               Text('Frequency',
-                  style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+                  style: TextStyle(color: c.textSecondary, fontSize: 12)),
               const SizedBox(height: 6),
               Row(
                 children: [
@@ -1532,7 +1549,7 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
               // Type-specific options
               if (_scheduleType == 'interval') ...[
                 Text('Run every',
-                    style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+                    style: TextStyle(color: c.textSecondary, fontSize: 12)),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 8,
@@ -1545,21 +1562,21 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: selected
-                              ? const Color(0xFF7C6EF0).withAlpha(25)
-                              : const Color(0xFF0A0A0F),
+                              ? c.primary.withAlpha(25)
+                              : c.scaffoldBg,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: selected
-                                ? const Color(0xFF7C6EF0).withAlpha(100)
-                                : Colors.white.withAlpha(15),
+                                ? c.primary.withAlpha(100)
+                                : c.border,
                           ),
                         ),
                         child: Text(
                           entry.value,
                           style: TextStyle(
                             color: selected
-                                ? const Color(0xFF7C6EF0)
-                                : Colors.white.withAlpha(100),
+                                ? c.primary
+                                : c.textTertiary,
                             fontSize: 12,
                           ),
                         ),
@@ -1569,7 +1586,7 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
                 ),
               ] else ...[
                 Text('Time (24h)',
-                    style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+                    style: TextStyle(color: c.textSecondary, fontSize: 12)),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 8,
@@ -1583,21 +1600,21 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: selected
-                              ? const Color(0xFF7C6EF0).withAlpha(25)
-                              : const Color(0xFF0A0A0F),
+                              ? c.primary.withAlpha(25)
+                              : c.scaffoldBg,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: selected
-                                ? const Color(0xFF7C6EF0).withAlpha(100)
-                                : Colors.white.withAlpha(15),
+                                ? c.primary.withAlpha(100)
+                                : c.border,
                           ),
                         ),
                         child: Text(
                           t,
                           style: TextStyle(
                             color: selected
-                                ? const Color(0xFF7C6EF0)
-                                : Colors.white.withAlpha(100),
+                                ? c.primary
+                                : c.textTertiary,
                             fontSize: 12,
                           ),
                         ),
@@ -1610,7 +1627,7 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
               // Error
               if (_error != null) ...[
                 const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Color(0xFFE05050), fontSize: 12)),
+                Text(_error!, style: TextStyle(color: c.error, fontSize: 12)),
               ],
 
               const SizedBox(height: 20),
@@ -1622,13 +1639,13 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
                   TextButton(
                     onPressed: _creating ? null : () => Navigator.of(context).pop(),
                     child: Text('Cancel',
-                        style: TextStyle(color: Colors.white.withAlpha(140))),
+                        style: TextStyle(color: c.textSecondary)),
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
                     onPressed: _creating ? null : _create,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7C6EF0),
+                      backgroundColor: c.primary,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),
@@ -1652,6 +1669,7 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
   }
 
   Widget _buildTypeChip(String value, String label) {
+    final c = MonetColors.of(context);
     final selected = _scheduleType == value;
     return GestureDetector(
       onTap: () => setState(() => _scheduleType = value),
@@ -1659,21 +1677,21 @@ class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
           color: selected
-              ? const Color(0xFF7C6EF0).withAlpha(25)
-              : const Color(0xFF0A0A0F),
+              ? c.primary.withAlpha(25)
+              : c.scaffoldBg,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: selected
-                ? const Color(0xFF7C6EF0).withAlpha(100)
-                : Colors.white.withAlpha(15),
+                ? c.primary.withAlpha(100)
+                : c.border,
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
             color: selected
-                ? const Color(0xFF7C6EF0)
-                : Colors.white.withAlpha(100),
+                ? c.primary
+                : c.textTertiary,
             fontSize: 13,
           ),
         ),

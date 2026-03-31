@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete, Voice Input complete, Dark/Light Theme complete - 887 passing tests (736 Python + 151 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete, Voice Input complete, Dark/Light Theme complete, Animation Polish complete - 887 passing tests (736 Python + 151 Flutter).**
 
 ---
 
@@ -229,7 +229,7 @@ Debian VM boots directly into Monet.
 
 - [x] Keystroke collection pipeline (OS-level capture -> SQLite -> personalization)
 - [x] Dark/light theme
-- [ ] Animation polish on pattern transitions
+- [x] Animation polish on pattern transitions
 - [ ] More integrations (Slack, Calendar, Notion, Linear)
 - [x] Smarter intent routing (Claude Haiku LLM fallback when keyword rules miss)
 - [x] Voice input
@@ -439,7 +439,19 @@ Debian VM boots directly into Monet.
 - **Dark/light theme verified complete:** MonetThemeNotifier with SharedPreferences persistence, MonetColors.dark/light with full 22-token color system, buildMonetTheme() for both Brightness modes, lerp() for smooth transitions, StatusBar toggle wired end-to-end via ChangeNotifierProvider/Consumer. Marked as done in Phase 5.
 - **Flutter test regression fixed:** MonetShell flow progress tests were missing ChangeNotifierProvider<MonetThemeNotifier> after the theme system was added, causing Column overflow errors. Fixed by wrapping in MultiProvider.
 - **Test count:** 887 total (736 Python + 151 Flutter), all passing.
-- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Animation polish on pattern transitions not addressed. More integrations (Slack, Calendar, Notion, Linear) not implemented.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. More integrations (Slack, Calendar, Notion, Linear) not implemented.
+
+### Implementation Notes (2026-03-31) - Batch 26
+
+- **Animation polish on pattern transitions (Phase 5):** Comprehensive entry animation overhaul using `flutter_animate` (already in pubspec but previously unused).
+- **Cross-pattern transitions upgraded:** `AnimatedSwitcher` in `main.dart` now uses a custom `transitionBuilder` with fade + scale (0.96->1.0) + subtle slide-up (0.015). Duration increased from 300ms to 350ms with `easeOutCubic` curves for smoother feel.
+- **HomeScreen staggered entry:** All 6 home screen sections (greeting, voice prompt, quick actions, connected tools, agents, recent activity) animate in with staggered delays (0ms, 80ms, 160ms, 240ms, 320ms, 400ms). Each section fades in + slides up. Creates a cascading reveal on home screen load.
+- **TinderPattern entry animation:** Counter fades in (300ms), card stack fades in + scales up from 0.92 (400ms, 100ms delay), undo button fades in last (250ms delay). Summary completion view scales in from 0.95 with fade.
+- **DiffPattern entry animation:** Header slides down from above with fade (300ms), diff content area fades in (400ms, 150ms delay), action buttons slide up from below with fade (300ms, 300ms delay).
+- **WhiteboardPattern staggered node entry:** Each node scales in from 0.8 with `easeOutBack` curve (400ms) and fades in, with 60ms stagger per node index. Creates a popcorn effect as nodes appear on the canvas.
+- **Test fix:** Added `pumpAndSettle()` calls in Tinder, Diff, Whiteboard, and MonetShell flow progress test groups to drain flutter_animate timers. Added `Animate.restartOnHotReload = false` at test main() entry.
+- **Test count:** 887 total (736 Python + 151 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. More integrations (Slack, Calendar, Notion, Linear) not implemented.
 
 ---
 

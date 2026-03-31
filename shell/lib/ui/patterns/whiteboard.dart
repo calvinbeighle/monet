@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import '../monet_theme.dart';
 
 class WhiteboardNode {
   final String id;
@@ -19,14 +21,14 @@ class WhiteboardNode {
     this.connections = const [],
   });
 
-  static Color priorityColor(String priority) {
+  static Color priorityColor(String priority, MonetColors c) {
     switch (priority) {
       case 'high':
-        return const Color(0xFFEF4444);
+        return c.error;
       case 'low':
-        return const Color(0xFF22C55E);
+        return c.success;
       default:
-        return const Color(0xFF7C6EF0);
+        return c.primary;
     }
   }
 }
@@ -60,6 +62,7 @@ class WhiteboardPatternState extends State<WhiteboardPattern> {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return InteractiveViewer(
       transformationController: _transformController,
       minScale: 0.3,
@@ -72,16 +75,16 @@ class WhiteboardPatternState extends State<WhiteboardPattern> {
           children: [
             CustomPaint(
               size: const Size(3000, 3000),
-              painter: _ConnectionPainter(nodes: widget.nodes),
+              painter: _ConnectionPainter(nodes: widget.nodes, borderColor: c.border),
             ),
-            ...widget.nodes.map(_buildNode),
+            ...widget.nodes.asMap().entries.map((entry) => _buildNode(entry.value, c, index: entry.key)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildNode(WhiteboardNode node) {
+  Widget _buildNode(WhiteboardNode node, MonetColors c, {int index = 0}) {
     return Positioned(
       left: node.x,
       top: node.y,
@@ -108,10 +111,10 @@ class WhiteboardPatternState extends State<WhiteboardPattern> {
           constraints: const BoxConstraints(minHeight: 60),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFF12121A),
+            color: c.surface,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: WhiteboardNode.priorityColor(node.priority).withValues(alpha: 0.5),
+              color: WhiteboardNode.priorityColor(node.priority, c).withValues(alpha: 0.5),
             ),
           ),
           child: Column(
@@ -125,15 +128,15 @@ class WhiteboardPatternState extends State<WhiteboardPattern> {
                     height: 8,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: WhiteboardNode.priorityColor(node.priority),
+                      color: WhiteboardNode.priorityColor(node.priority, c),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       node.title,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: c.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -147,8 +150,8 @@ class WhiteboardPatternState extends State<WhiteboardPattern> {
                 const SizedBox(height: 6),
                 Text(
                   node.body,
-                  style: const TextStyle(
-                    color: Colors.white54,
+                  style: TextStyle(
+                    color: c.textTertiary,
                     fontSize: 12,
                     height: 1.4,
                   ),
@@ -158,7 +161,10 @@ class WhiteboardPatternState extends State<WhiteboardPattern> {
               ],
             ],
           ),
-        ),
+        )
+            .animate(delay: Duration(milliseconds: 60 * index))
+            .fadeIn(duration: 350.ms, curve: Curves.easeOut)
+            .scale(begin: const Offset(0.8, 0.8), end: const Offset(1, 1), duration: 400.ms, curve: Curves.easeOutBack),
       ),
     );
   }
@@ -166,13 +172,14 @@ class WhiteboardPatternState extends State<WhiteboardPattern> {
 
 class _ConnectionPainter extends CustomPainter {
   final List<WhiteboardNode> nodes;
+  final Color borderColor;
 
-  _ConnectionPainter({required this.nodes});
+  _ConnectionPainter({required this.nodes, required this.borderColor});
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.2)
+      ..color = borderColor
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
 

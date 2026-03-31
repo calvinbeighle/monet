@@ -88,14 +88,18 @@ The system authenticates with Gmail on behalf of a user, reads that user's email
 
 Behaviors are listed in the order they occur during a user session.
 
-### 1. Authentication
+### 1. Authentication (via Nango)
 
-- On first launch, the system presents an authorization prompt. The user is redirected to Google's OAuth2 consent screen.
+- OAuth2 authentication is handled entirely by Nango (managed OAuth platform). The application does not implement token exchange, refresh, or storage directly.
+- On first launch, the system creates a Nango connect session via the Nango API and redirects the user to the Nango-hosted OAuth flow for Gmail.
 - The user grants the minimum scopes required: read access to email, compose access, and modify access (for archiving).
-- After the user approves, the system receives an authorization code, exchanges it for an access token and a refresh token, and persists both securely.
+- After the user approves, Nango stores the OAuth tokens. The application receives a connection confirmation.
+- The application checks connection status via Nango's connection API (GET /connection/{connectionId}).
+- All Gmail API calls are proxied through Nango's proxy endpoint, which handles token refresh transparently. The application never touches raw tokens.
 - The user is not shown raw token values at any point.
 - If the user denies the consent prompt, the system remains in an unauthenticated state and displays an explanation that email features are unavailable until authorization is granted.
-- On subsequent launches, the system checks for a persisted refresh token. If one exists and is valid, authentication is silent. The user is not shown a login screen.
+- On subsequent launches, the system checks Nango connection status. If a valid connection exists, authentication is silent. The user is not shown a login screen.
+- Environment variables required: NANGO_SECRET_KEY, NANGO_GMAIL_CONNECTION_ID (defaults to "gmail"), NANGO_HOST (defaults to https://api.nango.dev).
 
 ### 2. Initial Thread Load
 
@@ -142,24 +146,20 @@ Behaviors are listed in the order they occur during a user session.
 
 ## State Transitions
 
-### Authentication State
+### Authentication State (Nango-managed)
 
-- Unauthenticated - no token present or all tokens revoked
-- Authenticating - the OAuth2 flow is in progress (user redirected to Google)
-- Authenticated - a valid access token is available
-- Token Expired - the access token has expired but the refresh token is valid
-- Reauthentication Required - the refresh token has been revoked or is invalid; the user must go through the consent flow again
+- Unauthenticated - no Nango connection exists for this user
+- Authenticating - the Nango OAuth flow is in progress (user redirected to Nango connect session)
+- Authenticated - Nango reports a valid connection (token refresh is handled transparently by Nango)
+- Reauthentication Required - Nango reports the connection is broken or revoked; the user must reconnect
 
 Transitions:
 
-- Unauthenticated -> Authenticating: user initiates sign-in
-- Authenticating -> Authenticated: authorization code exchange succeeds
-- Authenticating -> Unauthenticated: user denies consent or exchange fails
-- Authenticated -> Token Expired: access token lifetime elapses
-- Token Expired -> Authenticated: refresh token exchange succeeds (silent, no user action)
-- Token Expired -> Reauthentication Required: refresh token exchange fails
-- Authenticated -> Reauthentication Required: Gmail returns a token revocation signal
-- Reauthentication Required -> Authenticating: user initiates sign-in again
+- Unauthenticated -> Authenticating: user initiates sign-in (Nango connect session created)
+- Authenticating -> Authenticated: Nango OAuth flow completes successfully
+- Authenticating -> Unauthenticated: user denies consent or flow fails
+- Authenticated -> Reauthentication Required: Nango reports connection broken (token revoked, refresh failed)
+- Reauthentication Required -> Authenticating: user initiates reconnection
 
 ### Thread Sync State
 

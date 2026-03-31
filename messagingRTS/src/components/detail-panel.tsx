@@ -1,10 +1,20 @@
-// Detail panel per Spec 12 and Spec 08
+// Detail panel per Spec 12, Spec 08, and Spec 01 (reply/draft/archive)
 // Slides in from right when a thread is selected, shows thread conversation,
-// metadata (zone, risk, opportunity, scores), participants, and reply placeholder.
+// metadata (zone, risk, opportunity, scores), participants, and reply composer.
 // At narrow viewports (< RESPONSIVE_BREAKPOINT), overlays instead of shrinking map.
 
+import { useState, useCallback } from "react";
 import { useAppStore, useThreadStore } from "../lib/stores";
 import type { Thread, RiskTier, OpportunityState } from "../lib/types";
+import {
+  sendReplyAction,
+  saveDraftAction,
+  discardDraftAction,
+  archiveThreadAction,
+  updateDraftContent,
+  getDraftState,
+} from "../features/sync/outbound-actions";
+import type { SendReplyPayload, DraftPayload } from "../features/auth/gmail-client";
 
 const RISK_COLORS: Record<RiskTier, string> = {
   safe: "text-green-400",
@@ -54,6 +64,128 @@ function ThreadMetadata({ thread }: { thread: Thread }) {
   );
 }
 
+function ReplyComposer({ thread }: { thread: Thread }) {
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const draftState = getDraftState(thread.id);
+  const lastMessage = thread.messages[thread.messages.length - 1];
+
+  // Build reply payload from thread context per Spec 01 Section 4
+  const buildReplyPayload = useCallback((): SendReplyPayload => {
+    const recipients = lastMessage
+      ? [lastMessage.sender, ...lastMessage.recipients].filter(
+          (addr) => addr !== "me" && addr.length > 0,
+        )
+      : thread.participants.map((p) => p.email).filter((e) => e.length > 0);
+
+    return {
+      threadId: thread.id,
+      to: [...new Set(recipients)],
+      subject: thread.subject.startsWith("Re:") ? thread.subject : `Re: ${thread.subject}`,
+      body,
+      inReplyTo: lastMessage?.id ?? "",
+      references: thread.messages.map((m) => m.id),
+    };
+  }, [body, thread, lastMessage]);
+
+  const buildDraftPayload = useCallback((): DraftPayload => {
+    const reply = buildReplyPayload();
+    return {
+      threadId: reply.threadId,
+      to: reply.to,
+      subject: reply.subject,
+      body: reply.body,
+      inReplyTo: reply.inReplyTo,
+      references: reply.references,
+    };
+  }, [buildReplyPayload]);
+
+  const handleSend = useCallback(async () => {
+    if (!body.trim() || sending) return;
+    setSending(true);
+    const success = await sendReplyAction(thread.id, buildReplyPayload());
+    setSending(false);
+    if (success) {
+      setBody("");
+    }
+  }, [body, sending, thread.id, buildReplyPayload]);
+
+  const handleSaveDraft = useCallback(async () => {
+    if (!body.trim() || saving) return;
+    setSaving(true);
+    await saveDraftAction(thread.id, buildDraftPayload());
+    setSaving(false);
+  }, [body, saving, thread.id, buildDraftPayload]);
+
+  const handleDiscardDraft = useCallback(async () => {
+    await discardDraftAction(thread.id);
+    setBody("");
+  }, [thread.id]);
+
+  const handleBodyChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setBody(value);
+      updateDraftContent(thread.id, value);
+    },
+    [thread.id],
+  );
+
+  const hasDraft = draftState !== "none" && draftState !== "discarded";
+
+  return (
+    <div className="mt-4" data-testid="reply-composer">
+      <textarea
+        className="w-full rounded border border-gray-700 bg-[#14142a] px-3 py-2 text-xs text-gray-300 placeholder-gray-600 focus:border-gray-500 focus:outline-none"
+        placeholder="Type a reply..."
+        rows={3}
+        value={body}
+        onChange={handleBodyChange}
+        disabled={sending}
+        data-testid="reply-textarea"
+      />
+
+      {/* Draft state indicator */}
+      {hasDraft && (
+        <div className="mt-1 text-[10px] text-gray-600" data-testid="draft-state">
+          Draft: {draftState}
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="mt-2 flex gap-2">
+        <button
+          className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-500 disabled:opacity-40"
+          onClick={handleSend}
+          disabled={!body.trim() || sending}
+          data-testid="send-reply-btn"
+        >
+          {sending ? "Sending..." : "Send"}
+        </button>
+        <button
+          className="rounded bg-gray-700 px-3 py-1 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40"
+          onClick={handleSaveDraft}
+          disabled={!body.trim() || saving}
+          data-testid="save-draft-btn"
+        >
+          {saving ? "Saving..." : "Save Draft"}
+        </button>
+        {hasDraft && (
+          <button
+            className="rounded bg-gray-800 px-3 py-1 text-xs text-gray-400 hover:bg-gray-700"
+            onClick={handleDiscardDraft}
+            data-testid="discard-draft-btn"
+          >
+            Discard
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DetailPanel() {
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
   const setSelectedThread = useAppStore((s) => s.setSelectedThread);
@@ -62,6 +194,11 @@ export function DetailPanel() {
   if (!selectedThreadId) return null;
 
   const thread = threads.get(selectedThreadId);
+
+  const handleArchive = async () => {
+    if (!thread) return;
+    await archiveThreadAction(thread.id);
+  };
 
   return (
     <div
@@ -73,14 +210,26 @@ export function DetailPanel() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
         <span className="text-sm font-medium text-gray-200">Thread Detail</span>
-        <button
-          className="text-xs text-gray-500 hover:text-gray-300"
-          onClick={() => setSelectedThread(null)}
-          data-testid="detail-panel-close"
-          aria-label="Close detail panel"
-        >
-          Close
-        </button>
+        <div className="flex gap-2">
+          {thread && thread.gmailLabels.includes("INBOX") && (
+            <button
+              className="rounded bg-gray-800 px-2 py-0.5 text-xs text-gray-400 hover:bg-gray-700"
+              onClick={handleArchive}
+              data-testid="archive-btn"
+              aria-label="Archive thread"
+            >
+              Archive
+            </button>
+          )}
+          <button
+            className="text-xs text-gray-500 hover:text-gray-300"
+            onClick={() => setSelectedThread(null)}
+            data-testid="detail-panel-close"
+            aria-label="Close detail panel"
+          >
+            Close
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -123,14 +272,8 @@ export function DetailPanel() {
               ))}
             </div>
 
-            {/* Reply composer placeholder - actual compose comes with 1.6 */}
-            <div className="mt-4" data-testid="reply-composer">
-              <textarea
-                className="w-full rounded border border-gray-700 bg-[#14142a] px-3 py-2 text-xs text-gray-300 placeholder-gray-600 focus:border-gray-500 focus:outline-none"
-                placeholder="Type a reply..."
-                rows={3}
-              />
-            </div>
+            {/* Reply composer per Spec 01 Sections 4-5 */}
+            <ReplyComposer thread={thread} />
           </>
         ) : (
           <div className="text-xs text-gray-600">Thread not found</div>

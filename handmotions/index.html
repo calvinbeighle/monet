@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hand Tracking</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; color: #fff; font-family: monospace; overflow: hidden; }
+  #canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; }
+  video { display: none; }
+  #hud {
+    position: fixed; top: 16px; left: 16px; z-index: 10;
+    font-size: 13px; line-height: 1.6; opacity: 0.7;
+  }
+  .cursor {
+    position: fixed; width: 24px; height: 24px;
+    border: 2px solid rgba(255,255,255,0.8);
+    border-radius: 50%; pointer-events: none; z-index: 20;
+    transform: translate(-50%, -50%);
+    transition: width 0.1s, height 0.1s, background 0.1s;
+  }
+  .cursor.pinched {
+    width: 16px; height: 16px;
+    background: rgba(255,255,255,0.6);
+  }
+
+  /* Full-screen swipe flash */
+  #flash {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 30; pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  #flash.left { opacity: 1; background: rgba(255,100,100,0.25); }
+  #flash.right { opacity: 1; background: rgba(100,180,255,0.25); }
+  #flash-text {
+    font-size: 72px; font-weight: bold; letter-spacing: 8px;
+    text-transform: uppercase;
+  }
+
+  /* Arrow indicators on edges */
+  .edge-arrow {
+    position: fixed; top: 50%; z-index: 15;
+    font-size: 48px; opacity: 0.15;
+    transform: translateY(-50%);
+    transition: opacity 0.1s;
+    pointer-events: none;
+  }
+  .edge-arrow.left { left: 24px; }
+  .edge-arrow.right { right: 24px; }
+  .edge-arrow.active { opacity: 0.8; }
+
+  /* Counter */
+  #counter {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 15; font-size: 18px; opacity: 0.6;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div id="status">Loading MediaPipe...</div>
+  <div id="fps"></div>
+</div>
+
+<div id="cursors"></div>
+
+<div id="flash"><div id="flash-text"></div></div>
+<div class="edge-arrow left">&lt;</div>
+<div class="edge-arrow right">&gt;</div>
+
+<div id="counter">Swipes: 0</div>
+
+<canvas id="canvas"></canvas>
+<video id="video" autoplay playsinline></video>
+
+<script type="module">
+import { FilesetResolver, HandLandmarker } from
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs";
+
+// --- Config ---
+const PINCH_ENGAGE = 0.08;
+const PINCH_RELEASE = 0.12;
+const TARGET_FPS = 30;
+const PALM_LANDMARKS = [0, 5, 9, 13, 17];
+
+const SWIPE = {
+  VELOCITY_ENTRY: 0.2,
+  VELOCITY_CONFIRM: 0.3,
+  MIN_DISPLACEMENT: 0.07,
+  CROSS_RATIO: 1.5,
+  WINDOW_MS: 500,
+  COOLDOWN_MS: 500,
+  VELOCITY_FRAMES: 3,
+};
+
+class OneEuroFilter {
+  constructor(freq, minCutoff = 0.4, beta = 0.02, dCutoff = 1.0) {
+    this.freq = freq; this.minCutoff = minCutoff;
+    this.beta = beta; this.dCutoff = dCutoff;
+    this.xPrev = null; this.dxPrev = 0; this.tPrev = null;
+  }
+  _alpha(cutoff) {
+    const te = 1.0 / this.freq;
+    return 1.0 / (1.0 + 1.0 / (2 * Math.PI * cutoff) / te);
+  }
+  filter(x, t) {
+    if (this.tPrev === null) { this.xPrev = x; this.tPrev = t; return x; }
+    const dt = (t - this.tPrev) / 1000;
+    if (dt <= 0) return this.xPrev;
+    this.freq = 1.0 / dt;
+    const dx = (x - this.xPrev) * this.freq;
+    const adx = this._alpha(this.dCutoff);
+    const dxHat = adx * dx + (1 - adx) * this.dxPrev;
+    const cutoff = this.minCutoff + this.beta * Math.abs(dxHat);
+    const ax = this._alpha(cutoff);
+    const xHat = ax * x + (1 - ax) * this.xPrev;
+    this.xPrev = xHat; this.dxPrev = dxHat; this.tPrev = t;
+    return xHat;
+  }
+}
+
+// --- DOM ---
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const cursorsContainer = document.getElementById("cursors");
+const statusEl = document.getElementById("status");
+const fpsEl = document.getElementById("fps");
+const flash = document.getElementById("flash");
+const flashText = document.getElementById("flash-text");
+const arrowLeft = document.querySelector(".edge-arrow.left");
+const arrowRight = document.querySelector(".edge-arrow.right");
+const counterEl = document.getElementById("counter");
+
+const MAX_HANDS = 2;
+let swipeCount = 0;
+
+const hands = Array.from({ length: MAX_HANDS }, () => ({
+  palmX: 0, palmY: 0, isPinched: false,
+  cursorFilterX: new OneEuroFilter(30),
+  cursorFilterY: new OneEuroFilter(30),
+  swipeState: 'idle', swipeStartPos: null,
+  swipePeakVel: 0, swipeCooldownEnd: 0,
+  rawHistory: [], cursorEl: null, active: false,
+}));
+
+for (let i = 0; i < MAX_HANDS; i++) {
+  const el = document.createElement("div");
+  el.className = "cursor"; el.style.display = "none";
+  cursorsContainer.appendChild(el);
+  hands[i].cursorEl = el;
+}
+
+function resetAllSwipeState(cooldownEnd) {
+  for (const h of hands) {
+    h.swipeState = 'cooldown';
+    h.swipeCooldownEnd = cooldownEnd;
+    h.rawHistory = [];
+    h.swipeStartPos = null;
+    h.swipePeakVel = 0;
+  }
+}
+
+function showSwipe(direction) {
+  swipeCount++;
+  counterEl.textContent = `Swipes: ${swipeCount}`;
+  flash.className = direction;
+  flashText.textContent = direction === 'left' ? '< LEFT' : 'RIGHT >';
+  setTimeout(() => { flash.className = ''; }, 500);
+}
+
+// --- State ---
+let handLandmarker = null;
+let lastFrameTime = 0;
+let frameCount = 0;
+let fpsDisplay = 0;
+let fpsTimer = 0;
+
+async function init() {
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm"
+  );
+  handLandmarker = await HandLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+      delegate: "GPU",
+    },
+    runningMode: "VIDEO",
+    numHands: MAX_HANDS,
+  });
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: 1280, height: 720, facingMode: "user" },
+  });
+  video.srcObject = stream;
+  await video.play();
+
+  resize();
+  window.addEventListener("resize", resize);
+  statusEl.textContent = "Swipe left or right";
+  requestAnimationFrame(loop);
+}
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+
+function loop(timestamp) {
+  requestAnimationFrame(loop);
+  if (timestamp - lastFrameTime < 1000 / TARGET_FPS) return;
+  lastFrameTime = timestamp;
+
+  frameCount++;
+  if (timestamp - fpsTimer >= 1000) {
+    fpsDisplay = frameCount; frameCount = 0; fpsTimer = timestamp;
+    fpsEl.textContent = `${fpsDisplay} fps`;
+  }
+
+  if (!handLandmarker || video.readyState < 2) return;
+  const results = handLandmarker.detectForVideo(video, timestamp);
+
+  ctx.save();
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  ctx.restore();
+
+  const numDetected = results.landmarks ? results.landmarks.length : 0;
+
+  // Reset arrow highlights each frame
+  arrowLeft.classList.remove("active");
+  arrowRight.classList.remove("active");
+
+  for (let i = 0; i < MAX_HANDS; i++) {
+    if (i < numDetected) {
+      hands[i].active = true;
+      hands[i].cursorEl.style.display = "";
+      processHand(hands[i], results.landmarks[i], timestamp);
+      drawLandmarks(results.landmarks[i], hands[i]);
+    } else {
+      hands[i].active = false;
+      hands[i].cursorEl.style.display = "none";
+    }
+  }
+}
+
+function processHand(hand, lm, timestamp) {
+  const rawX = 1 - lm[0].x;
+  const rawY = lm[0].y;
+
+  let palmRawX = 0, palmRawY = 0;
+  for (const i of PALM_LANDMARKS) {
+    palmRawX += lm[i].x; palmRawY += lm[i].y;
+  }
+  palmRawX = 1 - palmRawX / PALM_LANDMARKS.length;
+  palmRawY /= PALM_LANDMARKS.length;
+  hand.palmX = hand.cursorFilterX.filter(palmRawX, timestamp);
+  hand.palmY = hand.cursorFilterY.filter(palmRawY, timestamp);
+
+  hand.cursorEl.style.left = `${hand.palmX * window.innerWidth}px`;
+  hand.cursorEl.style.top = `${hand.palmY * window.innerHeight}px`;
+
+  const pdx = Math.abs(lm[4].x - lm[8].x);
+  const pdy = Math.abs(lm[4].y - lm[8].y);
+  if (!hand.isPinched && pdx < PINCH_ENGAGE && pdy < PINCH_ENGAGE) {
+    hand.isPinched = true;
+  } else if (hand.isPinched && (pdx > PINCH_RELEASE || pdy > PINCH_RELEASE)) {
+    hand.isPinched = false;
+  }
+  hand.cursorEl.classList.toggle("pinched", hand.isPinched);
+
+  // Raw wrist history for velocity
+  hand.rawHistory.push({ x: rawX, y: rawY, t: timestamp });
+  if (hand.rawHistory.length > 20) hand.rawHistory.shift();
+
+  let velX = 0;
+  const hist = hand.rawHistory;
+  if (hist.length >= SWIPE.VELOCITY_FRAMES) {
+    const older = hist[hist.length - SWIPE.VELOCITY_FRAMES];
+    const newer = hist[hist.length - 1];
+    const dt = (newer.t - older.t) / 1000;
+    if (dt > 0) velX = (newer.x - older.x) / dt;
+  }
+  const speed = Math.abs(velX);
+
+  // Light up edge arrows when moving
+  if (velX < -0.25) arrowLeft.classList.add("active");
+  if (velX > 0.25) arrowRight.classList.add("active");
+
+  switch (hand.swipeState) {
+    case 'idle': {
+      if (speed >= SWIPE.VELOCITY_ENTRY) {
+        hand.swipeState = 'tracking';
+        hand.swipeStartPos = { x: rawX, y: rawY, t: timestamp };
+        hand.swipePeakVel = speed;
+      }
+      break;
+    }
+    case 'tracking': {
+      if (speed > hand.swipePeakVel) hand.swipePeakVel = speed;
+      const dx = rawX - hand.swipeStartPos.x;
+      const dy = rawY - hand.swipeStartPos.y;
+      const elapsed = timestamp - hand.swipeStartPos.t;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+
+      if (elapsed > SWIPE.WINDOW_MS) {
+        hand.swipeState = 'idle';
+        hand.swipeStartPos = null;
+        hand.swipePeakVel = 0;
+        break;
+      }
+
+      if (absDx >= SWIPE.MIN_DISPLACEMENT &&
+          hand.swipePeakVel >= SWIPE.VELOCITY_CONFIRM &&
+          absDx > absDy * SWIPE.CROSS_RATIO) {
+        showSwipe(dx < 0 ? 'left' : 'right');
+        resetAllSwipeState(timestamp + SWIPE.COOLDOWN_MS);
+      }
+      break;
+    }
+    case 'cooldown': {
+      if (timestamp >= hand.swipeCooldownEnd) {
+        hand.swipeState = 'idle';
+        hand.rawHistory = [];
+      }
+      break;
+    }
+  }
+}
+
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [0,9],[9,10],[10,11],[11,12],
+  [0,13],[13,14],[14,15],[15,16],
+  [0,17],[17,18],[18,19],[19,20],
+  [5,9],[9,13],[13,17],
+];
+
+function drawLandmarks(lm, hand) {
+  const w = canvas.width;
+  const h = canvas.height;
+
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.lineWidth = 1;
+  for (const [a, b] of CONNECTIONS) {
+    ctx.beginPath();
+    ctx.moveTo((1 - lm[a].x) * w, lm[a].y * h);
+    ctx.lineTo((1 - lm[b].x) * w, lm[b].y * h);
+    ctx.stroke();
+  }
+
+  for (let i = 0; i < lm.length; i++) {
+    const x = (1 - lm[i].x) * w;
+    const y = lm[i].y * h;
+    const isPalmPoint = PALM_LANDMARKS.includes(i);
+    const isPinchPoint = i === 4 || i === 8;
+    ctx.beginPath();
+    ctx.arc(x, y, isPalmPoint ? 5 : isPinchPoint ? 4 : 2, 0, Math.PI * 2);
+    ctx.fillStyle = isPinchPoint
+      ? (hand.isPinched ? "rgba(255,255,255,0.9)" : "rgba(255,200,200,0.7)")
+      : isPalmPoint ? "rgba(200,255,200,0.7)" : "rgba(255,255,255,0.4)";
+    ctx.fill();
+  }
+
+  ctx.beginPath();
+  ctx.arc(hand.palmX * w, hand.palmY * h, 8, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+init().catch((err) => {
+  statusEl.textContent = `Error: ${err.message}`;
+  console.error(err);
+});
+</script>
+
+</body>
+</html>

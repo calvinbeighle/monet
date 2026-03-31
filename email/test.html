@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<body style="background:#000;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh">
+<div id="box" style="background:#111;padding:40px;border-radius:12px;text-align:center">
+  <div id="output">Click a button:</div>
+  <div id="buttons"></div>
+</div>
+<script>
+// Simulate exactly what monet-mail does
+var selected = 5; // pretend email 5 is selected
+
+function act(action) {
+  document.getElementById('output').textContent = 'act() called with: ' + action + ' (selected=' + selected + ')';
+}
+
+// Set innerHTML dynamically, same as openPopup does
+document.getElementById('buttons').innerHTML = 
+  '<button onclick="act(\'archive\')" style="padding:12px 24px;margin:8px;background:#222;color:#fff;border:1px solid #333;border-radius:8px;cursor:pointer;font-size:16px">Archive</button>' +
+  '<button onclick="act(\'reply\')" style="padding:12px 24px;margin:8px;background:#222;color:#fff;border:1px solid #333;border-radius:8px;cursor:pointer;font-size:16px">Reply</button>';
+</script>
+</body>
+</html>

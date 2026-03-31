@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/agent_client.dart';
+import 'monet_theme.dart';
 
 /// The states the onboarding flow can be in.
 enum _OnboardingState { loading, createAccount, connectTools, login }
@@ -174,15 +175,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       final data = await client.toolConnectUrl(provider);
       final url = data['url'] as String?;
       if (url != null && mounted) {
+        final c = MonetColors.of(context);
         // Show the OAuth URL in a dialog - on the real OS this would
         // open in a webview. For now, show the URL and a refresh button.
         await showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            backgroundColor: const Color(0xFF12121A),
+            backgroundColor: c.surface,
             title: Text(
               'Connect ${provider == 'gmail' ? 'Gmail' : provider == 'google-docs' ? 'Google Docs' : 'GitHub'}',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+              style: TextStyle(color: c.textPrimary),
             ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -191,7 +193,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Text(
                   'Complete the OAuth flow in your browser, then tap Refresh to verify the connection.',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.6),
+                    color: c.textSecondary,
                     fontSize: 13,
                   ),
                 ),
@@ -199,13 +201,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0A0A0F),
+                    color: c.scaffoldBg,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: SelectableText(
                     url,
                     style: TextStyle(
-                      color: const Color(0xFF7C6EF0),
+                      color: c.primary,
                       fontSize: 11,
                     ),
                   ),
@@ -217,7 +219,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 onPressed: () => Navigator.of(ctx).pop(),
                 child: Text(
                   'Close',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                  style: TextStyle(color: c.textTertiary),
                 ),
               ),
             ],
@@ -237,8 +239,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
+      backgroundColor: c.scaffoldBg,
       body: Center(
         child: _buildContent(),
       ),
@@ -246,10 +249,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _buildContent() {
+    final c = MonetColors.of(context);
     switch (_state) {
       case _OnboardingState.loading:
-        return const CircularProgressIndicator(
-          color: Color(0xFF7C6EF0),
+        return CircularProgressIndicator(
+          color: c.primary,
         );
       case _OnboardingState.createAccount:
         return _buildCreateAccountForm();
@@ -298,16 +302,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _buildConnectToolsForm() {
+    final c = MonetColors.of(context);
     return _FormCard(
       title: 'Connect Your Tools',
       subtitle: 'Link your accounts so Monet can work with your email, code, and documents.',
       error: _errorMessage,
       children: [
         if (_loadingTools)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
             child: Center(
-              child: CircularProgressIndicator(color: Color(0xFF7C6EF0)),
+              child: CircularProgressIndicator(color: c.primary),
             ),
           )
         else
@@ -317,7 +322,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Text(
             'Set NANGO_SECRET_KEY to enable OAuth connections.',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.3),
+              color: c.textMeta,
               fontSize: 12,
             ),
           ),
@@ -332,7 +337,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 },
                 child: Text(
                   'Refresh',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                  style: TextStyle(color: c.textTertiary),
                 ),
               ),
             ),
@@ -350,6 +355,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _buildToolRow(_ToolInfo tool) {
+    final c = MonetColors.of(context);
     final IconData icon;
     if (tool.provider == 'gmail') {
       icon = Icons.email_outlined;
@@ -363,12 +369,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF0A0A0F),
+          color: c.scaffoldBg,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: tool.connected
-                ? Colors.green.withValues(alpha: 0.3)
-                : Colors.white.withValues(alpha: 0.08),
+                ? c.success.withValues(alpha: 0.3)
+                : c.border.withValues(alpha: 0.08),
           ),
         ),
         child: Row(
@@ -377,8 +383,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               icon,
               size: 20,
               color: tool.connected
-                  ? Colors.green
-                  : Colors.white.withValues(alpha: 0.4),
+                  ? c.success
+                  : c.textTertiary,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -387,8 +393,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 children: [
                   Text(
                     tool.name,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: c.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                     ),
@@ -397,8 +403,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     tool.connected ? 'Connected' : 'Not connected',
                     style: TextStyle(
                       color: tool.connected
-                          ? Colors.green.withValues(alpha: 0.8)
-                          : Colors.white.withValues(alpha: 0.3),
+                          ? c.success.withValues(alpha: 0.8)
+                          : c.textMeta,
                       fontSize: 12,
                     ),
                   ),
@@ -406,14 +412,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
             ),
             if (tool.connected)
-              Icon(Icons.check_circle, size: 20, color: Colors.green)
+              Icon(Icons.check_circle, size: 20, color: c.success)
             else
               SizedBox(
                 height: 32,
                 child: TextButton(
                   onPressed: _nangoConfigured ? () => _handleConnect(tool.provider) : null,
                   style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF7C6EF0),
+                    foregroundColor: c.primary,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                   ),
                   child: const Text('Connect', style: TextStyle(fontSize: 13)),
@@ -461,26 +467,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     VoidCallback? onToggleObscure,
     ValueChanged<String>? onSubmitted,
   }) {
+    final c = MonetColors.of(context);
     return TextField(
       controller: controller,
       obscureText: obscure,
-      style: const TextStyle(color: Colors.white, fontSize: 15),
+      style: TextStyle(color: c.textPrimary, fontSize: 15),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
-        prefixIcon: Icon(icon, color: Colors.white.withValues(alpha: 0.4), size: 20),
+        hintStyle: TextStyle(color: c.textMeta),
+        prefixIcon: Icon(icon, color: c.textTertiary, size: 20),
         suffixIcon: onToggleObscure != null
             ? IconButton(
                 onPressed: onToggleObscure,
                 icon: Icon(
                   obscure ? Icons.visibility_off : Icons.visibility,
-                  color: Colors.white.withValues(alpha: 0.4),
+                  color: c.textTertiary,
                   size: 20,
                 ),
               )
             : null,
         filled: true,
-        fillColor: const Color(0xFF12121A),
+        fillColor: c.surface,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide.none,
@@ -493,24 +500,25 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _buildSubmitButton(String label, VoidCallback onPressed) {
+    final c = MonetColors.of(context);
     return SizedBox(
       width: double.infinity,
       height: 48,
       child: ElevatedButton(
         onPressed: _isSubmitting ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF7C6EF0),
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: const Color(0xFF7C6EF0).withValues(alpha: 0.5),
+          backgroundColor: c.primary,
+          foregroundColor: c.textPrimary,
+          disabledBackgroundColor: c.primary.withValues(alpha: 0.5),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
         child: _isSubmitting
-            ? const SizedBox(
+            ? SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Colors.white,
+                  color: c.textPrimary,
                 ),
               )
             : Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
@@ -550,13 +558,14 @@ class _FormCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = MonetColors.of(context);
     return Container(
       width: 360,
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
-        color: const Color(0xFF12121A),
+        color: c.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        border: Border.all(color: c.borderSubtle),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -564,8 +573,8 @@ class _FormCard extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: c.textPrimary,
               fontSize: 24,
               fontWeight: FontWeight.w600,
             ),
@@ -574,7 +583,7 @@ class _FormCard extends StatelessWidget {
           Text(
             subtitle,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
+              color: c.textTertiary,
               fontSize: 14,
             ),
           ),
@@ -584,13 +593,13 @@ class _FormCard extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.1),
+                color: c.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                border: Border.all(color: c.error.withValues(alpha: 0.3)),
               ),
               child: Text(
                 error!,
-                style: TextStyle(color: Colors.red.shade300, fontSize: 13),
+                style: TextStyle(color: c.error, fontSize: 13),
               ),
             ),
             const SizedBox(height: 16),
