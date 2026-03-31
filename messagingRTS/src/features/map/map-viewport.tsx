@@ -6,7 +6,7 @@ import { useRef, useEffect, useCallback, useState } from "react";
 import { MapRenderer } from "./map-renderer";
 import { createZoneLayout, updateZoneSizes } from "./zone-layout";
 import { driftTick } from "./drift-engine";
-import { useThreadStore, useAppStore } from "../../lib/stores";
+import { useThreadStore, useAppStore, useAgentStore } from "../../lib/stores";
 import { useNavigationStore } from "../navigation/navigation-store";
 import {
   searchThreads,
@@ -168,6 +168,9 @@ export function MapViewport() {
       const appState = useAppStore.getState();
       const newAlerts = evaluateAlerts(updated, appState.mapAlerts, now, appState.streakInboxZero);
       appState.setMapAlerts(newAlerts);
+
+      // Tick agent cooldowns per Spec 05
+      useAgentStore.getState().tickCooldowns(now);
     }, DRIFT_TICK_INTERVAL);
 
     return () => {

@@ -1,5 +1,6 @@
 export { useThreadStore } from "./thread-store";
 export { useAppStore } from "./app-store";
+export { useAgentStore } from "./agent-store";
 export type {
   ShellState,
   ActivePanel,
