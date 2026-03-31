@@ -1,28 +1,51 @@
 // Deployment history panel per Spec 12
 // Slides in from right, triggered from status bar or agent dock
 // Replaces detail panel when both are triggered (only one right panel at a time)
+// Reads deployment records from deployment store, agent data from agent store
 
 import { useAppStore } from "../lib/stores";
+import { useDeploymentStore } from "../lib/stores/deployment-store";
+import { useAgentStore } from "../lib/stores/agent-store";
+import { AGENT_DEFINITIONS } from "../lib/types";
 
+// Re-export for backward compatibility with tests
 export interface DeploymentRecord {
   id: string;
   agentRole: string;
   agentName: string;
   clusterId: string | null;
   threadCount: number;
-  status: "traveling" | "in-progress" | "completed" | "failed" | "recalled";
+  status: "traveling" | "in-progress" | "completed" | "resolved" | "failed" | "recalled";
   startedAt: number;
   completedAt: number | null;
   approvedCount: number;
   rejectedCount: number;
 }
 
-interface DeploymentHistoryPanelProps {
-  deployments: DeploymentRecord[];
-}
-
-export function DeploymentHistoryPanel({ deployments }: DeploymentHistoryPanelProps) {
+export function DeploymentHistoryPanel() {
   const setActivePanel = useAppStore((s) => s.setActivePanel);
+  const storeDeployments = useDeploymentStore((s) => s.deployments);
+  const agents = useAgentStore((s) => s.agents);
+
+  // Map store deployment records to display format
+  const deployments: DeploymentRecord[] = storeDeployments
+    .filter((d) => d.status !== "confirming")
+    .map((d) => {
+      const def = AGENT_DEFINITIONS[d.agentRole];
+      const agent = agents.get(d.agentRole);
+      return {
+        id: d.id,
+        agentRole: d.agentRole,
+        agentName: def?.name ?? d.agentRole,
+        clusterId: d.clusterId,
+        threadCount: d.threadIds.length,
+        status: d.status as DeploymentRecord["status"],
+        startedAt: d.startedAt,
+        completedAt: d.completedAt,
+        approvedCount: agent?.approvedCount ?? 0,
+        rejectedCount: agent?.rejectedCount ?? 0,
+      };
+    });
 
   return (
     <div
@@ -51,7 +74,7 @@ export function DeploymentHistoryPanel({ deployments }: DeploymentHistoryPanelPr
           <div className="space-y-2" data-testid="deployment-history-list">
             {deployments.map((dep) => {
               const statusColor =
-                dep.status === "completed"
+                dep.status === "completed" || dep.status === "resolved"
                   ? "text-green-400"
                   : dep.status === "in-progress" || dep.status === "traveling"
                     ? "text-blue-400"

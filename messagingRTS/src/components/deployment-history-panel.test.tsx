@@ -1,62 +1,103 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DeploymentHistoryPanel, type DeploymentRecord } from "./deployment-history-panel";
+import { DeploymentHistoryPanel } from "./deployment-history-panel";
 import { useAppStore } from "../lib/stores/app-store";
+import { useDeploymentStore } from "../lib/stores/deployment-store";
+import { useAgentStore } from "../lib/stores/agent-store";
+import { createAgentInstance, resetCounters } from "../features/agents/agent-manager";
+import type { AgentRole } from "../lib/types";
+
+const ALL_ROLES: AgentRole[] = [
+  "closer",
+  "researcher",
+  "scheduler",
+  "cleaner",
+  "drafter",
+  "escalation-bot",
+];
 
 function resetStores() {
   useAppStore.setState({ activePanel: "deployment-history" });
+  useDeploymentStore.setState({ deployments: [], activeDeploymentId: null });
+  resetCounters();
+  const freshAgents = new Map<AgentRole, ReturnType<typeof createAgentInstance>>();
+  for (const role of ALL_ROLES) {
+    freshAgents.set(role, createAgentInstance(role));
+  }
+  useAgentStore.setState({ agents: freshAgents });
 }
 
-const mockDeployments: DeploymentRecord[] = [
-  {
-    id: "d1",
-    agentRole: "closer",
-    agentName: "Closer",
-    clusterId: "c1",
-    threadCount: 3,
-    status: "completed",
-    startedAt: Date.now() - 60000,
-    completedAt: Date.now(),
-    approvedCount: 2,
-    rejectedCount: 1,
-  },
-  {
-    id: "d2",
-    agentRole: "researcher",
-    agentName: "Researcher",
-    clusterId: null,
-    threadCount: 5,
-    status: "in-progress",
-    startedAt: Date.now(),
-    completedAt: null,
-    approvedCount: 0,
-    rejectedCount: 0,
-  },
-];
+function seedDeployments() {
+  // Deploy and complete the closer agent to get approve/reject counts
+  const agentStore = useAgentStore.getState();
+  agentStore.deploy("closer", "c1", ["t1", "t2", "t3"]);
+  agentStore.startWork("closer");
+  agentStore.complete("closer", [
+    { threadId: "t1", outputType: "reply-draft", content: "Draft 1" },
+    { threadId: "t2", outputType: "reply-draft", content: "Draft 2" },
+    { threadId: "t3", outputType: "close-action-proposal", content: "Close" },
+  ]);
+  // Resolve some proposals
+  const agent = agentStore.getAgent("closer");
+  agentStore.resolve("closer", agent.proposals[0].id, "approved");
+  agentStore.resolve("closer", agent.proposals[1].id, "approved");
+  agentStore.resolve("closer", agent.proposals[2].id, "rejected");
+
+  // Deploy researcher (in-progress)
+  agentStore.deploy("researcher", "c2", ["t4", "t5", "t6", "t7", "t8"]);
+  agentStore.startWork("researcher");
+
+  useDeploymentStore.setState({
+    deployments: [
+      {
+        id: "d1",
+        agentRole: "closer",
+        clusterId: "c1",
+        threadIds: ["t1", "t2", "t3"],
+        status: "completed",
+        startedAt: Date.now() - 60000,
+        completedAt: Date.now(),
+        recalledAt: null,
+      },
+      {
+        id: "d2",
+        agentRole: "researcher",
+        clusterId: "c2",
+        threadIds: ["t4", "t5", "t6", "t7", "t8"],
+        status: "in-progress",
+        startedAt: Date.now(),
+        completedAt: null,
+        recalledAt: null,
+      },
+    ],
+  });
+}
 
 describe("DeploymentHistoryPanel", () => {
   beforeEach(resetStores);
 
   it("renders the panel", () => {
-    render(<DeploymentHistoryPanel deployments={[]} />);
+    render(<DeploymentHistoryPanel />);
     expect(screen.getByTestId("deployment-history-panel")).toBeInTheDocument();
   });
 
   it("shows empty state when no deployments", () => {
-    render(<DeploymentHistoryPanel deployments={[]} />);
+    render(<DeploymentHistoryPanel />);
     expect(screen.getByTestId("deployment-history-empty")).toBeInTheDocument();
     expect(screen.getByText("No deployments yet")).toBeInTheDocument();
   });
 
   it("renders deployment records", () => {
-    render(<DeploymentHistoryPanel deployments={mockDeployments} />);
+    seedDeployments();
+    render(<DeploymentHistoryPanel />);
     expect(screen.getByTestId("deployment-history-list")).toBeInTheDocument();
     expect(screen.getByTestId("deployment-d1")).toBeInTheDocument();
     expect(screen.getByTestId("deployment-d2")).toBeInTheDocument();
   });
 
   it("shows agent name and status", () => {
-    render(<DeploymentHistoryPanel deployments={mockDeployments} />);
+    seedDeployments();
+    render(<DeploymentHistoryPanel />);
     expect(screen.getByText("Closer")).toBeInTheDocument();
     expect(screen.getByText("completed")).toBeInTheDocument();
     expect(screen.getByText("Researcher")).toBeInTheDocument();
@@ -64,14 +105,15 @@ describe("DeploymentHistoryPanel", () => {
   });
 
   it("shows thread count and approval stats", () => {
-    render(<DeploymentHistoryPanel deployments={mockDeployments} />);
+    seedDeployments();
+    render(<DeploymentHistoryPanel />);
     expect(screen.getByText(/3 threads/)).toBeInTheDocument();
     expect(screen.getByText(/2 approved/)).toBeInTheDocument();
     expect(screen.getByText(/1 rejected/)).toBeInTheDocument();
   });
 
   it("close button sets activePanel to none", () => {
-    render(<DeploymentHistoryPanel deployments={[]} />);
+    render(<DeploymentHistoryPanel />);
     fireEvent.click(screen.getByTestId("deployment-history-close"));
     expect(useAppStore.getState().activePanel).toBe("none");
   });

@@ -10,13 +10,11 @@ import { StatusBar } from "./components/status-bar";
 import { MapViewport } from "./features/map/map-viewport";
 import { AgentDock } from "./components/agent-dock";
 import { DetailPanel } from "./components/detail-panel";
-import {
-  DeploymentHistoryPanel,
-  type DeploymentRecord,
-} from "./components/deployment-history-panel";
+import { DeploymentHistoryPanel } from "./components/deployment-history-panel";
 import { SessionSummaryModal, type SessionSummaryData } from "./components/session-summary-modal";
 import { NotificationArea } from "./components/notification-area";
 import { DeploymentConfirmation } from "./components/deployment-confirmation";
+import { ResultsOverlay } from "./components/results-overlay";
 import {
   loadPersistedThreads,
   startPeriodicPersist,
@@ -24,6 +22,8 @@ import {
   flushPersist,
 } from "./features/sync/persistence-manager";
 import { useThreadStore } from "./lib/stores";
+import { useAgentStore } from "./lib/stores/agent-store";
+import type { AgentRole } from "./lib/types";
 
 export function App() {
   const shellState = useAppStore((s) => s.shellState);
@@ -36,8 +36,16 @@ export function App() {
   const viewportWidth = useAppStore((s) => s.viewportWidth);
   const syncStatus = useAppStore((s) => s.syncStatus);
 
-  // Deployment history state (populated by agent system)
-  const [deployments] = useState<DeploymentRecord[]>([]);
+  // Find agent roles with completed status (for results overlay)
+  const agents = useAgentStore((s) => s.agents);
+  const completedAgentRole: AgentRole | null = (() => {
+    for (const [role, agent] of agents) {
+      if (agent.status === "completed" && agent.proposals.length > 0) {
+        return role;
+      }
+    }
+    return null;
+  })();
 
   // Session summary state
   const [sessionSummary] = useState<SessionSummaryData>({
@@ -258,9 +266,7 @@ export function App() {
             data-testid="right-panel-zone"
           >
             {activePanel === "detail" && <DetailPanel />}
-            {activePanel === "deployment-history" && (
-              <DeploymentHistoryPanel deployments={deployments} />
-            )}
+            {activePanel === "deployment-history" && <DeploymentHistoryPanel />}
           </div>
         )}
       </div>
@@ -282,6 +288,9 @@ export function App() {
 
       {/* Deployment confirmation dialog - floats above everything */}
       <DeploymentConfirmation />
+
+      {/* Results overlay - shows proposals after agent completion, no auto-dismiss */}
+      {completedAgentRole && <ResultsOverlay agentRole={completedAgentRole} />}
     </div>
   );
 }

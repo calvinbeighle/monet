@@ -9,6 +9,7 @@ export type DeploymentStatus =
   | "traveling"
   | "in-progress"
   | "completed"
+  | "resolved"
   | "recalled"
   | "failed";
 
@@ -65,8 +66,12 @@ interface DeploymentStore {
   recallDeployment: (deploymentId: string) => void;
   failDeployment: (deploymentId: string) => void;
 
+  // Resolution
+  resolveDeployment: (deploymentId: string) => void;
+
   // Queries
   getActiveDeploymentForRole: (role: AgentRole) => DeploymentRecord | undefined;
+  getCompletedDeploymentForRole: (role: AgentRole) => DeploymentRecord | undefined;
   getDeploymentHistory: () => DeploymentRecord[];
 }
 
@@ -180,12 +185,25 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
         state.activeDeploymentId === deploymentId ? null : state.activeDeploymentId,
     })),
 
+  resolveDeployment: (deploymentId) =>
+    set((state) => ({
+      deployments: state.deployments.map((d) =>
+        d.id === deploymentId
+          ? { ...d, status: "resolved" as const, completedAt: d.completedAt ?? Date.now() }
+          : d,
+      ),
+    })),
+
   getActiveDeploymentForRole: (role) => {
     return get().deployments.find(
       (d) =>
         d.agentRole === role &&
         (d.status === "confirming" || d.status === "traveling" || d.status === "in-progress"),
     );
+  },
+
+  getCompletedDeploymentForRole: (role) => {
+    return get().deployments.find((d) => d.agentRole === role && d.status === "completed");
   },
 
   getDeploymentHistory: () => get().deployments,

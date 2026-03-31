@@ -155,6 +155,45 @@ describe("DeploymentStore", () => {
     });
   });
 
+  describe("resolution", () => {
+    function createCompletedDeployment() {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "closer",
+        clusterId: "c1",
+        threadIds: ["t1"],
+        description: "Test",
+      });
+      const record = useDeploymentStore.getState().confirmDeployment()!;
+      useDeploymentStore.getState().startTravel(record.id);
+      useDeploymentStore.getState().startWork(record.id);
+      useDeploymentStore.getState().completeDeployment(record.id);
+      return record;
+    }
+
+    it("resolveDeployment transitions completed to resolved", () => {
+      const record = createCompletedDeployment();
+      useDeploymentStore.getState().resolveDeployment(record.id);
+      expect(useDeploymentStore.getState().deployments[0].status).toBe("resolved");
+    });
+
+    it("getCompletedDeploymentForRole finds completed deployment", () => {
+      createCompletedDeployment();
+      const found = useDeploymentStore.getState().getCompletedDeploymentForRole("closer");
+      expect(found).toBeDefined();
+      expect(found!.status).toBe("completed");
+    });
+
+    it("getCompletedDeploymentForRole returns undefined for non-completed", () => {
+      expect(useDeploymentStore.getState().getCompletedDeploymentForRole("closer")).toBeUndefined();
+    });
+
+    it("getCompletedDeploymentForRole returns undefined after resolution", () => {
+      const record = createCompletedDeployment();
+      useDeploymentStore.getState().resolveDeployment(record.id);
+      expect(useDeploymentStore.getState().getCompletedDeploymentForRole("closer")).toBeUndefined();
+    });
+  });
+
   describe("queries", () => {
     it("getActiveDeploymentForRole finds active deployment", () => {
       useDeploymentStore.getState().showConfirmation({
