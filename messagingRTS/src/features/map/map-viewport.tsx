@@ -20,6 +20,7 @@ import {
   getCanonicalZoom,
   ZONE_SHORTCUTS,
 } from "../navigation/navigation-system";
+import { evaluateAlerts } from "../game-mechanics/map-alerts";
 import { Minimap } from "../../components/minimap";
 import { SearchOverlay } from "../../components/search-overlay";
 import type { ZoneId } from "../../lib/types";
@@ -162,6 +163,11 @@ export function MapViewport() {
       setZonesSnapshot(new Map(zonesRef.current));
 
       useThreadStore.getState().setThreads(updated);
+
+      // Evaluate map alerts per Spec 07 - runs alongside drift tick
+      const appState = useAppStore.getState();
+      const newAlerts = evaluateAlerts(updated, appState.mapAlerts, now, appState.streakInboxZero);
+      appState.setMapAlerts(newAlerts);
     }, DRIFT_TICK_INTERVAL);
 
     return () => {

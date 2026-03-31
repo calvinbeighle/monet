@@ -159,3 +159,91 @@ describe("AppStore - notifications", () => {
     expect(visible.length).toBeLessThanOrEqual(5);
   });
 });
+
+describe("AppStore - map alerts", () => {
+  beforeEach(() => {
+    useAppStore.setState({ mapAlerts: [], unreadAlertCount: 0 });
+  });
+
+  it("starts with empty map alerts", () => {
+    expect(useAppStore.getState().mapAlerts).toHaveLength(0);
+    expect(useAppStore.getState().unreadAlertCount).toBe(0);
+  });
+
+  it("sets map alerts and updates unread count", () => {
+    useAppStore.getState().setMapAlerts([
+      {
+        id: "a1",
+        type: "about-to-be-lost",
+        threadId: "t1",
+        message: "Thread at risk",
+        createdAt: Date.now(),
+        acknowledged: false,
+        autoResolved: false,
+      },
+      {
+        id: "a2",
+        type: "streak-at-risk",
+        threadId: null,
+        message: "Streak at risk",
+        createdAt: Date.now(),
+        acknowledged: false,
+        autoResolved: false,
+      },
+    ]);
+    expect(useAppStore.getState().mapAlerts).toHaveLength(2);
+    expect(useAppStore.getState().unreadAlertCount).toBe(2);
+  });
+
+  it("excludes acknowledged and auto-resolved from unread count", () => {
+    useAppStore.getState().setMapAlerts([
+      {
+        id: "a1",
+        type: "about-to-be-lost",
+        threadId: "t1",
+        message: "Active",
+        createdAt: Date.now(),
+        acknowledged: false,
+        autoResolved: false,
+      },
+      {
+        id: "a2",
+        type: "agent-completed",
+        threadId: null,
+        message: "Acked",
+        createdAt: Date.now(),
+        acknowledged: true,
+        autoResolved: false,
+      },
+      {
+        id: "a3",
+        type: "new-high-value",
+        threadId: "t2",
+        message: "Resolved",
+        createdAt: Date.now(),
+        acknowledged: false,
+        autoResolved: true,
+      },
+    ]);
+    expect(useAppStore.getState().unreadAlertCount).toBe(1);
+  });
+
+  it("acknowledges a map alert and updates count", () => {
+    useAppStore.getState().setMapAlerts([
+      {
+        id: "a1",
+        type: "about-to-be-lost",
+        threadId: "t1",
+        message: "Alert",
+        createdAt: Date.now(),
+        acknowledged: false,
+        autoResolved: false,
+      },
+    ]);
+    expect(useAppStore.getState().unreadAlertCount).toBe(1);
+
+    useAppStore.getState().acknowledgeMapAlert("a1");
+    expect(useAppStore.getState().mapAlerts[0].acknowledged).toBe(true);
+    expect(useAppStore.getState().unreadAlertCount).toBe(0);
+  });
+});

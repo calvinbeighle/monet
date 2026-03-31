@@ -3,6 +3,7 @@
 
 import { create } from "zustand";
 import type { ConnectivityStatus } from "../types";
+import type { MapAlert } from "../types/game-mechanics";
 
 // Shell lifecycle per Spec 12:
 // Initializing -> Unauthenticated / Loading -> Empty / Active / Degraded
@@ -48,6 +49,7 @@ interface AppStore {
   viewportHeight: number;
   selectedThreadId: string | null;
   notifications: ShellNotification[];
+  mapAlerts: MapAlert[];
 
   // Actions
   setShellState: (state: ShellState) => void;
@@ -63,6 +65,8 @@ interface AppStore {
   ) => void;
   dismissNotification: (id: string) => void;
   clearAllNotifications: () => void;
+  setMapAlerts: (alerts: MapAlert[]) => void;
+  acknowledgeMapAlert: (alertId: string) => void;
 }
 
 let notificationCounter = 0;
@@ -80,6 +84,7 @@ export const useAppStore = create<AppStore>((set) => ({
   viewportHeight: 0,
   selectedThreadId: null,
   notifications: [],
+  mapAlerts: [],
 
   setShellState: (shellState) => set({ shellState }),
   setActivePanel: (activePanel) => set({ activePanel }),
@@ -122,4 +127,19 @@ export const useAppStore = create<AppStore>((set) => ({
       notifications: state.notifications.map((n) => (n.id === id ? { ...n, dismissed: true } : n)),
     })),
   clearAllNotifications: () => set({ notifications: [] }),
+  setMapAlerts: (mapAlerts) =>
+    set({
+      mapAlerts,
+      unreadAlertCount: mapAlerts.filter((a) => !a.acknowledged && !a.autoResolved).length,
+    }),
+  acknowledgeMapAlert: (alertId) =>
+    set((state) => {
+      const updated = state.mapAlerts.map((a) =>
+        a.id === alertId ? { ...a, acknowledged: true } : a,
+      );
+      return {
+        mapAlerts: updated,
+        unreadAlertCount: updated.filter((a) => !a.acknowledged && !a.autoResolved).length,
+      };
+    }),
 }));
