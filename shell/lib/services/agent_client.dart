@@ -143,6 +143,7 @@ class AgentInfo {
   final List<String> approvalRequired;
   final List<String> suggestions;
   final AgentStats stats;
+  final bool custom;
 
   AgentInfo({
     required this.name,
@@ -152,6 +153,7 @@ class AgentInfo {
     this.approvalRequired = const [],
     this.suggestions = const [],
     required this.stats,
+    this.custom = false,
   });
 
   factory AgentInfo.fromJson(Map<String, dynamic> json) {
@@ -175,6 +177,7 @@ class AgentInfo {
           json['stats'] != null
               ? Map<String, dynamic>.from(json['stats'] as Map)
               : {}),
+      custom: json['custom'] as bool? ?? false,
     );
   }
 }
@@ -516,6 +519,45 @@ class AgentClient {
     return list
         .map((j) => AgentActivity.fromJson(j as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Create a new user-defined custom agent.
+  Future<Map<String, dynamic>> createCustomAgent({
+    required String name,
+    required String description,
+    required String systemPrompt,
+    List<String> toolSets = const [],
+    String uiPattern = 'chat',
+    List<String> suggestions = const [],
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/agents/custom'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'name': name,
+        'description': description,
+        'system_prompt': systemPrompt,
+        'tool_sets': toolSets,
+        'ui_pattern': uiPattern,
+        'suggestions': suggestions,
+      }),
+    );
+    if (response.statusCode != 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      throw Exception(body['detail'] ?? 'Failed to create agent');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Delete a user-defined custom agent.
+  Future<void> deleteCustomAgent(String name) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/agents/custom/$name'),
+    );
+    if (response.statusCode != 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      throw Exception(body['detail'] ?? 'Failed to delete agent');
+    }
   }
 
   // --- Tool connections ---

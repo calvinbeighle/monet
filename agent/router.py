@@ -70,6 +70,16 @@ FLOW_RULES: list[tuple[re.Pattern, list[FlowStep]]] = [
 
 
 ROUTING_RULES: list[tuple[re.Pattern, str, UIPattern]] = [
+    # Agent creation - must come first so "create an agent that handles my inbox"
+    # routes to the creation flow, not the email agent.
+    (
+        re.compile(
+            r"\b(create|make|set up|configure)\b.*\b(agent|bot|assistant)\b",
+            re.IGNORECASE,
+        ),
+        "general",
+        UIPattern.CHAT,
+    ),
     # Email batch - tinder UI
     (
         re.compile(r"\b(inbox|batch|emails|triage|handle my)\b", re.IGNORECASE),

@@ -21,6 +21,8 @@ IconData _agentIcon(String name) {
       return Icons.hub_outlined;
     case 'general':
       return Icons.chat_bubble_outline;
+    case 'writing':
+      return Icons.description_outlined;
     default:
       return Icons.smart_toy_outlined;
   }
@@ -37,8 +39,10 @@ Color _agentColor(String name) {
       return const Color(0xFFE5A84B); // amber
     case 'general':
       return const Color(0xFF6EA8F0); // blue
+    case 'writing':
+      return const Color(0xFFE08050); // orange
     default:
-      return const Color(0xFF888888);
+      return const Color(0xFFA080D0); // custom agents get a soft violet
   }
 }
 
@@ -213,11 +217,14 @@ class AgentsDashboardState extends State<AgentsDashboard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Agent entity cards
+                // Agent entity cards + Create button
                 Wrap(
                   spacing: 16,
                   runSpacing: 16,
-                  children: _agents.map((agent) => _buildAgentCard(agent)).toList(),
+                  children: [
+                    ..._agents.map((agent) => _buildAgentCard(agent)),
+                    _buildCreateAgentCard(),
+                  ],
                 ),
 
                 const SizedBox(height: 32),
@@ -341,6 +348,71 @@ class AgentsDashboardState extends State<AgentsDashboard> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// "Create Agent" card - opens a dialog to define a new custom agent.
+  Widget _buildCreateAgentCard() {
+    return GestureDetector(
+      onTap: () => _showCreateAgentDialog(),
+      child: Container(
+        width: 200,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF12121A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Colors.white.withAlpha(15),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(8),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.add, color: Colors.white.withAlpha(120), size: 24),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Create Agent',
+              style: TextStyle(
+                color: Colors.white.withAlpha(180),
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Build a custom agent with your own instructions',
+              style: TextStyle(
+                color: Colors.white.withAlpha(80),
+                fontSize: 12,
+                height: 1.3,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCreateAgentDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => _CreateAgentDialog(
+        onCreated: () {
+          _loadData();
+        },
       ),
     );
   }
@@ -490,6 +562,42 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 ],
               ),
               const Spacer(),
+              // Delete button for custom agents
+              if (agent.custom)
+                GestureDetector(
+                  onTap: () => _confirmDeleteAgent(agent.name),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE05050).withAlpha(15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.delete_outline,
+                      color: Color(0xFFE05050),
+                      size: 18,
+                    ),
+                  ),
+                ),
+              if (agent.custom) const SizedBox(width: 8),
+              // Custom badge
+              if (agent.custom)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFA080D0).withAlpha(25),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Custom',
+                    style: TextStyle(
+                      color: Color(0xFFA080D0),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              if (agent.custom) const SizedBox(width: 8),
               // Status badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -652,6 +760,49 @@ class AgentsDashboardState extends State<AgentsDashboard> {
     );
   }
 
+  void _confirmDeleteAgent(String agentName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF12121A),
+        title: Text(
+          'Delete $agentName?',
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+        ),
+        content: Text(
+          'This will permanently remove this custom agent and its configuration.',
+          style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: Colors.white.withAlpha(140))),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              try {
+                final client = context.read<AgentClient>();
+                await client.deleteCustomAgent(agentName);
+                if (_selectedAgent == agentName) {
+                  setState(() => _selectedAgent = null);
+                }
+                _loadData();
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to delete: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete', style: TextStyle(color: Color(0xFFE05050))),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDetailActivityRow(AgentActivity activity) {
     final statusColor = activity.status == 'completed'
         ? const Color(0xFF4EC9B0)
@@ -764,6 +915,294 @@ class AgentsDashboardState extends State<AgentsDashboard> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Dialog for creating a new custom agent.
+class _CreateAgentDialog extends StatefulWidget {
+  final VoidCallback onCreated;
+
+  const _CreateAgentDialog({required this.onCreated});
+
+  @override
+  State<_CreateAgentDialog> createState() => _CreateAgentDialogState();
+}
+
+class _CreateAgentDialogState extends State<_CreateAgentDialog> {
+  final _nameController = TextEditingController();
+  final _descController = TextEditingController();
+  final _promptController = TextEditingController();
+  final Set<String> _selectedToolSets = {};
+  String _uiPattern = 'chat';
+  bool _creating = false;
+  String? _error;
+
+  static const _toolSetLabels = {
+    'email': 'Email (Gmail)',
+    'code': 'Code (GitHub)',
+    'writing': 'Writing (Google Docs)',
+  };
+
+  static const _uiPatterns = {
+    'chat': 'Chat',
+    'tinder': 'Swipe Cards',
+    'diff': 'Diff View',
+    'whiteboard': 'Whiteboard',
+  };
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descController.dispose();
+    _promptController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    final name = _nameController.text.trim().toLowerCase().replaceAll(' ', '-');
+    final desc = _descController.text.trim();
+    final prompt = _promptController.text.trim();
+
+    if (name.isEmpty || desc.isEmpty || prompt.isEmpty) {
+      setState(() => _error = 'All fields are required');
+      return;
+    }
+
+    setState(() {
+      _creating = true;
+      _error = null;
+    });
+
+    try {
+      final client = context.read<AgentClient>();
+      await client.createCustomAgent(
+        name: name,
+        description: desc,
+        systemPrompt: prompt,
+        toolSets: _selectedToolSets.toList(),
+        uiPattern: _uiPattern,
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onCreated();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _creating = false;
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF12121A),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 600),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  const Icon(Icons.smart_toy_outlined, color: Color(0xFFA080D0), size: 24),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Create Agent',
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(220),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Name field
+              _buildField('Name', _nameController, 'e.g., morning-briefing'),
+              const SizedBox(height: 12),
+
+              // Description field
+              _buildField('Description', _descController, 'What does this agent do?'),
+              const SizedBox(height: 12),
+
+              // System prompt field (multiline)
+              Text('Instructions', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+              const SizedBox(height: 4),
+              TextField(
+                controller: _promptController,
+                maxLines: 4,
+                style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Tell the agent how to behave...',
+                  hintStyle: TextStyle(color: Colors.white.withAlpha(40)),
+                  filled: true,
+                  fillColor: const Color(0xFF0A0A0F),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFA080D0)),
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Tool sets
+              Text('Tool Access', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _toolSetLabels.entries.map((entry) {
+                  final selected = _selectedToolSets.contains(entry.key);
+                  return GestureDetector(
+                    onTap: () => setState(() {
+                      if (selected) {
+                        _selectedToolSets.remove(entry.key);
+                      } else {
+                        _selectedToolSets.add(entry.key);
+                      }
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: selected ? const Color(0xFFA080D0).withAlpha(25) : const Color(0xFF0A0A0F),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected ? const Color(0xFFA080D0).withAlpha(100) : Colors.white.withAlpha(15),
+                        ),
+                      ),
+                      child: Text(
+                        entry.value,
+                        style: TextStyle(
+                          color: selected ? const Color(0xFFA080D0) : Colors.white.withAlpha(100),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+
+              // UI pattern
+              Text('Default UI', style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                children: _uiPatterns.entries.map((entry) {
+                  final selected = _uiPattern == entry.key;
+                  return GestureDetector(
+                    onTap: () => setState(() => _uiPattern = entry.key),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: selected ? const Color(0xFFA080D0).withAlpha(25) : const Color(0xFF0A0A0F),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected ? const Color(0xFFA080D0).withAlpha(100) : Colors.white.withAlpha(15),
+                        ),
+                      ),
+                      child: Text(
+                        entry.value,
+                        style: TextStyle(
+                          color: selected ? const Color(0xFFA080D0) : Colors.white.withAlpha(100),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+
+              // Error
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: const TextStyle(color: Color(0xFFE05050), fontSize: 12)),
+              ],
+
+              const SizedBox(height: 20),
+
+              // Actions
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _creating ? null : () => Navigator.of(context).pop(),
+                    child: Text('Cancel', style: TextStyle(color: Colors.white.withAlpha(140))),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _creating ? null : _create,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFA080D0),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: _creating
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Create'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildField(String label, TextEditingController controller, String hint) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+        const SizedBox(height: 4),
+        TextField(
+          controller: controller,
+          style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 14),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.white.withAlpha(40)),
+            filled: true,
+            fillColor: const Color(0xFF0A0A0F),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFFA080D0)),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          ),
+        ),
+      ],
     );
   }
 }

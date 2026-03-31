@@ -11,11 +11,13 @@ import anthropic
 
 from agent.agents.base import BaseAgent
 from agent.agents.code import CodeAgent
+from agent.agents.custom import CustomAgent
 from agent.agents.email import EmailAgent
 from agent.agents.general import GeneralAgent
 from agent.agents.planning import PlanningAgent
 from agent.agents.writing import WritingAgent
 from agent.approval import ApprovalGate
+from agent.custom_agent_store import CustomAgentStore, CustomAgentConfig
 from agent.diff_parser import parse_unified_diff
 from agent.models import (
     AgentEvent,
@@ -61,6 +63,7 @@ class AgentRunner:
         client: Optional[anthropic.Anthropic] = None,
         session_store: Optional[SessionStore] = None,
         activity_store: Optional[ActivityStore] = None,
+        custom_agent_store: Optional[CustomAgentStore] = None,
     ) -> None:
         self.approval_gate = approval_gate or ApprovalGate()
         self.router = router or IntentRouter()
@@ -70,6 +73,11 @@ class AgentRunner:
         self.activity_store = activity_store or ActivityStore(
             db_path=self.session_store.db_path
         )
+        self.custom_agent_store = custom_agent_store or CustomAgentStore(
+            db_path=self.session_store.db_path
+        )
+        # Load persisted custom agents into the registry
+        self._load_custom_agents()
         # In-memory cache of active sessions for fast access during a request
         self._session_cache: dict[str, list[dict]] = {}
         # Flow advancement signals: session_id -> threading.Event
@@ -99,6 +107,45 @@ class AgentRunner:
         """Persist a message to SQLite."""
         self.session_store.append_message(session_id, role, content)
 
+    def _load_custom_agents(self) -> None:
+        """Load all user-created agents from SQLite into the runtime registry."""
+        for config in self.custom_agent_store.list_all():
+            try:
+                self.agents[config.name] = CustomAgent(config)
+                logger.info("Loaded custom agent: %s", config.name)
+            except Exception as e:
+                logger.error("Failed to load custom agent %s: %s", config.name, e)
+
+    def register_custom_agent(self, config: CustomAgentConfig) -> CustomAgentConfig:
+        """Create and register a new custom agent. Persists to SQLite."""
+        config = self.custom_agent_store.create(config)
+        self.agents[config.name] = CustomAgent(config)
+        logger.info("Registered custom agent: %s", config.name)
+        return config
+
+    def update_custom_agent(
+        self, config: CustomAgentConfig
+    ) -> Optional[CustomAgentConfig]:
+        """Update an existing custom agent. Returns None if not found."""
+        updated = self.custom_agent_store.update(config)
+        if updated is None:
+            return None
+        self.agents[config.name] = CustomAgent(updated)
+        logger.info("Updated custom agent: %s", config.name)
+        return updated
+
+    def unregister_custom_agent(self, name: str) -> bool:
+        """Remove a custom agent from the registry and delete from SQLite."""
+        deleted = self.custom_agent_store.delete(name)
+        if deleted:
+            self.agents.pop(name, None)
+            logger.info("Unregistered custom agent: %s", name)
+        return deleted
+
+    def is_custom_agent(self, name: str) -> bool:
+        """Check if an agent name refers to a user-created agent."""
+        return isinstance(self.agents.get(name), CustomAgent)
+
     def _resolve_agent(self, agent_name: str) -> Optional[BaseAgent]:
         return self.agents.get(agent_name)
 
@@ -108,17 +155,17 @@ class AgentRunner:
         for name, agent in self.agents.items():
             stats = self.activity_store.get_agent_stats(name)
             tool_names = [t["name"] for t in agent.tools] if agent.tools else []
-            result.append(
-                {
-                    "name": name,
-                    "description": agent.description,
-                    "default_ui_pattern": agent.default_ui_pattern.value,
-                    "tools": tool_names,
-                    "approval_required": list(agent.approval_required),
-                    "suggestions": agent.suggestions,
-                    "stats": stats,
-                }
-            )
+            entry = {
+                "name": name,
+                "description": agent.description,
+                "default_ui_pattern": agent.default_ui_pattern.value,
+                "tools": tool_names,
+                "approval_required": list(agent.approval_required),
+                "suggestions": agent.suggestions,
+                "stats": stats,
+                "custom": isinstance(agent, CustomAgent),
+            }
+            result.append(entry)
         return result
 
     def describe_agent(self, agent_name: str) -> Optional[dict]:
@@ -138,6 +185,7 @@ class AgentRunner:
             "suggestions": agent.suggestions,
             "stats": stats,
             "recent_activity": activity,
+            "custom": isinstance(agent, CustomAgent),
         }
 
     def run_sync(self, intent: str, session_id: Optional[str] = None) -> AgentResult:

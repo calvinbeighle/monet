@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete - 551 passing tests (434 Python + 117 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete - 612 passing tests (488 Python + 124 Flutter).**
 
 ---
 
@@ -360,22 +360,27 @@ Debian VM boots directly into Monet.
 - **Writing routing rules added:** `agent/router.py` now routes writing-specific intents (document, doc, article, blog, essay, report, memo, notes, summarize, rewrite, proofread, google doc) to the writing agent with CHAT UI pattern. Rule is placed before the code-write rule so "write a document" routes to writing while "write a function" still routes to code.
 - **Onboarding updated for three tools:** `shell/lib/ui/onboarding.dart` Connect Tools step now shows Gmail, GitHub, and Google Docs with appropriate icons (description_outlined for docs). Fallback tool list includes all three providers. OAuth dialog handles google-docs provider name.
 - **Test count:** 551 total (434 Python + 117 Flutter), all passing.
-- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. User-created agents (SCOPE.md mentions "configured through conversation") not implemented. Keystroke collection pipeline not implemented.
+
+### Implementation Notes (2026-03-31) - Batch 17
+
+- **User-created agents implemented (SCOPE.md Feature 3):** `agent/custom_agent_store.py` with CustomAgentStore class persists user-defined agent configurations in SQLite (name, description, system_prompt, tool_sets, approval_tools, ui_pattern, suggestions). `agent/agents/custom.py` with CustomAgent class extends BaseAgent - borrows tool definitions and implementations from built-in agents (email, code, writing) based on user's tool_sets selection. Approval sets are merged (inherited from built-in agents + custom overrides). Three new API endpoints: POST /api/agents/custom (create with validation for reserved names, invalid tool sets, invalid UI patterns), PUT /api/agents/custom/{name} (update), DELETE /api/agents/custom/{name} (delete). GET /api/agents and GET /api/agents/{name} now include `custom: true/false` flag. AgentRunner loads custom agents from SQLite on startup and supports dynamic register/update/unregister. Router detects "create/make/set up/configure an agent/bot/assistant" intents (placed before email rules to avoid false matches). Flutter `agents_dashboard.dart` updated with "Create Agent" card in the grid, creation dialog with name/description/instructions fields, tool set selection (email/code/writing), UI pattern selection, and validation. Detail view shows "Custom" badge and delete button for user-created agents.
+- **Test count:** 612 total (488 Python + 124 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Scheduled/autonomous agent execution not implemented (SCOPE.md mentions "run autonomously in the background" but no cron/scheduler infrastructure exists yet). Keystroke collection pipeline not implemented.
 
 ---
 
 ## Architecture Notes
 
-| Layer           | Choice                              | Status                                                          |
-| --------------- | ----------------------------------- | --------------------------------------------------------------- |
-| Base OS         | Debian 12 aarch64 (stripped)        | Scripts ready (needs VM test)                                   |
-| Compositor      | Sway                                | Config ready (needs VM test)                                    |
-| Shell UI        | Flutter (native Wayland client)     | Implemented                                                     |
-| Agent backend   | Python + FastAPI                    | Implemented (5 agents: email, code, planning, general, writing) |
-| Agent framework | Claude Agent SDK                    | Implemented                                                     |
-| Integrations    | Nango (managed OAuth, Gmail/GitHub) | Implemented                                                     |
-| State           | SQLite                              | Implemented                                                     |
-| IPC             | Unix socket / HTTP localhost        | Implemented                                                     |
+| Layer           | Choice                              | Status                                                                         |
+| --------------- | ----------------------------------- | ------------------------------------------------------------------------------ |
+| Base OS         | Debian 12 aarch64 (stripped)        | Scripts ready (needs VM test)                                                  |
+| Compositor      | Sway                                | Config ready (needs VM test)                                                   |
+| Shell UI        | Flutter (native Wayland client)     | Implemented                                                                    |
+| Agent backend   | Python + FastAPI                    | Implemented (6 agents: email, code, planning, general, writing + user-created) |
+| Agent framework | Claude Agent SDK                    | Implemented                                                                    |
+| Integrations    | Nango (managed OAuth, Gmail/GitHub) | Implemented                                                                    |
+| State           | SQLite                              | Implemented                                                                    |
+| IPC             | Unix socket / HTTP localhost        | Implemented                                                                    |
 
 ## Known Discrepancies
 

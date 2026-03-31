@@ -1801,5 +1801,179 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 1));
     });
+
+    testWidgets('shows Create Agent card in agents grid', (tester) async {
+      final mockClient = _buildMockClient(agents: [
+        {
+          'name': 'email',
+          'description': 'Email agent',
+          'default_ui_pattern': 'tinder',
+          'tools': [],
+          'approval_required': [],
+          'suggestions': [],
+          'stats': {'total_runs': 0, 'completed': 0, 'errors': 0, 'running': 0, 'total_tool_calls': 0, 'total_approvals': 0},
+        },
+      ]);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text('Create Agent'), findsOneWidget);
+      expect(find.text('Build a custom agent with your own instructions'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows Custom badge for user-created agents', (tester) async {
+      final mockClient = _buildMockClient(agents: [
+        {
+          'name': 'morning-briefing',
+          'description': 'Summarizes inbox every morning',
+          'default_ui_pattern': 'chat',
+          'tools': ['list_inbox', 'read_email'],
+          'approval_required': [],
+          'suggestions': [],
+          'stats': {'total_runs': 2, 'completed': 2, 'errors': 0, 'running': 0, 'total_tool_calls': 5, 'total_approvals': 0},
+          'custom': true,
+        },
+      ]);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Tap the custom agent card to see detail view
+      await tester.tap(find.text('Morning-briefing'));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Detail view should show Custom badge
+      expect(find.text('Custom'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('Create Agent card opens dialog on tap', (tester) async {
+      final mockClient = _buildMockClient(agents: []);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Tap the Create Agent card
+      await tester.tap(find.text('Create Agent'));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Dialog should appear with form fields
+      expect(find.text('Name'), findsOneWidget);
+      expect(find.text('Description'), findsOneWidget);
+      expect(find.text('Instructions'), findsOneWidget);
+      expect(find.text('Tool Access'), findsOneWidget);
+      expect(find.text('Default UI'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.widgetWithText(ElevatedButton, 'Create'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('Create dialog shows tool set options', (tester) async {
+      final mockClient = _buildMockClient(agents: []);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      await tester.tap(find.text('Create Agent'));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Tool set options
+      expect(find.text('Email (Gmail)'), findsOneWidget);
+      expect(find.text('Code (GitHub)'), findsOneWidget);
+      expect(find.text('Writing (Google Docs)'), findsOneWidget);
+
+      // UI pattern options
+      expect(find.text('Chat'), findsOneWidget);
+      expect(find.text('Swipe Cards'), findsOneWidget);
+      expect(find.text('Diff View'), findsOneWidget);
+      expect(find.text('Whiteboard'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('Create dialog shows error when fields empty', (tester) async {
+      // Use a larger surface so the dialog fits without overflow
+      tester.view.physicalSize = const Size(1200, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final mockClient = _buildMockClient(agents: []);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      await tester.tap(find.text('Create Agent'));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Scroll the dialog to make the Create button visible
+      final createButton = find.widgetWithText(ElevatedButton, 'Create');
+      await tester.ensureVisible(createButton);
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Tap Create without filling fields
+      await tester.tap(createButton);
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text('All fields are required'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('AgentInfo.fromJson parses custom flag', (tester) async {
+      final info = AgentInfo.fromJson({
+        'name': 'custom-test',
+        'description': 'Test',
+        'default_ui_pattern': 'chat',
+        'tools': [],
+        'approval_required': [],
+        'suggestions': [],
+        'stats': {},
+        'custom': true,
+      });
+      expect(info.custom, true);
+
+      final builtinInfo = AgentInfo.fromJson({
+        'name': 'email',
+        'description': 'Email',
+        'default_ui_pattern': 'tinder',
+        'tools': [],
+        'stats': {},
+      });
+      expect(builtinInfo.custom, false);
+    });
+
+    testWidgets('custom agent uses smart_toy icon', (tester) async {
+      final mockClient = _buildMockClient(agents: [
+        {
+          'name': 'my-custom-bot',
+          'description': 'A custom bot',
+          'default_ui_pattern': 'chat',
+          'tools': [],
+          'approval_required': [],
+          'suggestions': [],
+          'stats': {'total_runs': 0, 'completed': 0, 'errors': 0, 'running': 0, 'total_tool_calls': 0, 'total_approvals': 0},
+          'custom': true,
+        },
+      ]);
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Custom agents get the smart_toy icon
+      expect(find.byIcon(Icons.smart_toy_outlined), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
   });
 }

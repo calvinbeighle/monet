@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 from agent.approval import ApprovalGate
 from agent.auth import AuthStore, UserExistsError
+from agent.custom_agent_store import CustomAgentConfig
+from agent.agents.custom import AVAILABLE_TOOL_SETS
 from agent.models import ApprovalStatus
 from agent.nango import NangoManager
 from agent.runner import AgentRunner
@@ -163,6 +165,26 @@ def agents_activity(limit: int = 50):
     return runner.activity_store.get_all_activity(limit=limit)
 
 
+# --- Custom agent CRUD routes (SCOPE.md Feature 3: user-created agents) ---
+# These static routes must come before the parameterized {agent_name} route.
+
+
+class CreateCustomAgentRequest(BaseModel):
+    name: str
+    description: str
+    system_prompt: str
+    tool_sets: list[str] = []
+    approval_tools: list[str] = []
+    ui_pattern: str = "chat"
+    suggestions: list[str] = []
+
+
+@app.get("/api/agents/tool-sets")
+def list_tool_sets():
+    """List available tool sets that custom agents can borrow from built-in agents."""
+    return {"tool_sets": AVAILABLE_TOOL_SETS}
+
+
 @app.get("/api/agents/{agent_name}")
 def get_agent(agent_name: str):
     """Get detailed info for a single agent including tool definitions and recent activity."""
@@ -170,6 +192,93 @@ def get_agent(agent_name: str):
     if detail is None:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
     return detail
+
+
+@app.post("/api/agents/custom")
+def create_custom_agent(request: CreateCustomAgentRequest):
+    """Create a new user-defined agent.
+
+    Users configure agents through conversation or the dashboard UI.
+    The agent gets a custom system prompt and can borrow tools from
+    built-in agents (email, code, writing).
+    """
+    # Validate tool sets
+    invalid = [ts for ts in request.tool_sets if ts not in AVAILABLE_TOOL_SETS]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid tool sets: {invalid}. Available: {AVAILABLE_TOOL_SETS}",
+        )
+    # Validate UI pattern
+    valid_patterns = ["chat", "tinder", "diff", "whiteboard"]
+    if request.ui_pattern not in valid_patterns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid UI pattern: {request.ui_pattern}. Available: {valid_patterns}",
+        )
+    # Validate name doesn't conflict with built-in agents
+    builtin_names = {"email", "code", "general", "planning", "writing"}
+    if request.name in builtin_names:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot use reserved agent name: {request.name}",
+        )
+
+    config = CustomAgentConfig(
+        name=request.name,
+        description=request.description,
+        system_prompt=request.system_prompt,
+        tool_sets=request.tool_sets,
+        approval_tools=request.approval_tools,
+        ui_pattern=request.ui_pattern,
+        suggestions=request.suggestions,
+    )
+    try:
+        created = runner.register_custom_agent(config)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {
+        "status": "created",
+        "name": created.name,
+        "description": created.description,
+    }
+
+
+@app.put("/api/agents/custom/{agent_name}")
+def update_custom_agent(agent_name: str, request: CreateCustomAgentRequest):
+    """Update an existing user-defined agent configuration."""
+    if not runner.is_custom_agent(agent_name):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Custom agent '{agent_name}' not found (cannot update built-in agents)",
+        )
+    config = CustomAgentConfig(
+        name=agent_name,
+        description=request.description,
+        system_prompt=request.system_prompt,
+        tool_sets=request.tool_sets,
+        approval_tools=request.approval_tools,
+        ui_pattern=request.ui_pattern,
+        suggestions=request.suggestions,
+    )
+    updated = runner.update_custom_agent(config)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+    return {"status": "updated", "name": updated.name}
+
+
+@app.delete("/api/agents/custom/{agent_name}")
+def delete_custom_agent(agent_name: str):
+    """Delete a user-defined agent."""
+    if not runner.is_custom_agent(agent_name):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Custom agent '{agent_name}' not found (cannot delete built-in agents)",
+        )
+    deleted = runner.unregister_custom_agent(agent_name)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+    return {"status": "deleted", "name": agent_name}
 
 
 # --- Auth routes ---
