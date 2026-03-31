@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 422 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 506 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3, v0.6.0 through v0.6.1. Build, typecheck, lint all clean.
 
-**Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.1 Application Shell, 2.2 Map Rendering,
+**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (partial), 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.3 Agent Deployment UI (drag-to-deploy, confirmation, recall, quick-deploy).
 
-**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 4.2 Agent AI Backend.
+**Next priorities**: 1.4 Thread Fetching, 1.5 Incremental Sync, 4.2 Agent AI Backend.
 
 ---
 
@@ -20,11 +20,11 @@ These must be resolved before implementation begins:
 - **Build tool**: Vite
 - **Map rendering**: PixiJS (WebGL-backed 2D renderer) - needed for 500+ entity performance with smooth pan/zoom, layered rendering, pulse/glow animations, and drift. HTML Canvas alone lacks the scene graph; raw WebGL is too low-level. PixiJS provides the right abstraction.
 - **State management**: Zustand for client state (per project conventions), React Query for server/async state (Gmail API calls)
-- **Backend**: Next.js API routes or a lightweight Express server for Gmail OAuth token exchange and refresh (OAuth requires a server-side component for token security). The rest is client-side.
+- **Email integration**: Nango (managed OAuth + API proxy). Nango handles Gmail OAuth token exchange, storage, and refresh. All Gmail API calls go through Nango's proxy endpoint. No custom backend needed for auth.
 - **Persistence**: IndexedDB (via idb or Dexie) for thread state, positions, scores, and offline cache. No external database for MVP.
 - **Styling**: Tailwind CSS for shell/panels, PixiJS for map rendering
 - **Testing**: Vitest + React Testing Library
-- **Gmail API**: googleapis npm package or direct REST calls via fetch
+- **Gmail API**: REST calls via Nango proxy (no googleapis npm package needed, no raw tokens)
 
 ---
 
@@ -41,16 +41,17 @@ These must be resolved before implementation begins:
 - [x] **Spec**: N/A (infrastructure)
 - [x] **Tests**: Build succeeds, lint passes, vitest runs with zero tests
 
-### 1.2 Gmail OAuth & Authentication
+### 1.2 Gmail Authentication via Nango
 
-- [ ] Implement OAuth2 consent flow (redirect to Google, exchange code for tokens)
-- [ ] Server-side token exchange endpoint (keeps client_secret off the client)
-- [ ] Secure token persistence (refresh token in server session or encrypted storage)
-- [ ] Silent token refresh on access token expiry
-- [ ] Auth state machine: Unauthenticated -> Authenticating -> Authenticated -> Token Expired -> Reauthentication Required
-- [ ] UI: auth prompt on unauthenticated, error state on revocation
-- [ ] **Spec**: 01-email-integration (Authentication section)
-- [ ] **Tests**: Auth state transitions, token refresh flow, consent denial handling
+- [x] Create `src/lib/nango-client.ts` - Nango API client (connection status, create connect session, proxy Gmail API calls)
+- [x] Auth state machine: Unauthenticated -> Authenticating -> Authenticated -> Reauthentication Required (no token management - Nango handles refresh transparently)
+- [x] Create Nango connect session and redirect user to Nango OAuth flow
+- [x] Poll/check Nango connection status on app load (GET /connection/{connectionId})
+- [x] All Gmail API calls proxied through Nango (Nango handles token refresh)
+- [x] UI: auth prompt on unauthenticated, reconnect prompt on broken connection
+- [x] Environment config: VITE_NANGO_SECRET_KEY, VITE_NANGO_HOST (default https://api.nango.dev), VITE_NANGO_GMAIL_CONNECTION_ID (default "gmail")
+- [x] **Spec**: 01-email-integration (Authentication via Nango section)
+- [x] **Tests**: Auth state transitions, connection status check, connect session creation, proxy call construction
 
 ### 1.3 Thread Data Model & Persistence
 
@@ -64,10 +65,10 @@ These must be resolved before implementation begins:
 - [ ] **Spec**: 09-thread-data-model
 - [ ] **Tests**: State transitions (all valid paths), persistence round-trip, merge on reload, thread removal when deleted from Gmail
 
-### 1.4 Gmail Thread Fetching & Initial Load
+### 1.4 Gmail Thread Fetching & Initial Load (via Nango proxy)
 
-- [ ] Fetch inbox thread list (reverse chronological, configurable lookback window, default 30 days)
-- [ ] Fetch full thread detail per thread (messages, participants, labels, timestamps)
+- [ ] Fetch inbox thread list via Nango proxy (reverse chronological, configurable lookback window, default 30 days)
+- [ ] Fetch full thread detail per thread via Nango proxy (messages, participants, labels, timestamps)
 - [ ] Extract derived metadata: participants, canonical subject, timestamps, message count, unread status
 - [ ] Progressive loading: threads become available as each finishes loading
 - [ ] Record history identifier for incremental sync
@@ -304,7 +305,7 @@ These must be resolved before implementation begins:
 - [x] Cancel returns agent to dock; confirm creates deployment record
 - [x] Travel animation: smooth arc from dock to target cluster
 - [x] In-progress: progress indicator on cluster, agent icon anchored
-- [ ] Results overlay: actionable approve/reject per proposal, no auto-dismiss
+- [x] Results overlay: actionable approve/reject per proposal, no auto-dismiss
 - [x] Recall: cancel traveling/in-progress deployment, agent returns to idle (no cooldown)
 - [ ] Batch deployment: multi-cluster selection, independent records per cluster
 - [x] Deployment history panel: reverse-chronological log, filter by role/status
@@ -403,3 +404,23 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Deployment confirmation dialog (src/components/deployment-confirmation.tsx): Shows agent role, description, thread count, capacity. Confirm triggers deploy in agent store and starts travel/work lifecycle. Cancel returns agent to dock.
 - Map viewport drop handling: On mouse up during agent drag, validates drop by finding threads within radius. Shows confirmation if threads found, cancels if empty area. Quick-deploy keyboard shortcuts (Shift+1-6) deploy to threads near viewport center.
 - Test count: 422 total, all passing
+
+### Implementation Notes - Results Overlay & Deployment Store Refactor (2026-03-31)
+
+- ResultsOverlay component (src/components/results-overlay.tsx): Shows proposals from completed agent deployments. Approve/reject per proposal with done button only enabled when all proposals are resolved. Triggers agent cooldown and deployment resolution on done.
+- Deployment store enhanced: Added "resolved" status, resolveDeployment action, getCompletedDeploymentForRole query to support overlay lifecycle.
+- DeploymentHistoryPanel refactored to read from stores directly (single source of truth) instead of prop injection.
+- App.tsx wired: Detects completed agents with proposals, renders ResultsOverlay, connects deployment history panel to deployment store.
+- Test count: 437 total (15 new), all passing
+
+### Implementation Notes - Gmail Auth via Nango (2026-03-31)
+
+- Auth module fully rewritten for Nango-managed OAuth (Spec 01). Previous direct Google OAuth implementation replaced - no backend needed. Nango handles token exchange, storage, and refresh transparently through its proxy.
+- src/lib/nango-client.ts: Core Nango API client with checkConnectionStatus (GET /connection/{id}), createConnectSession (POST /connect-sessions), nangoProxy (proxied Gmail API calls with Connection-Id and Provider-Config-Key headers), getNangoConfig.
+- src/features/auth/auth-types.ts: 4-state machine (unauthenticated/authenticating/authenticated/reauthentication-required). No token-expired state because Nango handles refresh. Removed AuthTokens/AuthConfig/GMAIL_SCOPES types (not needed with Nango).
+- src/features/auth/auth-store.ts: Zustand store with checkConnection (app load), startAuth (create session + redirect), handleAuthComplete (verify connection after OAuth callback), handleConsentDenied, signOut. Injectable \_checkConnectionStatus/\_createConnectSession/\_redirect for testing.
+- src/features/auth/gmail-client.ts: All API calls now route through nangoProxy instead of direct Gmail API. Injectable \_setProxyFn/\_resetProxyFn for testing. On 401, transitions auth to reauthentication-required (Nango connection broken). Retry logic preserved (3 attempts, exponential backoff, 429 rate limit handling).
+- App.tsx init flow updated: checks Nango connection first, transitions to unauthenticated if no connection. Connect Gmail button wired to startAuth. Auth errors displayed in auth prompt.
+- .env.example added with VITE_NANGO_SECRET_KEY, VITE_NANGO_HOST, VITE_NANGO_GMAIL_CONNECTION_ID. .gitignore updated to exclude .env files.
+- App.test.tsx updated: mocks auth store to prevent Nango API calls during tests.
+- Test count: 506 total (58 new: 16 auth-types, 15 auth-store, 13 nango-client, 14 gmail-client), all passing

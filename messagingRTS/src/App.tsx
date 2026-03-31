@@ -23,6 +23,7 @@ import {
 } from "./features/sync/persistence-manager";
 import { useThreadStore } from "./lib/stores";
 import { useAgentStore } from "./lib/stores/agent-store";
+import { useAuthStore } from "./features/auth/auth-store";
 import type { AgentRole } from "./lib/types";
 
 export function App() {
@@ -77,13 +78,24 @@ export function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, [setViewportDimensions]);
 
-  // Initialization: load persisted threads, start periodic persist, transition to active
+  // Initialization: check auth via Nango, load persisted threads, transition to active
   useEffect(() => {
     if (shellState !== "initializing") return;
 
     let cancelled = false;
 
     const init = async () => {
+      // Step 1: Check Nango connection status
+      await useAuthStore.getState().checkConnection();
+      if (cancelled) return;
+
+      const authState = useAuthStore.getState().authState;
+      if (authState !== "authenticated") {
+        setShellState("unauthenticated");
+        return;
+      }
+
+      // Step 2: Load persisted threads
       try {
         const persisted = await loadPersistedThreads();
         if (cancelled) return;
@@ -163,6 +175,11 @@ export function App() {
 
   // Unauthenticated state
   if (shellState === "unauthenticated") {
+    const authError = useAuthStore.getState().error;
+    const handleConnect = () => {
+      useAuthStore.getState().startAuth();
+    };
+
     return (
       <div className="flex h-full w-full flex-col bg-[#0a0a12]" data-testid="app-shell">
         <StatusBar />
@@ -170,7 +187,16 @@ export function App() {
           <div className="text-center" data-testid="auth-prompt">
             <h2 className="mb-2 text-lg text-gray-200">Welcome to Messaging RTS</h2>
             <p className="mb-4 text-sm text-gray-500">Connect your Gmail to get started</p>
-            <button className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500">
+            {authError && (
+              <p className="mb-3 text-xs text-red-400" data-testid="auth-error">
+                {authError}
+              </p>
+            )}
+            <button
+              onClick={handleConnect}
+              className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-500"
+              data-testid="connect-gmail-btn"
+            >
               Connect Gmail
             </button>
           </div>

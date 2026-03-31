@@ -15,6 +15,32 @@ vi.mock("./features/sync/persistence-manager", () => ({
   saveThreadState: vi.fn(async () => {}),
 }));
 
+// Mock auth store's checkConnection so init doesn't hit Nango API
+vi.mock("./features/auth/auth-store", async () => {
+  const { create } = await import("zustand");
+  const store = create(() => ({
+    authState: "authenticated" as const,
+    connection: {
+      id: 1,
+      connectionId: "gmail",
+      providerConfigKey: "google-mail",
+      provider: "google-mail",
+      createdAt: "",
+      updatedAt: "",
+    },
+    error: null,
+    checkConnection: vi.fn(async () => {}),
+    startAuth: vi.fn(async () => {}),
+    handleAuthComplete: vi.fn(async () => {}),
+    handleConsentDenied: vi.fn(),
+    signOut: vi.fn(),
+    _checkConnectionStatus: vi.fn(async () => null),
+    _createConnectSession: vi.fn(async () => ({ token: "", connectUrl: "", expiresAt: "" })),
+    _redirect: vi.fn(),
+  }));
+  return { useAuthStore: store };
+});
+
 function renderApp() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
