@@ -57,8 +57,14 @@ def health():
 def run_agent(request: RunRequest):
     """Run an agent synchronously and return the structured result."""
     logger.info("Running agent for intent: %s", request.intent)
-    result = runner.run_sync(request.intent, session_id=request.session_id)
-    return asdict(result)
+    try:
+        result = runner.run_sync(request.intent, session_id=request.session_id)
+        return asdict(result)
+    except Exception as e:
+        logger.exception("Unhandled error in /api/run")
+        raise HTTPException(
+            status_code=500, detail=f"Internal error: {type(e).__name__}"
+        )
 
 
 @app.post("/api/stream")
@@ -71,8 +77,21 @@ def stream_agent(request: RunRequest):
     logger.info("Streaming agent for intent: %s", request.intent)
 
     def event_generator():
-        for event in runner.stream_flow(request.intent, session_id=request.session_id):
-            yield json.dumps(event.to_dict()) + "\n"
+        try:
+            for event in runner.stream_flow(
+                request.intent, session_id=request.session_id
+            ):
+                yield json.dumps(event.to_dict()) + "\n"
+        except Exception as e:
+            logger.exception("Unhandled error in /api/stream")
+            error_event = {
+                "type": "error",
+                "data": f"Internal error: {type(e).__name__}",
+                "metadata": {"retryable": True},
+            }
+            yield json.dumps(error_event) + "\n"
+            done_event = {"type": "done", "data": "", "metadata": {}}
+            yield json.dumps(done_event) + "\n"
 
     return StreamingResponse(
         event_generator(),
@@ -257,6 +276,20 @@ def update_custom_agent(agent_name: str, request: CreateCustomAgentRequest):
             status_code=404,
             detail=f"Custom agent '{agent_name}' not found (cannot update built-in agents)",
         )
+    # Validate tool sets
+    invalid = [ts for ts in request.tool_sets if ts not in AVAILABLE_TOOL_SETS]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid tool sets: {invalid}. Available: {AVAILABLE_TOOL_SETS}",
+        )
+    # Validate UI pattern
+    valid_patterns = ["chat", "tinder", "diff", "whiteboard"]
+    if request.ui_pattern not in valid_patterns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid UI pattern: {request.ui_pattern}. Available: {valid_patterns}",
+        )
     config = CustomAgentConfig(
         name=agent_name,
         description=request.description,
@@ -427,6 +460,10 @@ def toggle_schedule(schedule_id: str):
         raise HTTPException(status_code=404, detail="Schedule not found")
     config.enabled = not config.enabled
     updated = schedule_store.update(config)
+    if updated is None:
+        raise HTTPException(
+            status_code=404, detail="Schedule was deleted during toggle"
+        )
     return {"status": "toggled", "enabled": updated.enabled}
 
 
@@ -746,34 +783,38 @@ def home_summary():
     Returns everything the Flutter home screen needs in a single call so the
     landing experience loads in one roundtrip instead of three.
     """
-    from dataclasses import asdict as _asdict
+    try:
+        from dataclasses import asdict as _asdict
 
-    # Tool connection status (list of ToolConnectionStatus dataclasses)
-    statuses = nango_mgr.get_all_statuses()
-    tools = [_asdict(s) for s in statuses]
+        # Tool connection status (list of ToolConnectionStatus dataclasses)
+        statuses = nango_mgr.get_all_statuses()
+        tools = [_asdict(s) for s in statuses]
 
-    # Agent list with stats (lightweight - no activity history)
-    agents = runner.describe_agents()
+        # Agent list with stats (lightweight - no activity history)
+        agents = runner.describe_agents()
 
-    # Recent activity (last 5 for home screen)
-    recent_activity = runner.activity_store.get_all_activity(limit=5)
+        # Recent activity (last 5 for home screen)
+        recent_activity = runner.activity_store.get_all_activity(limit=5)
 
-    # Build quick actions based on which tools are connected
-    connected_providers = {s.provider for s in statuses if s.connected}
-    quick_actions = _build_quick_actions(connected_providers)
+        # Build quick actions based on which tools are connected
+        connected_providers = {s.provider for s in statuses if s.connected}
+        quick_actions = _build_quick_actions(connected_providers)
 
-    # Count active schedules
-    all_schedules = schedule_store.list_all()
-    active_schedules = sum(1 for s in all_schedules if s.enabled)
+        # Count active schedules
+        all_schedules = schedule_store.list_all()
+        active_schedules = sum(1 for s in all_schedules if s.enabled)
 
-    return {
-        "tools": tools,
-        "agents": agents,
-        "recent_activity": recent_activity,
-        "quick_actions": quick_actions,
-        "active_schedules": active_schedules,
-        "total_schedules": len(all_schedules),
-    }
+        return {
+            "tools": tools,
+            "agents": agents,
+            "recent_activity": recent_activity,
+            "quick_actions": quick_actions,
+            "active_schedules": active_schedules,
+            "total_schedules": len(all_schedules),
+        }
+    except Exception as e:
+        logger.exception("Error building home summary")
+        raise HTTPException(status_code=500, detail="Failed to load home screen data")
 
 
 def _build_quick_actions(connected_providers: set[str]) -> list[dict]:

@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete - 741 passing tests (609 Python + 132 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete - 833 passing tests (689 Python + 144 Flutter).**
 
 ---
 
@@ -401,6 +401,18 @@ Debian VM boots directly into Monet.
 - **Home Screen implemented (default landing experience):** After login, users now see a desktop-like home screen instead of an empty chat. The home screen shows: greeting with time-of-day awareness, connected tools status (Gmail/GitHub/Google Docs with connection indicators), quick action chips (contextual - shows email actions when Gmail connected, code actions when GitHub connected, etc.), agent overview cards with status/run counts, and recent activity feed. New `GET /api/home/summary` aggregated endpoint returns tools, agents, activity, quick actions, and schedule counts in a single roundtrip. Flutter `shell/lib/ui/home_screen.dart` renders the landing with hover effects, accent colors per agent type, and responsive layout. Quick action taps fire intents that transition to the appropriate UI pattern. "View all" link opens the agents dashboard. Home screen auto-refreshes every 15 seconds.
 - **Pattern routing updated:** `main.dart` now shows HomeScreen as the default when `_activePattern` is null (was previously chat). Chat pattern is still accessible via the routing event from the backend. Agents dashboard back-navigation returns to home (null) instead of chat.
 - **Test count:** 779 total (635 Python + 144 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
+
+### Implementation Notes (2026-03-31) - Batch 22
+
+- **Production robustness hardening (runner, API, tests):** Comprehensive audit and fix of error handling gaps across the agent backend.
+- **Runner activity tracking safety:** `run_sync` and `stream_sync` now wrap agent execution in try/finally blocks with an `activity_recorded` flag. Unexpected exceptions (e.g., SQLite errors in `_persist_message`) no longer leave orphaned "in progress" activity records - the finally block calls `record_error` if activity was not already recorded. `stream_sync` additionally catches unexpected exceptions and emits proper error+done events before returning, preventing silent stream truncation.
+- **MAX_TOOL_ROUNDS exhaustion detection:** All three execution paths (`run_sync`, `stream_sync`, `_stream_step`) now use Python's for/else pattern to detect when the agent loop exits by exhaustion rather than completion. Exhaustion emits an error (AgentOutput in sync, AgentEvent in streaming) with message "Agent reached maximum tool execution rounds" so the client and activity store correctly reflect incomplete tasks.
+- **API error handling hardened:** `/api/run` now catches unexpected exceptions and returns HTTP 500 with the exception type name instead of raw tracebacks. `/api/stream` event_generator catches exceptions and emits structured error+done NDJSON events before closing. `/api/home/summary` wrapped in try/except returning 500 on failure.
+- **Toggle schedule race condition fixed:** `toggle_schedule` endpoint now checks for None return from `schedule_store.update()` (can happen if schedule deleted between get and update) and returns 404 instead of crashing with AttributeError.
+- **Update custom agent validation added:** `update_custom_agent` endpoint now validates tool_sets and ui_pattern (matching create_custom_agent validation) instead of accepting arbitrary values.
+- **Test coverage expanded:** Added `test_models.py` (27 tests) covering all data models in models.py - UIPattern, ApprovalStatus, AgentOutput, AgentResult, AgentEvent, FlowStep, FlowPlan, RoutedIntent, ApprovalRequest including defaults, field isolation, and serialization. Added `test_api_endpoints.py` (27 tests) covering HTTP-level endpoint testing via FastAPI TestClient for: /api/run error handling, /api/stream error handling, /api/flow/advance, all 11 /api/system/\* routes (wifi status/scan/connect/disconnect, volume get/set/mute, brightness get/set, power actions), toggle_schedule None safety, update_custom_agent validation, and home_summary error handling.
+- **Test count:** 833 total (689 Python + 144 Flutter), all passing.
 - **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
 
 ---

@@ -248,176 +248,202 @@ class AgentRunner:
         if tools:
             create_kwargs["tools"] = tools
 
-        for _round in range(MAX_TOOL_ROUNDS):
-            try:
-                response = self.client.messages.create(**create_kwargs)
-            except anthropic.AuthenticationError:
-                outputs.append(
-                    AgentOutput(
-                        content="Authentication failed. Please check your API key.",
-                        status="error",
-                        metadata={"error_type": "auth_error", "retryable": False},
-                    )
-                )
-                break
-            except anthropic.RateLimitError:
-                outputs.append(
-                    AgentOutput(
-                        content="Rate limit exceeded. Please try again in a moment.",
-                        status="error",
-                        metadata={"error_type": "rate_limit", "retryable": True},
-                    )
-                )
-                break
-            except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
-                logger.error("API connection error: %s", e)
-                outputs.append(
-                    AgentOutput(
-                        content="Failed to connect to AI service. Please check your network.",
-                        status="error",
-                        metadata={"error_type": "connection_error", "retryable": True},
-                    )
-                )
-                break
-            except anthropic.APIError as e:
-                logger.error("API error: %s", e)
-                outputs.append(
-                    AgentOutput(
-                        content=f"AI service error: {e.message}",
-                        status="error",
-                        metadata={"error_type": "api_error", "retryable": True},
-                    )
-                )
-                break
-
-            # Collect text content
-            assistant_content = response.content
-            text_parts = [
-                block.text for block in assistant_content if block.type == "text"
-            ]
-
-            if text_parts:
-                outputs.append(AgentOutput(content="\n".join(text_parts)))
-
-            # Check for tool use
-            tool_use_blocks = [
-                block for block in assistant_content if block.type == "tool_use"
-            ]
-
-            if not tool_use_blocks:
-                # No tool calls - agent is done
-                history.append({"role": "assistant", "content": assistant_content})
-                self._persist_message(sid, "assistant", assistant_content)
-                break
-
-            # Process tool calls
-            history.append({"role": "assistant", "content": assistant_content})
-            self._persist_message(sid, "assistant", assistant_content)
-            tool_results = []
-
-            for tool_block in tool_use_blocks:
-                tool_name = tool_block.name
-                tool_input = tool_block.input
-                self.activity_store.record_tool_call(activity_id)
-
-                # Check approval gate
-                if tool_name in agent.approval_required:
-                    self.activity_store.record_approval(activity_id)
-                    req = self.approval_gate.create(
-                        tool_name=tool_name,
-                        parameters=tool_input,
-                        session_id=sid,
-                    )
+        activity_recorded = False
+        try:
+            for _round in range(MAX_TOOL_ROUNDS):
+                try:
+                    response = self.client.messages.create(**create_kwargs)
+                except anthropic.AuthenticationError:
                     outputs.append(
                         AgentOutput(
-                            content=f"Approval required for {tool_name}",
-                            status="pending_approval",
+                            content="Authentication failed. Please check your API key.",
+                            status="error",
+                            metadata={"error_type": "auth_error", "retryable": False},
+                        )
+                    )
+                    break
+                except anthropic.RateLimitError:
+                    outputs.append(
+                        AgentOutput(
+                            content="Rate limit exceeded. Please try again in a moment.",
+                            status="error",
+                            metadata={"error_type": "rate_limit", "retryable": True},
+                        )
+                    )
+                    break
+                except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+                    logger.error("API connection error: %s", e)
+                    outputs.append(
+                        AgentOutput(
+                            content="Failed to connect to AI service. Please check your network.",
+                            status="error",
                             metadata={
-                                "approval_id": req.id,
-                                "tool_name": tool_name,
-                                "parameters": tool_input,
+                                "error_type": "connection_error",
+                                "retryable": True,
                             },
                         )
                     )
-
-                    # Wait for approval
-                    status = self.approval_gate.wait_for_resolution(req.id, timeout=300)
-                    if status != ApprovalStatus.APPROVED:
-                        tool_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tool_block.id,
-                                "content": f"User rejected {tool_name}. Do not retry this action.",
-                            }
+                    break
+                except anthropic.APIError as e:
+                    logger.error("API error: %s", e)
+                    outputs.append(
+                        AgentOutput(
+                            content=f"AI service error: {e.message}",
+                            status="error",
+                            metadata={"error_type": "api_error", "retryable": True},
                         )
-                        continue
+                    )
+                    break
 
-                # Execute tool with error handling
-                try:
-                    result = agent.execute_tool(tool_name, tool_input)
-                except Exception as e:
-                    logger.error("Tool execution failed: %s - %s", tool_name, e)
-                    error_msg = str(e)
-                    # Detect OAuth/auth errors from integration APIs
-                    if (
-                        "401" in error_msg
-                        or "403" in error_msg
-                        or "unauthorized" in error_msg.lower()
-                    ):
-                        result = json.dumps(
-                            {
-                                "error": f"Authentication failed for {tool_name}. "
-                                "The OAuth token may have expired - please reconnect the integration.",
-                                "error_type": "oauth_expired",
-                            }
+                # Collect text content
+                assistant_content = response.content
+                text_parts = [
+                    block.text for block in assistant_content if block.type == "text"
+                ]
+
+                if text_parts:
+                    outputs.append(AgentOutput(content="\n".join(text_parts)))
+
+                # Check for tool use
+                tool_use_blocks = [
+                    block for block in assistant_content if block.type == "tool_use"
+                ]
+
+                if not tool_use_blocks:
+                    # No tool calls - agent is done
+                    history.append({"role": "assistant", "content": assistant_content})
+                    self._persist_message(sid, "assistant", assistant_content)
+                    break
+
+                # Process tool calls
+                history.append({"role": "assistant", "content": assistant_content})
+                self._persist_message(sid, "assistant", assistant_content)
+                tool_results = []
+
+                for tool_block in tool_use_blocks:
+                    tool_name = tool_block.name
+                    tool_input = tool_block.input
+                    self.activity_store.record_tool_call(activity_id)
+
+                    # Check approval gate
+                    if tool_name in agent.approval_required:
+                        self.activity_store.record_approval(activity_id)
+                        req = self.approval_gate.create(
+                            tool_name=tool_name,
+                            parameters=tool_input,
+                            session_id=sid,
                         )
                         outputs.append(
                             AgentOutput(
-                                content=f"OAuth token expired for {tool_name}. Please reconnect.",
-                                status="error",
+                                content=f"Approval required for {tool_name}",
+                                status="pending_approval",
                                 metadata={
-                                    "error_type": "oauth_expired",
+                                    "approval_id": req.id,
                                     "tool_name": tool_name,
+                                    "parameters": tool_input,
                                 },
                             )
                         )
-                    else:
-                        result = json.dumps(
-                            {"error": f"Tool {tool_name} failed: {error_msg}"}
+
+                        # Wait for approval
+                        status = self.approval_gate.wait_for_resolution(
+                            req.id, timeout=300
                         )
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_block.id,
-                        "content": result,
-                    }
+                        if status != ApprovalStatus.APPROVED:
+                            tool_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tool_block.id,
+                                    "content": f"User rejected {tool_name}. Do not retry this action.",
+                                }
+                            )
+                            continue
+
+                    # Execute tool with error handling
+                    try:
+                        result = agent.execute_tool(tool_name, tool_input)
+                    except Exception as e:
+                        logger.error("Tool execution failed: %s - %s", tool_name, e)
+                        error_msg = str(e)
+                        # Detect OAuth/auth errors from integration APIs
+                        if (
+                            "401" in error_msg
+                            or "403" in error_msg
+                            or "unauthorized" in error_msg.lower()
+                        ):
+                            result = json.dumps(
+                                {
+                                    "error": f"Authentication failed for {tool_name}. "
+                                    "The OAuth token may have expired - please reconnect the integration.",
+                                    "error_type": "oauth_expired",
+                                }
+                            )
+                            outputs.append(
+                                AgentOutput(
+                                    content=f"OAuth token expired for {tool_name}. Please reconnect.",
+                                    status="error",
+                                    metadata={
+                                        "error_type": "oauth_expired",
+                                        "tool_name": tool_name,
+                                    },
+                                )
+                            )
+                        else:
+                            result = json.dumps(
+                                {"error": f"Tool {tool_name} failed: {error_msg}"}
+                            )
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_block.id,
+                            "content": result,
+                        }
+                    )
+
+                # Update create_kwargs messages for next round
+                history.append({"role": "user", "content": tool_results})
+                self._persist_message(sid, "user", tool_results)
+                create_kwargs["messages"] = history
+            else:
+                # Loop exhausted without break - MAX_TOOL_ROUNDS reached
+                logger.warning(
+                    "Agent loop exhausted MAX_TOOL_ROUNDS (%d) for intent: %s",
+                    MAX_TOOL_ROUNDS,
+                    intent[:200],
                 )
-
-            # Update create_kwargs messages for next round
-            history.append({"role": "user", "content": tool_results})
-            self._persist_message(sid, "user", tool_results)
-            create_kwargs["messages"] = history
-
-        # Include planning node data as outputs for whiteboard pattern
-        if hasattr(agent, "_nodes") and routed.ui_pattern == UIPattern.WHITEBOARD:
-            for node in agent._nodes.values():
                 outputs.append(
                     AgentOutput(
-                        content=node.get("title", ""),
-                        status="complete",
-                        metadata=node,
+                        content=f"Agent reached maximum tool execution rounds ({MAX_TOOL_ROUNDS}). The task may be incomplete.",
+                        status="error",
                     )
                 )
 
-        # Record activity completion
-        has_error = any(o.status == "error" for o in outputs)
-        if has_error:
-            error_msgs = [o.content for o in outputs if o.status == "error"]
-            self.activity_store.record_error(activity_id, "; ".join(error_msgs))
-        else:
-            summary_parts = [o.content for o in outputs if o.status == "complete"]
-            summary = summary_parts[0][:200] if summary_parts else None
-            self.activity_store.record_finish(activity_id, summary=summary)
+            # Include planning node data as outputs for whiteboard pattern
+            if hasattr(agent, "_nodes") and routed.ui_pattern == UIPattern.WHITEBOARD:
+                for node in agent._nodes.values():
+                    outputs.append(
+                        AgentOutput(
+                            content=node.get("title", ""),
+                            status="complete",
+                            metadata=node,
+                        )
+                    )
+
+            # Record activity completion
+            has_error = any(o.status == "error" for o in outputs)
+            if has_error:
+                error_msgs = [o.content for o in outputs if o.status == "error"]
+                self.activity_store.record_error(activity_id, "; ".join(error_msgs))
+            else:
+                summary_parts = [o.content for o in outputs if o.status == "complete"]
+                summary = summary_parts[0][:200] if summary_parts else None
+                self.activity_store.record_finish(activity_id, summary=summary)
+            activity_recorded = True
+        finally:
+            if not activity_recorded:
+                self.activity_store.record_error(
+                    activity_id, "Unexpected error during agent execution"
+                )
 
         return AgentResult(
             agent=routed.agent,
@@ -493,233 +519,268 @@ class AgentRunner:
         if tools:
             stream_kwargs["tools"] = tools
 
-        for _round in range(MAX_TOOL_ROUNDS):
-            # Stream the Claude response
-            collected_content = []
-            tool_use_blocks = []
+        activity_recorded = False
+        try:
+            for _round in range(MAX_TOOL_ROUNDS):
+                # Stream the Claude response
+                collected_content = []
+                tool_use_blocks = []
 
-            try:
-                with self.client.messages.stream(**stream_kwargs) as stream:
-                    current_tool: Optional[dict] = None
+                try:
+                    with self.client.messages.stream(**stream_kwargs) as stream:
+                        current_tool: Optional[dict] = None
 
-                    for event in stream:
-                        if event.type == "content_block_start":
-                            if event.content_block.type == "text":
-                                pass
-                            elif event.content_block.type == "tool_use":
-                                current_tool = {
-                                    "id": event.content_block.id,
-                                    "name": event.content_block.name,
-                                    "input": "",
-                                }
-                        elif event.type == "content_block_delta":
-                            if hasattr(event.delta, "text"):
-                                yield AgentEvent(type="token", data=event.delta.text)
-                            elif hasattr(event.delta, "partial_json"):
-                                if current_tool:
-                                    current_tool["input"] += event.delta.partial_json
-                        elif event.type == "content_block_stop":
-                            if current_tool:
-                                try:
-                                    parsed_input = (
-                                        json.loads(current_tool["input"])
-                                        if current_tool["input"]
-                                        else {}
-                                    )
-                                except json.JSONDecodeError:
-                                    parsed_input = {}
-                                tool_use_blocks.append(
-                                    {
-                                        "id": current_tool["id"],
-                                        "name": current_tool["name"],
-                                        "input": parsed_input,
+                        for event in stream:
+                            if event.type == "content_block_start":
+                                if event.content_block.type == "text":
+                                    pass
+                                elif event.content_block.type == "tool_use":
+                                    current_tool = {
+                                        "id": event.content_block.id,
+                                        "name": event.content_block.name,
+                                        "input": "",
                                     }
-                                )
-                                yield AgentEvent(
-                                    type="tool_call",
-                                    data=current_tool["name"],
-                                    metadata={"parameters": parsed_input},
-                                )
-                                current_tool = None
+                            elif event.type == "content_block_delta":
+                                if hasattr(event.delta, "text"):
+                                    yield AgentEvent(
+                                        type="token", data=event.delta.text
+                                    )
+                                elif hasattr(event.delta, "partial_json"):
+                                    if current_tool:
+                                        current_tool["input"] += (
+                                            event.delta.partial_json
+                                        )
+                            elif event.type == "content_block_stop":
+                                if current_tool:
+                                    try:
+                                        parsed_input = (
+                                            json.loads(current_tool["input"])
+                                            if current_tool["input"]
+                                            else {}
+                                        )
+                                    except json.JSONDecodeError:
+                                        parsed_input = {}
+                                    tool_use_blocks.append(
+                                        {
+                                            "id": current_tool["id"],
+                                            "name": current_tool["name"],
+                                            "input": parsed_input,
+                                        }
+                                    )
+                                    yield AgentEvent(
+                                        type="tool_call",
+                                        data=current_tool["name"],
+                                        metadata={"parameters": parsed_input},
+                                    )
+                                    current_tool = None
 
-                    # Get the final message for history
-                    final_message = stream.get_final_message()
-                    collected_content = final_message.content
+                        # Get the final message for history
+                        final_message = stream.get_final_message()
+                        collected_content = final_message.content
 
-            except anthropic.AuthenticationError:
-                stream_had_error = "Authentication failed"
-                yield AgentEvent(
-                    type="error",
-                    data="Authentication failed. Please check your API key.",
-                    metadata={"error_type": "auth_error", "retryable": False},
-                )
-                break
-            except anthropic.RateLimitError:
-                stream_had_error = "Rate limit exceeded"
-                yield AgentEvent(
-                    type="error",
-                    data="Rate limit exceeded. Please try again in a moment.",
-                    metadata={"error_type": "rate_limit", "retryable": True},
-                )
-                break
-            except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
-                logger.error("API connection error during stream: %s", e)
-                stream_had_error = f"Connection error: {e}"
-                yield AgentEvent(
-                    type="error",
-                    data="Failed to connect to AI service. Please check your network.",
-                    metadata={"error_type": "connection_error", "retryable": True},
-                )
-                break
-            except anthropic.APIError as e:
-                logger.error("API error during stream: %s", e)
-                stream_had_error = f"API error: {e.message}"
-                yield AgentEvent(
-                    type="error",
-                    data=f"AI service error: {e.message}",
-                    metadata={"error_type": "api_error", "retryable": True},
-                )
-                break
+                except anthropic.AuthenticationError:
+                    stream_had_error = "Authentication failed"
+                    yield AgentEvent(
+                        type="error",
+                        data="Authentication failed. Please check your API key.",
+                        metadata={"error_type": "auth_error", "retryable": False},
+                    )
+                    break
+                except anthropic.RateLimitError:
+                    stream_had_error = "Rate limit exceeded"
+                    yield AgentEvent(
+                        type="error",
+                        data="Rate limit exceeded. Please try again in a moment.",
+                        metadata={"error_type": "rate_limit", "retryable": True},
+                    )
+                    break
+                except (anthropic.APIConnectionError, anthropic.APITimeoutError) as e:
+                    logger.error("API connection error during stream: %s", e)
+                    stream_had_error = f"Connection error: {e}"
+                    yield AgentEvent(
+                        type="error",
+                        data="Failed to connect to AI service. Please check your network.",
+                        metadata={"error_type": "connection_error", "retryable": True},
+                    )
+                    break
+                except anthropic.APIError as e:
+                    logger.error("API error during stream: %s", e)
+                    stream_had_error = f"API error: {e.message}"
+                    yield AgentEvent(
+                        type="error",
+                        data=f"AI service error: {e.message}",
+                        metadata={"error_type": "api_error", "retryable": True},
+                    )
+                    break
 
-            # Collect text outputs for the done event
-            text_parts = [
-                block.text
-                for block in collected_content
-                if hasattr(block, "type")
-                and block.type == "text"
-                and hasattr(block, "text")
-            ]
-            if text_parts:
-                stream_outputs.append(
-                    {"content": "\n".join(text_parts), "status": "complete"}
-                )
+                # Collect text outputs for the done event
+                text_parts = [
+                    block.text
+                    for block in collected_content
+                    if hasattr(block, "type")
+                    and block.type == "text"
+                    and hasattr(block, "text")
+                ]
+                if text_parts:
+                    stream_outputs.append(
+                        {"content": "\n".join(text_parts), "status": "complete"}
+                    )
 
-            if not tool_use_blocks:
+                if not tool_use_blocks:
+                    history.append({"role": "assistant", "content": collected_content})
+                    self._persist_message(sid, "assistant", collected_content)
+                    break
+
+                # Process tool calls
                 history.append({"role": "assistant", "content": collected_content})
                 self._persist_message(sid, "assistant", collected_content)
-                break
+                tool_results = []
 
-            # Process tool calls
-            history.append({"role": "assistant", "content": collected_content})
-            self._persist_message(sid, "assistant", collected_content)
-            tool_results = []
+                for tool_block in tool_use_blocks:
+                    tool_name = tool_block["name"]
+                    tool_input = tool_block["input"]
+                    self.activity_store.record_tool_call(activity_id)
 
-            for tool_block in tool_use_blocks:
-                tool_name = tool_block["name"]
-                tool_input = tool_block["input"]
-                self.activity_store.record_tool_call(activity_id)
-
-                if tool_name in agent.approval_required:
-                    self.activity_store.record_approval(activity_id)
-                    req = self.approval_gate.create(
-                        tool_name=tool_name,
-                        parameters=tool_input,
-                        session_id=sid,
-                    )
-                    yield AgentEvent(
-                        type="approval_request",
-                        data=tool_name,
-                        metadata={"approval_id": req.id, "parameters": tool_input},
-                    )
-
-                    status = self.approval_gate.wait_for_resolution(req.id, timeout=300)
-                    if status != ApprovalStatus.APPROVED:
-                        tool_results.append(
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tool_block["id"],
-                                "content": f"User rejected {tool_name}. Do not retry this action.",
-                            }
-                        )
-                        continue
-
-                # Execute tool with error handling
-                try:
-                    result = agent.execute_tool(tool_name, tool_input)
-                except Exception as e:
-                    logger.error(
-                        "Tool execution failed in stream: %s - %s", tool_name, e
-                    )
-                    error_msg = str(e)
-                    if (
-                        "401" in error_msg
-                        or "403" in error_msg
-                        or "unauthorized" in error_msg.lower()
-                    ):
-                        result = json.dumps(
-                            {
-                                "error": f"Authentication failed for {tool_name}. "
-                                "The OAuth token may have expired - please reconnect.",
-                                "error_type": "oauth_expired",
-                            }
+                    if tool_name in agent.approval_required:
+                        self.activity_store.record_approval(activity_id)
+                        req = self.approval_gate.create(
+                            tool_name=tool_name,
+                            parameters=tool_input,
+                            session_id=sid,
                         )
                         yield AgentEvent(
-                            type="error",
-                            data=f"OAuth token expired for {tool_name}. Please reconnect.",
-                            metadata={
-                                "error_type": "oauth_expired",
-                                "tool_name": tool_name,
-                                "retryable": False,
-                            },
-                        )
-                    else:
-                        result = json.dumps(
-                            {"error": f"Tool {tool_name} failed: {error_msg}"}
+                            type="approval_request",
+                            data=tool_name,
+                            metadata={"approval_id": req.id, "parameters": tool_input},
                         )
 
-                tool_results.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": tool_block["id"],
-                        "content": result,
-                    }
+                        status = self.approval_gate.wait_for_resolution(
+                            req.id, timeout=300
+                        )
+                        if status != ApprovalStatus.APPROVED:
+                            tool_results.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tool_block["id"],
+                                    "content": f"User rejected {tool_name}. Do not retry this action.",
+                                }
+                            )
+                            continue
+
+                    # Execute tool with error handling
+                    try:
+                        result = agent.execute_tool(tool_name, tool_input)
+                    except Exception as e:
+                        logger.error(
+                            "Tool execution failed in stream: %s - %s", tool_name, e
+                        )
+                        error_msg = str(e)
+                        if (
+                            "401" in error_msg
+                            or "403" in error_msg
+                            or "unauthorized" in error_msg.lower()
+                        ):
+                            result = json.dumps(
+                                {
+                                    "error": f"Authentication failed for {tool_name}. "
+                                    "The OAuth token may have expired - please reconnect.",
+                                    "error_type": "oauth_expired",
+                                }
+                            )
+                            yield AgentEvent(
+                                type="error",
+                                data=f"OAuth token expired for {tool_name}. Please reconnect.",
+                                metadata={
+                                    "error_type": "oauth_expired",
+                                    "tool_name": tool_name,
+                                    "retryable": False,
+                                },
+                            )
+                        else:
+                            result = json.dumps(
+                                {"error": f"Tool {tool_name} failed: {error_msg}"}
+                            )
+
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_block["id"],
+                            "content": result,
+                        }
+                    )
+
+                    # Emit whiteboard_update after planning tool calls so UI can render incrementally
+                    if (
+                        hasattr(agent, "_nodes")
+                        and routed.ui_pattern == UIPattern.WHITEBOARD
+                    ):
+                        yield AgentEvent(
+                            type="whiteboard_update",
+                            data="",
+                            metadata={"nodes": list(agent._nodes.values())},
+                        )
+
+                    # Emit diff_update after read_diff tool so Diff UI renders during streaming
+                    if (
+                        tool_name == "read_diff"
+                        and routed.ui_pattern == UIPattern.DIFF
+                        and isinstance(result, str)
+                        and not result.startswith('{"error')
+                    ):
+                        diff_lines = parse_unified_diff(result)
+                        yield AgentEvent(
+                            type="diff_update",
+                            data="",
+                            metadata={"lines": diff_lines},
+                        )
+
+                history.append({"role": "user", "content": tool_results})
+                self._persist_message(sid, "user", tool_results)
+                stream_kwargs["messages"] = history
+            else:
+                # Loop exhausted without break - MAX_TOOL_ROUNDS reached
+                logger.warning(
+                    "Stream agent loop exhausted MAX_TOOL_ROUNDS (%d) for intent: %s",
+                    MAX_TOOL_ROUNDS,
+                    intent[:200],
+                )
+                stream_had_error = f"Max tool rounds ({MAX_TOOL_ROUNDS}) exhausted"
+                yield AgentEvent(
+                    type="error",
+                    data=f"Agent reached maximum tool execution rounds ({MAX_TOOL_ROUNDS}). The task may be incomplete.",
+                    metadata={"error_type": "max_rounds_exhausted"},
                 )
 
-                # Emit whiteboard_update after planning tool calls so UI can render incrementally
-                if (
-                    hasattr(agent, "_nodes")
-                    and routed.ui_pattern == UIPattern.WHITEBOARD
-                ):
-                    yield AgentEvent(
-                        type="whiteboard_update",
-                        data="",
-                        metadata={"nodes": list(agent._nodes.values())},
-                    )
+            # Include planning node data in done event for whiteboard pattern
+            if hasattr(agent, "_nodes") and routed.ui_pattern == UIPattern.WHITEBOARD:
+                stream_outputs = list(agent._nodes.values())
 
-                # Emit diff_update after read_diff tool so Diff UI renders during streaming
-                if (
-                    tool_name == "read_diff"
-                    and routed.ui_pattern == UIPattern.DIFF
-                    and isinstance(result, str)
-                    and not result.startswith('{"error')
-                ):
-                    diff_lines = parse_unified_diff(result)
-                    yield AgentEvent(
-                        type="diff_update",
-                        data="",
-                        metadata={"lines": diff_lines},
-                    )
-
-            history.append({"role": "user", "content": tool_results})
-            self._persist_message(sid, "user", tool_results)
-            stream_kwargs["messages"] = history
-
-        # Include planning node data in done event for whiteboard pattern
-        if hasattr(agent, "_nodes") and routed.ui_pattern == UIPattern.WHITEBOARD:
-            stream_outputs = list(agent._nodes.values())
-
-        # Record activity completion
-        if stream_had_error:
-            self.activity_store.record_error(activity_id, stream_had_error)
-        else:
-            summary = None
-            if stream_outputs:
-                first = stream_outputs[0]
-                if isinstance(first, dict) and "content" in first:
-                    summary = first["content"][:200]
-                elif isinstance(first, dict) and "title" in first:
-                    summary = first["title"][:200]
-            self.activity_store.record_finish(activity_id, summary=summary)
+            # Record activity completion
+            if stream_had_error:
+                self.activity_store.record_error(activity_id, stream_had_error)
+            else:
+                summary = None
+                if stream_outputs:
+                    first = stream_outputs[0]
+                    if isinstance(first, dict) and "content" in first:
+                        summary = first["content"][:200]
+                    elif isinstance(first, dict) and "title" in first:
+                        summary = first["title"][:200]
+                self.activity_store.record_finish(activity_id, summary=summary)
+            activity_recorded = True
+        except Exception as exc:
+            logger.error("Unexpected error in stream_sync: %s", exc, exc_info=True)
+            if not activity_recorded:
+                self.activity_store.record_error(
+                    activity_id, "Unexpected error during agent execution"
+                )
+            yield AgentEvent(
+                type="error",
+                data="An unexpected error occurred during agent execution.",
+                metadata={"error_type": "unexpected_error"},
+            )
+            yield AgentEvent(type="done")
+            return
 
         yield AgentEvent(
             type="done",
@@ -1124,6 +1185,18 @@ class AgentRunner:
             history.append({"role": "user", "content": tool_results})
             self._persist_message(session_id, "user", tool_results)
             stream_kwargs["messages"] = history
+        else:
+            # Loop exhausted without break - MAX_TOOL_ROUNDS reached
+            logger.warning(
+                "Stream step loop exhausted MAX_TOOL_ROUNDS (%d) for intent: %s",
+                MAX_TOOL_ROUNDS,
+                intent[:200],
+            )
+            yield AgentEvent(
+                type="error",
+                data=f"Agent reached maximum tool execution rounds ({MAX_TOOL_ROUNDS}). The task may be incomplete.",
+                metadata={"error_type": "max_rounds_exhausted"},
+            )
 
         # Include planning node data in done event for whiteboard pattern
         if hasattr(agent, "_nodes") and routed.ui_pattern == UIPattern.WHITEBOARD:
