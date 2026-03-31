@@ -234,6 +234,57 @@ class AgentActivity {
   }
 }
 
+class AgentSchedule {
+  final String id;
+  final String agentName;
+  final String intent;
+  final String scheduleType;
+  final int intervalMinutes;
+  final String dailyTime;
+  final bool enabled;
+  final double lastRunAt;
+  final double nextRunAt;
+  final double createdAt;
+
+  AgentSchedule({
+    required this.id,
+    required this.agentName,
+    required this.intent,
+    this.scheduleType = 'interval',
+    this.intervalMinutes = 60,
+    this.dailyTime = '09:00',
+    this.enabled = true,
+    this.lastRunAt = 0,
+    this.nextRunAt = 0,
+    this.createdAt = 0,
+  });
+
+  factory AgentSchedule.fromJson(Map<String, dynamic> json) {
+    return AgentSchedule(
+      id: json['id'] as String? ?? '',
+      agentName: json['agent_name'] as String? ?? '',
+      intent: json['intent'] as String? ?? '',
+      scheduleType: json['schedule_type'] as String? ?? 'interval',
+      intervalMinutes: json['interval_minutes'] as int? ?? 60,
+      dailyTime: json['daily_time'] as String? ?? '09:00',
+      enabled: json['enabled'] as bool? ?? true,
+      lastRunAt: (json['last_run_at'] as num?)?.toDouble() ?? 0,
+      nextRunAt: (json['next_run_at'] as num?)?.toDouble() ?? 0,
+      createdAt: (json['created_at'] as num?)?.toDouble() ?? 0,
+    );
+  }
+
+  String get scheduleLabel {
+    if (scheduleType == 'daily') return 'Daily at $dailyTime';
+    if (intervalMinutes < 60) return 'Every $intervalMinutes min';
+    if (intervalMinutes == 60) return 'Every hour';
+    final hours = intervalMinutes ~/ 60;
+    final mins = intervalMinutes % 60;
+    if (mins == 0) return 'Every $hours hr';
+    return 'Every $hours hr $mins min';
+  }
+}
+
 class AgentClient {
   final String baseUrl;
   final http.Client _client;
@@ -558,6 +609,83 @@ class AgentClient {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
       throw Exception(body['detail'] ?? 'Failed to delete agent');
     }
+  }
+
+  // --- Schedules (SCOPE.md Feature 3: autonomous background agents) ---
+
+  Future<List<AgentSchedule>> listSchedules({String? agentName}) async {
+    var url = '$baseUrl/api/schedules';
+    if (agentName != null) url += '?agent_name=$agentName';
+    final response = await _client.get(Uri.parse(url));
+    if (response.statusCode != 200) {
+      throw Exception('Failed to list schedules: ${response.statusCode}');
+    }
+    final list = jsonDecode(response.body) as List<dynamic>;
+    return list
+        .map((j) => AgentSchedule.fromJson(j as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<AgentSchedule> createSchedule({
+    required String agentName,
+    required String intent,
+    String scheduleType = 'interval',
+    int intervalMinutes = 60,
+    String dailyTime = '09:00',
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/schedules'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'agent_name': agentName,
+        'intent': intent,
+        'schedule_type': scheduleType,
+        'interval_minutes': intervalMinutes,
+        'daily_time': dailyTime,
+      }),
+    );
+    if (response.statusCode != 200) {
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      throw Exception(body['detail'] ?? 'Failed to create schedule');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return AgentSchedule.fromJson(data['schedule'] as Map<String, dynamic>);
+  }
+
+  Future<void> deleteSchedule(String id) async {
+    final response = await _client.delete(
+      Uri.parse('$baseUrl/api/schedules/$id'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete schedule: ${response.statusCode}');
+    }
+  }
+
+  Future<AgentSchedule> toggleSchedule(String id) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/schedules/$id/toggle'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Failed to toggle schedule: ${response.statusCode}');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    // Return a minimal schedule with updated enabled state
+    return AgentSchedule(
+      id: id,
+      agentName: '',
+      intent: '',
+      enabled: data['enabled'] as bool? ?? true,
+    );
+  }
+
+  Future<Map<String, dynamic>> schedulerStatus() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/schedules/status'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Scheduler status failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
   // --- Tool connections ---

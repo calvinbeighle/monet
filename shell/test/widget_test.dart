@@ -1647,6 +1647,7 @@ void main() {
     http.Client _buildMockClient({
       List<Map<String, dynamic>> agents = const [],
       List<Map<String, dynamic>> activity = const [],
+      List<Map<String, dynamic>> schedules = const [],
       int agentsStatus = 200,
       int activityStatus = 200,
     }) {
@@ -1656,6 +1657,9 @@ void main() {
         }
         if (request.url.path.startsWith('/api/agents/activity')) {
           return http.Response(jsonEncode(activity), activityStatus);
+        }
+        if (request.url.path == '/api/schedules') {
+          return http.Response(jsonEncode(schedules), 200);
         }
         return http.Response('Not found', 404);
       });
@@ -1974,6 +1978,291 @@ void main() {
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 1));
+    });
+
+    // -- Schedule tests --
+
+    testWidgets('AgentSchedule.fromJson parses all fields', (tester) async {
+      final schedule = AgentSchedule.fromJson({
+        'id': 'abc123',
+        'agent_name': 'email',
+        'intent': 'Summarize inbox',
+        'schedule_type': 'interval',
+        'interval_minutes': 30,
+        'daily_time': '09:00',
+        'enabled': true,
+        'last_run_at': 1711900000.0,
+        'next_run_at': 1711901800.0,
+        'created_at': 1711899000.0,
+      });
+      expect(schedule.id, 'abc123');
+      expect(schedule.agentName, 'email');
+      expect(schedule.intent, 'Summarize inbox');
+      expect(schedule.scheduleType, 'interval');
+      expect(schedule.intervalMinutes, 30);
+      expect(schedule.enabled, true);
+    });
+
+    testWidgets('AgentSchedule.fromJson handles missing fields', (tester) async {
+      final schedule = AgentSchedule.fromJson({});
+      expect(schedule.id, '');
+      expect(schedule.agentName, '');
+      expect(schedule.scheduleType, 'interval');
+      expect(schedule.intervalMinutes, 60);
+      expect(schedule.enabled, true);
+    });
+
+    testWidgets('AgentSchedule.scheduleLabel formats interval correctly', (tester) async {
+      expect(
+        AgentSchedule(id: '', agentName: '', intent: '', intervalMinutes: 15).scheduleLabel,
+        'Every 15 min',
+      );
+      expect(
+        AgentSchedule(id: '', agentName: '', intent: '', intervalMinutes: 60).scheduleLabel,
+        'Every hour',
+      );
+      expect(
+        AgentSchedule(id: '', agentName: '', intent: '', intervalMinutes: 120).scheduleLabel,
+        'Every 2 hr',
+      );
+      expect(
+        AgentSchedule(id: '', agentName: '', intent: '', intervalMinutes: 90).scheduleLabel,
+        'Every 1 hr 30 min',
+      );
+      expect(
+        AgentSchedule(id: '', agentName: '', intent: '', scheduleType: 'daily', dailyTime: '09:00').scheduleLabel,
+        'Daily at 09:00',
+      );
+    });
+
+    testWidgets('agent card shows schedule indicator when agent has enabled schedule', (tester) async {
+      final mockClient = _buildMockClient(
+        agents: [
+          {
+            'name': 'email',
+            'description': 'Email agent',
+            'default_ui_pattern': 'tinder',
+            'tools': [],
+            'approval_required': [],
+            'suggestions': [],
+            'stats': {'total_runs': 5, 'completed': 5, 'errors': 0, 'running': 0, 'total_tool_calls': 10, 'total_approvals': 0},
+          },
+        ],
+        schedules: [
+          {
+            'id': 'sched1',
+            'agent_name': 'email',
+            'intent': 'Check inbox',
+            'schedule_type': 'interval',
+            'interval_minutes': 30,
+            'daily_time': '09:00',
+            'enabled': true,
+            'last_run_at': 0,
+            'next_run_at': 0,
+            'created_at': 0,
+          },
+        ],
+      );
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Agent card should show schedule indicator instead of "time ago"
+      expect(find.text('Every 30 min'), findsOneWidget);
+      expect(find.byIcon(Icons.schedule), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('agent detail view shows Schedules section with Add Schedule button', (tester) async {
+      final mockClient = _buildMockClient(
+        agents: [
+          {
+            'name': 'email',
+            'description': 'Email agent',
+            'default_ui_pattern': 'tinder',
+            'tools': ['list_inbox'],
+            'approval_required': [],
+            'suggestions': [],
+            'stats': {'total_runs': 0, 'completed': 0, 'errors': 0, 'running': 0, 'total_tool_calls': 0, 'total_approvals': 0},
+          },
+        ],
+      );
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Tap email agent card to go to detail view
+      await tester.tap(find.text('Email'));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Detail view should show Schedules section header and Add Schedule button
+      expect(find.text('Schedules'), findsOneWidget);
+      expect(find.text('Add Schedule'), findsOneWidget);
+      expect(find.text('No schedules. Add one to run this agent automatically.'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('agent detail shows existing schedules', (tester) async {
+      tester.view.physicalSize = const Size(1600, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(() => tester.view.resetDevicePixelRatio());
+
+      final mockClient = _buildMockClient(
+        agents: [
+          {
+            'name': 'email',
+            'description': 'Email agent',
+            'default_ui_pattern': 'tinder',
+            'tools': [],
+            'approval_required': [],
+            'suggestions': [],
+            'stats': {'total_runs': 3, 'completed': 3, 'errors': 0, 'running': 0, 'total_tool_calls': 6, 'total_approvals': 0},
+          },
+        ],
+        schedules: [
+          {
+            'id': 'sched1',
+            'agent_name': 'email',
+            'intent': 'Morning briefing',
+            'schedule_type': 'daily',
+            'interval_minutes': 60,
+            'daily_time': '09:00',
+            'enabled': true,
+            'last_run_at': 0,
+            'next_run_at': 0,
+            'created_at': 0,
+          },
+        ],
+      );
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Tap email agent card to go to detail view
+      await tester.tap(find.text('Email'));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Should show the schedule row with intent and label
+      expect(find.text('Morning briefing'), findsOneWidget);
+      expect(find.text('Daily at 09:00'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('Add Schedule button opens schedule dialog', (tester) async {
+      tester.view.physicalSize = const Size(1200, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final mockClient = _buildMockClient(
+        agents: [
+          {
+            'name': 'email',
+            'description': 'Email agent',
+            'default_ui_pattern': 'tinder',
+            'tools': [],
+            'approval_required': [],
+            'suggestions': [],
+            'stats': {'total_runs': 0, 'completed': 0, 'errors': 0, 'running': 0, 'total_tool_calls': 0, 'total_approvals': 0},
+          },
+        ],
+      );
+
+      await tester.pumpWidget(buildDashboard(mockClient));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Go to detail view
+      await tester.tap(find.text('Email'));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Tap Add Schedule
+      await tester.tap(find.text('Add Schedule'));
+      await tester.pump(const Duration(seconds: 1));
+
+      // Dialog should show schedule creation form
+      expect(find.text('Schedule Email'), findsOneWidget);
+      expect(find.text('What should it do?'), findsOneWidget);
+      expect(find.text('Frequency'), findsOneWidget);
+      expect(find.text('Interval'), findsOneWidget);
+      expect(find.text('Daily'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('AgentClient schedule methods construct correct URLs', (tester) async {
+      final requests = <http.Request>[];
+      final mockClient = MockClient((request) async {
+        requests.add(request as http.Request);
+        if (request.url.path == '/api/schedules' && request.method == 'GET') {
+          return http.Response('[]', 200);
+        }
+        if (request.url.path == '/api/schedules' && request.method == 'POST') {
+          return http.Response(
+            jsonEncode({
+              'status': 'created',
+              'schedule': {
+                'id': 'new123',
+                'agent_name': 'email',
+                'intent': 'Test',
+                'schedule_type': 'interval',
+                'interval_minutes': 60,
+                'daily_time': '09:00',
+                'enabled': true,
+                'last_run_at': 0,
+                'next_run_at': 0,
+                'created_at': 0,
+              },
+            }),
+            200,
+          );
+        }
+        if (request.url.path.startsWith('/api/schedules/') && request.method == 'DELETE') {
+          return http.Response(jsonEncode({'status': 'deleted'}), 200);
+        }
+        if (request.url.path.endsWith('/toggle') && request.method == 'POST') {
+          return http.Response(jsonEncode({'status': 'toggled', 'enabled': false}), 200);
+        }
+        if (request.url.path == '/api/schedules/status') {
+          return http.Response(
+            jsonEncode({'running': false, 'total_schedules': 0, 'enabled_schedules': 0, 'recent_executions': []}),
+            200,
+          );
+        }
+        return http.Response('Not found', 404);
+      });
+
+      final client = AgentClient(client: mockClient);
+
+      // Test listSchedules
+      final schedules = await client.listSchedules();
+      expect(schedules, isEmpty);
+
+      // Test createSchedule
+      final created = await client.createSchedule(
+        agentName: 'email',
+        intent: 'Test',
+      );
+      expect(created.id, 'new123');
+
+      // Test deleteSchedule
+      await client.deleteSchedule('abc123');
+
+      // Test toggleSchedule
+      final toggled = await client.toggleSchedule('abc123');
+      expect(toggled.enabled, false);
+
+      // Test schedulerStatus
+      final status = await client.schedulerStatus();
+      expect(status['running'], false);
+
+      client.dispose();
     });
   });
 }

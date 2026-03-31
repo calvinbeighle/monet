@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete - 612 passing tests (488 Python + 124 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete - 671 passing tests (539 Python + 132 Flutter).**
 
 ---
 
@@ -365,7 +365,16 @@ Debian VM boots directly into Monet.
 
 - **User-created agents implemented (SCOPE.md Feature 3):** `agent/custom_agent_store.py` with CustomAgentStore class persists user-defined agent configurations in SQLite (name, description, system_prompt, tool_sets, approval_tools, ui_pattern, suggestions). `agent/agents/custom.py` with CustomAgent class extends BaseAgent - borrows tool definitions and implementations from built-in agents (email, code, writing) based on user's tool_sets selection. Approval sets are merged (inherited from built-in agents + custom overrides). Three new API endpoints: POST /api/agents/custom (create with validation for reserved names, invalid tool sets, invalid UI patterns), PUT /api/agents/custom/{name} (update), DELETE /api/agents/custom/{name} (delete). GET /api/agents and GET /api/agents/{name} now include `custom: true/false` flag. AgentRunner loads custom agents from SQLite on startup and supports dynamic register/update/unregister. Router detects "create/make/set up/configure an agent/bot/assistant" intents (placed before email rules to avoid false matches). Flutter `agents_dashboard.dart` updated with "Create Agent" card in the grid, creation dialog with name/description/instructions fields, tool set selection (email/code/writing), UI pattern selection, and validation. Detail view shows "Custom" badge and delete button for user-created agents.
 - **Test count:** 612 total (488 Python + 124 Flutter), all passing.
-- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Scheduled/autonomous agent execution not implemented (SCOPE.md mentions "run autonomously in the background" but no cron/scheduler infrastructure exists yet). Keystroke collection pipeline not implemented.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Keystroke collection pipeline not implemented. Voice input not implemented.
+
+### Implementation Notes (2026-03-31) - Batch 18
+
+- **Scheduled agent execution implemented (SCOPE.md Feature 3 - autonomous background agents):** `agent/scheduler.py` with ScheduleStore (SQLite-backed persistence for schedule configs) and AgentScheduler (background daemon thread that polls for due schedules and executes them via the runner). Two schedule types: interval (every N minutes) and daily (at HH:MM). ScheduleStore tracks id, agent_name, intent, schedule_type, interval_minutes, daily_time, enabled, last_run_at, next_run_at timestamps. AgentScheduler runs a polling thread that checks list_due() and dispatches to runner.run_sync(). Execution results logged in-memory (capped at 100 entries). No external dependencies (no APScheduler/Celery) - pure threading + SQLite.
+- **Schedule API endpoints:** 8 new endpoints under /api/schedules: GET (list, with optional agent_name filter), GET /{id}, POST (create with agent/type validation), PUT /{id} (partial update), DELETE /{id}, POST /{id}/toggle, GET /status (scheduler running state + counts). Create validates agent exists, schedule_type is valid, interval >= 1 minute.
+- **Flutter schedule UI:** AgentSchedule data model in agent_client.dart with scheduleLabel computed property (formats "Every 30 min", "Every hour", "Daily at 09:00"). AgentsDashboard shows schedule indicator on agent cards (clock icon + label for agents with enabled schedules). Agent detail view has full Schedules section with Add Schedule button, schedule rows showing intent + frequency + toggle/delete controls. \_CreateScheduleDialog provides intent field, interval/daily type toggle, and interval/time preset chips.
+- **Flutter AgentClient schedule methods:** listSchedules(), createSchedule(), deleteSchedule(), toggleSchedule(), schedulerStatus() - all wired to the backend API.
+- **Test count:** 671 total (539 Python + 132 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Keystroke collection pipeline not implemented. Voice input not implemented.
 
 ---
 

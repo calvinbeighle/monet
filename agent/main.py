@@ -16,6 +16,7 @@ from agent.agents.custom import AVAILABLE_TOOL_SETS
 from agent.models import ApprovalStatus
 from agent.nango import NangoManager
 from agent.runner import AgentRunner
+from agent.scheduler import AgentScheduler, ScheduleConfig, ScheduleStore
 from agent.session_store import DEFAULT_DB_PATH
 from agent.system import SystemManager
 
@@ -31,6 +32,8 @@ runner = AgentRunner(approval_gate=approval_gate)
 auth_store = AuthStore(db_path=DEFAULT_DB_PATH)
 system_mgr = SystemManager()
 nango_mgr = NangoManager()
+schedule_store = ScheduleStore(db_path=DEFAULT_DB_PATH)
+scheduler = AgentScheduler(schedule_store=schedule_store, runner=runner)
 
 
 class RunRequest(BaseModel):
@@ -279,6 +282,150 @@ def delete_custom_agent(agent_name: str):
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
     return {"status": "deleted", "name": agent_name}
+
+
+# --- Schedule routes (SCOPE.md Feature 3: autonomous background agents) ---
+
+
+class CreateScheduleRequest(BaseModel):
+    agent_name: str
+    intent: str
+    schedule_type: str = "interval"
+    interval_minutes: int = 60
+    daily_time: str = "09:00"
+
+
+class UpdateScheduleRequest(BaseModel):
+    intent: Optional[str] = None
+    schedule_type: Optional[str] = None
+    interval_minutes: Optional[int] = None
+    daily_time: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+def _schedule_to_dict(config: ScheduleConfig) -> dict:
+    """Convert a ScheduleConfig to a JSON-serializable dict."""
+    return {
+        "id": config.id,
+        "agent_name": config.agent_name,
+        "intent": config.intent,
+        "schedule_type": config.schedule_type,
+        "interval_minutes": config.interval_minutes,
+        "daily_time": config.daily_time,
+        "enabled": config.enabled,
+        "last_run_at": config.last_run_at,
+        "next_run_at": config.next_run_at,
+        "created_at": config.created_at,
+        "updated_at": config.updated_at,
+        "created_by": config.created_by,
+    }
+
+
+@app.get("/api/schedules/status")
+def scheduler_status():
+    """Get scheduler status including total/enabled schedule counts."""
+    return scheduler.get_status()
+
+
+@app.get("/api/schedules")
+def list_schedules(agent_name: Optional[str] = None):
+    """List all schedules, optionally filtered by agent name."""
+    if agent_name:
+        schedules = schedule_store.list_for_agent(agent_name)
+    else:
+        schedules = schedule_store.list_all()
+    return [_schedule_to_dict(s) for s in schedules]
+
+
+@app.get("/api/schedules/{schedule_id}")
+def get_schedule(schedule_id: str):
+    """Get a single schedule by ID."""
+    config = schedule_store.get(schedule_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return _schedule_to_dict(config)
+
+
+@app.post("/api/schedules")
+def create_schedule(request: CreateScheduleRequest):
+    """Create a new agent schedule.
+
+    Agents can be scheduled to run on an interval (every N minutes) or
+    daily at a specific time. This enables autonomous background execution
+    per SCOPE.md Feature 3.
+    """
+    # Validate agent exists
+    if request.agent_name not in runner.agents:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent '{request.agent_name}' not found",
+        )
+    # Validate schedule type
+    valid_types = ["interval", "daily"]
+    if request.schedule_type not in valid_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid schedule type: {request.schedule_type}. Use: {valid_types}",
+        )
+    # Validate interval
+    if request.schedule_type == "interval" and request.interval_minutes < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="interval_minutes must be at least 1",
+        )
+
+    config = ScheduleConfig(
+        agent_name=request.agent_name,
+        intent=request.intent,
+        schedule_type=request.schedule_type,
+        interval_minutes=request.interval_minutes,
+        daily_time=request.daily_time,
+    )
+    created = schedule_store.create(config)
+    return {"status": "created", "schedule": _schedule_to_dict(created)}
+
+
+@app.put("/api/schedules/{schedule_id}")
+def update_schedule(schedule_id: str, request: UpdateScheduleRequest):
+    """Update an existing schedule."""
+    config = schedule_store.get(schedule_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    if request.intent is not None:
+        config.intent = request.intent
+    if request.schedule_type is not None:
+        config.schedule_type = request.schedule_type
+    if request.interval_minutes is not None:
+        config.interval_minutes = request.interval_minutes
+    if request.daily_time is not None:
+        config.daily_time = request.daily_time
+    if request.enabled is not None:
+        config.enabled = request.enabled
+
+    updated = schedule_store.update(config)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return {"status": "updated", "schedule": _schedule_to_dict(updated)}
+
+
+@app.delete("/api/schedules/{schedule_id}")
+def delete_schedule(schedule_id: str):
+    """Delete a schedule."""
+    if not schedule_store.delete(schedule_id):
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    return {"status": "deleted", "id": schedule_id}
+
+
+@app.post("/api/schedules/{schedule_id}/toggle")
+def toggle_schedule(schedule_id: str):
+    """Toggle a schedule's enabled state."""
+    config = schedule_store.get(schedule_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    config.enabled = not config.enabled
+    updated = schedule_store.update(config)
+    return {"status": "toggled", "enabled": updated.enabled}
 
 
 # --- Auth routes ---

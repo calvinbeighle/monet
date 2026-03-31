@@ -80,6 +80,7 @@ class AgentsDashboard extends StatefulWidget {
 class AgentsDashboardState extends State<AgentsDashboard> {
   List<AgentInfo> _agents = [];
   List<AgentActivity> _recentActivity = [];
+  List<AgentSchedule> _schedules = [];
   bool _loading = true;
   String? _error;
   String? _selectedAgent; // null = overview, non-null = detail view
@@ -104,10 +105,12 @@ class AgentsDashboardState extends State<AgentsDashboard> {
     try {
       final agents = await client.listAgents();
       final activity = await client.agentsActivity(limit: 20);
+      final schedules = await client.listSchedules();
       if (mounted) {
         setState(() {
           _agents = agents;
           _recentActivity = activity;
+          _schedules = schedules;
           _loading = false;
           _error = null;
         });
@@ -338,13 +341,31 @@ class AgentsDashboardState extends State<AgentsDashboard> {
             ),
             const SizedBox(height: 8),
 
-            // Last active
-            Text(
-              _timeAgo(agent.stats.lastRunAt),
-              style: TextStyle(
-                color: Colors.white.withAlpha(60),
-                fontSize: 11,
-              ),
+            // Schedule indicator + Last active
+            Row(
+              children: [
+                if (_schedules.any((s) => s.agentName == agent.name && s.enabled)) ...[
+                  Icon(Icons.schedule, color: color.withAlpha(140), size: 12),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      _schedules
+                          .where((s) => s.agentName == agent.name && s.enabled)
+                          .first
+                          .scheduleLabel,
+                      style: TextStyle(color: color.withAlpha(140), fontSize: 11),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ] else
+                  Text(
+                    _timeAgo(agent.stats.lastRunAt),
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(60),
+                      fontSize: 11,
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
@@ -642,6 +663,10 @@ class AgentsDashboardState extends State<AgentsDashboard> {
                 ),
                 const SizedBox(height: 24),
 
+                // Schedules section
+                _buildSchedulesSection(agentName, color),
+                const SizedBox(height: 24),
+
                 // Tools section
                 if (agent.tools.isNotEmpty) ...[
                   _buildSectionHeader('Tools'),
@@ -756,6 +781,158 @@ class AgentsDashboardState extends State<AgentsDashboard> {
         fontSize: 13,
         fontWeight: FontWeight.w500,
         letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  Widget _buildSchedulesSection(String agentName, Color color) {
+    final agentSchedules = _schedules.where((s) => s.agentName == agentName).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _buildSectionHeader('Schedules'),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => _showCreateScheduleDialog(agentName),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: color.withAlpha(15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add, color: color, size: 14),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Add Schedule',
+                      style: TextStyle(color: color, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (agentSchedules.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'No schedules. Add one to run this agent automatically.',
+              style: TextStyle(
+                color: Colors.white.withAlpha(60),
+                fontSize: 13,
+              ),
+            ),
+          )
+        else
+          ...agentSchedules.map((s) => _buildScheduleRow(s, color)),
+      ],
+    );
+  }
+
+  Widget _buildScheduleRow(AgentSchedule schedule, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0E0E14),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: schedule.enabled
+                ? color.withAlpha(30)
+                : Colors.white.withAlpha(8),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.schedule,
+              color: schedule.enabled ? color : Colors.white.withAlpha(40),
+              size: 16,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    schedule.intent,
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(schedule.enabled ? 180 : 80),
+                      fontSize: 13,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    schedule.scheduleLabel,
+                    style: TextStyle(
+                      color: schedule.enabled
+                          ? color.withAlpha(140)
+                          : Colors.white.withAlpha(40),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Toggle enabled
+            GestureDetector(
+              onTap: () async {
+                final client = context.read<AgentClient>();
+                try {
+                  await client.toggleSchedule(schedule.id);
+                  _loadData();
+                } catch (_) {}
+              },
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  schedule.enabled ? Icons.pause_circle_outline : Icons.play_circle_outline,
+                  color: schedule.enabled
+                      ? Colors.white.withAlpha(80)
+                      : color.withAlpha(140),
+                  size: 20,
+                ),
+              ),
+            ),
+            // Delete
+            GestureDetector(
+              onTap: () async {
+                final client = context.read<AgentClient>();
+                try {
+                  await client.deleteSchedule(schedule.id);
+                  _loadData();
+                } catch (_) {}
+              },
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                child: Icon(
+                  Icons.close,
+                  color: Colors.white.withAlpha(40),
+                  size: 16,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCreateScheduleDialog(String agentName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _CreateScheduleDialog(
+        agentName: agentName,
+        onCreated: () => _loadData(),
       ),
     );
   }
@@ -1203,6 +1380,304 @@ class _CreateAgentDialogState extends State<_CreateAgentDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Dialog for creating a new schedule for an agent.
+class _CreateScheduleDialog extends StatefulWidget {
+  final String agentName;
+  final VoidCallback onCreated;
+
+  const _CreateScheduleDialog({
+    required this.agentName,
+    required this.onCreated,
+  });
+
+  @override
+  State<_CreateScheduleDialog> createState() => _CreateScheduleDialogState();
+}
+
+class _CreateScheduleDialogState extends State<_CreateScheduleDialog> {
+  final _intentController = TextEditingController();
+  String _scheduleType = 'interval';
+  int _intervalMinutes = 60;
+  String _dailyTime = '09:00';
+  bool _creating = false;
+  String? _error;
+
+  static const _intervalOptions = {
+    15: 'Every 15 min',
+    30: 'Every 30 min',
+    60: 'Every hour',
+    120: 'Every 2 hours',
+    360: 'Every 6 hours',
+    720: 'Every 12 hours',
+    1440: 'Every 24 hours',
+  };
+
+  @override
+  void dispose() {
+    _intentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    final intent = _intentController.text.trim();
+    if (intent.isEmpty) {
+      setState(() => _error = 'Intent is required');
+      return;
+    }
+
+    setState(() {
+      _creating = true;
+      _error = null;
+    });
+
+    try {
+      final client = context.read<AgentClient>();
+      await client.createSchedule(
+        agentName: widget.agentName,
+        intent: intent,
+        scheduleType: _scheduleType,
+        intervalMinutes: _intervalMinutes,
+        dailyTime: _dailyTime,
+      );
+      if (mounted) {
+        Navigator.of(context).pop();
+        widget.onCreated();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _creating = false;
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF12121A),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 480),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  const Icon(Icons.schedule, color: Color(0xFF7C6EF0), size: 22),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Schedule ${widget.agentName[0].toUpperCase()}${widget.agentName.substring(1)}',
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(220),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Intent field
+              Text('What should it do?',
+                  style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+              const SizedBox(height: 4),
+              TextField(
+                controller: _intentController,
+                style: TextStyle(color: Colors.white.withAlpha(200), fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'e.g., Summarize my inbox',
+                  hintStyle: TextStyle(color: Colors.white.withAlpha(40)),
+                  filled: true,
+                  fillColor: const Color(0xFF0A0A0F),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.white.withAlpha(15)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFF7C6EF0)),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Schedule type
+              Text('Frequency',
+                  style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  _buildTypeChip('interval', 'Interval'),
+                  const SizedBox(width: 8),
+                  _buildTypeChip('daily', 'Daily'),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Type-specific options
+              if (_scheduleType == 'interval') ...[
+                Text('Run every',
+                    style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _intervalOptions.entries.map((entry) {
+                    final selected = _intervalMinutes == entry.key;
+                    return GestureDetector(
+                      onTap: () => setState(() => _intervalMinutes = entry.key),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? const Color(0xFF7C6EF0).withAlpha(25)
+                              : const Color(0xFF0A0A0F),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: selected
+                                ? const Color(0xFF7C6EF0).withAlpha(100)
+                                : Colors.white.withAlpha(15),
+                          ),
+                        ),
+                        child: Text(
+                          entry.value,
+                          style: TextStyle(
+                            color: selected
+                                ? const Color(0xFF7C6EF0)
+                                : Colors.white.withAlpha(100),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ] else ...[
+                Text('Time (24h)',
+                    style: TextStyle(color: Colors.white.withAlpha(140), fontSize: 12)),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: ['06:00', '07:00', '08:00', '09:00', '12:00', '17:00', '21:00']
+                      .map((t) {
+                    final selected = _dailyTime == t;
+                    return GestureDetector(
+                      onTap: () => setState(() => _dailyTime = t),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? const Color(0xFF7C6EF0).withAlpha(25)
+                              : const Color(0xFF0A0A0F),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: selected
+                                ? const Color(0xFF7C6EF0).withAlpha(100)
+                                : Colors.white.withAlpha(15),
+                          ),
+                        ),
+                        child: Text(
+                          t,
+                          style: TextStyle(
+                            color: selected
+                                ? const Color(0xFF7C6EF0)
+                                : Colors.white.withAlpha(100),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+
+              // Error
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: const TextStyle(color: Color(0xFFE05050), fontSize: 12)),
+              ],
+
+              const SizedBox(height: 20),
+
+              // Actions
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _creating ? null : () => Navigator.of(context).pop(),
+                    child: Text('Cancel',
+                        style: TextStyle(color: Colors.white.withAlpha(140))),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _creating ? null : _create,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C6EF0),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: _creating
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Create'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTypeChip(String value, String label) {
+    final selected = _scheduleType == value;
+    return GestureDetector(
+      onTap: () => setState(() => _scheduleType = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? const Color(0xFF7C6EF0).withAlpha(25)
+              : const Color(0xFF0A0A0F),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected
+                ? const Color(0xFF7C6EF0).withAlpha(100)
+                : Colors.white.withAlpha(15),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected
+                ? const Color(0xFF7C6EF0)
+                : Colors.white.withAlpha(100),
+            fontSize: 13,
+          ),
+        ),
+      ),
     );
   }
 }
