@@ -396,6 +396,13 @@ Debian VM boots directly into Monet.
 - **Test count:** 748 total (616 Python + 132 Flutter), all passing.
 - **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
 
+### Implementation Notes (2026-03-31) - Batch 21
+
+- **Home Screen implemented (default landing experience):** After login, users now see a desktop-like home screen instead of an empty chat. The home screen shows: greeting with time-of-day awareness, connected tools status (Gmail/GitHub/Google Docs with connection indicators), quick action chips (contextual - shows email actions when Gmail connected, code actions when GitHub connected, etc.), agent overview cards with status/run counts, and recent activity feed. New `GET /api/home/summary` aggregated endpoint returns tools, agents, activity, quick actions, and schedule counts in a single roundtrip. Flutter `shell/lib/ui/home_screen.dart` renders the landing with hover effects, accent colors per agent type, and responsive layout. Quick action taps fire intents that transition to the appropriate UI pattern. "View all" link opens the agents dashboard. Home screen auto-refreshes every 15 seconds.
+- **Pattern routing updated:** `main.dart` now shows HomeScreen as the default when `_activePattern` is null (was previously chat). Chat pattern is still accessible via the routing event from the backend. Agents dashboard back-navigation returns to home (null) instead of chat.
+- **Test count:** 779 total (635 Python + 144 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
+
 ---
 
 ## Architecture Notes

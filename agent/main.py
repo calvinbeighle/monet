@@ -734,3 +734,110 @@ def keystroke_clear():
     """Delete all keystroke data. Privacy/reset endpoint."""
     deleted = keystroke_store.clear_all()
     return {"status": "cleared", "deleted": deleted}
+
+
+# --- Home screen summary (aggregated endpoint for the landing experience) ---
+
+
+@app.get("/api/home/summary")
+def home_summary():
+    """Aggregated summary for the home screen - tools, agents, activity, quick actions.
+
+    Returns everything the Flutter home screen needs in a single call so the
+    landing experience loads in one roundtrip instead of three.
+    """
+    from dataclasses import asdict as _asdict
+
+    # Tool connection status (list of ToolConnectionStatus dataclasses)
+    statuses = nango_mgr.get_all_statuses()
+    tools = [_asdict(s) for s in statuses]
+
+    # Agent list with stats (lightweight - no activity history)
+    agents = runner.describe_agents()
+
+    # Recent activity (last 5 for home screen)
+    recent_activity = runner.activity_store.get_all_activity(limit=5)
+
+    # Build quick actions based on which tools are connected
+    connected_providers = {s.provider for s in statuses if s.connected}
+    quick_actions = _build_quick_actions(connected_providers)
+
+    # Count active schedules
+    all_schedules = schedule_store.list_all()
+    active_schedules = sum(1 for s in all_schedules if s.enabled)
+
+    return {
+        "tools": tools,
+        "agents": agents,
+        "recent_activity": recent_activity,
+        "quick_actions": quick_actions,
+        "active_schedules": active_schedules,
+        "total_schedules": len(all_schedules),
+    }
+
+
+def _build_quick_actions(connected_providers: set[str]) -> list[dict]:
+    """Generate contextual quick action suggestions based on connected tools."""
+    actions = []
+
+    if "gmail" in connected_providers:
+        actions.extend(
+            [
+                {
+                    "label": "Handle my inbox",
+                    "icon": "inbox",
+                    "intent": "Handle my inbox",
+                },
+                {
+                    "label": "Draft an email",
+                    "icon": "edit",
+                    "intent": "Draft a new email",
+                },
+            ]
+        )
+
+    if "github" in connected_providers:
+        actions.extend(
+            [
+                {
+                    "label": "Review open PRs",
+                    "icon": "code",
+                    "intent": "Review my open PRs",
+                },
+                {
+                    "label": "Check my repos",
+                    "icon": "folder",
+                    "intent": "List my repositories",
+                },
+            ]
+        )
+
+    if "google-docs" in connected_providers:
+        actions.extend(
+            [
+                {
+                    "label": "Write a document",
+                    "icon": "description",
+                    "intent": "Create a new document",
+                },
+                {
+                    "label": "Find a doc",
+                    "icon": "search",
+                    "intent": "Search my documents",
+                },
+            ]
+        )
+
+    # Always-available actions
+    actions.extend(
+        [
+            {"label": "Plan my day", "icon": "calendar_today", "intent": "Plan my day"},
+            {
+                "label": "What can you do?",
+                "icon": "help",
+                "intent": "What can you help me with?",
+            },
+        ]
+    )
+
+    return actions

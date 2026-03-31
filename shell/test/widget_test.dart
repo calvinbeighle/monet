@@ -10,6 +10,7 @@ import 'package:shell/main.dart';
 import 'package:shell/services/agent_client.dart';
 import 'package:shell/ui/agents_dashboard.dart';
 import 'package:shell/ui/approval_overlay.dart';
+import 'package:shell/ui/home_screen.dart';
 import 'package:shell/ui/onboarding.dart';
 import 'package:shell/ui/patterns/tinder.dart';
 import 'package:shell/ui/patterns/chat.dart';
@@ -2262,6 +2263,247 @@ void main() {
       final status = await client.schedulerStatus();
       expect(status['running'], false);
 
+      client.dispose();
+    });
+  });
+
+  // -- HomeScreen tests --
+
+  group('HomeScreen', () {
+    final homeSummaryResponse = {
+      'tools': [
+        {'name': 'Gmail', 'provider': 'gmail', 'connected': true},
+        {'name': 'GitHub', 'provider': 'github', 'connected': false},
+        {'name': 'Google Docs', 'provider': 'google-docs', 'connected': false},
+      ],
+      'agents': [
+        {
+          'name': 'email',
+          'description': 'Email assistant',
+          'default_ui_pattern': 'chat',
+          'tools': ['list_inbox', 'read_email'],
+          'approval_required': ['send_email'],
+          'suggestions': [],
+          'stats': {'total_runs': 5, 'completed': 4, 'errors': 1, 'running': 0, 'total_tool_calls': 12, 'total_approvals': 3, 'last_run_at': null},
+          'custom': false,
+        },
+        {
+          'name': 'code',
+          'description': 'Code assistant',
+          'default_ui_pattern': 'diff',
+          'tools': ['list_prs'],
+          'approval_required': ['merge_pr'],
+          'suggestions': [],
+          'stats': {'total_runs': 2, 'completed': 2, 'errors': 0, 'running': 0, 'total_tool_calls': 4, 'total_approvals': 1, 'last_run_at': null},
+          'custom': false,
+        },
+      ],
+      'recent_activity': [
+        {
+          'id': 'act1',
+          'agent_name': 'email',
+          'intent': 'Handle my inbox',
+          'session_id': 's1',
+          'ui_pattern': 'tinder',
+          'status': 'completed',
+          'started_at': DateTime.now().millisecondsSinceEpoch / 1000 - 300,
+          'finished_at': DateTime.now().millisecondsSinceEpoch / 1000 - 200,
+          'error_message': null,
+          'tool_calls_count': 3,
+          'approvals_count': 1,
+          'summary': null,
+        },
+      ],
+      'quick_actions': [
+        {'label': 'Handle my inbox', 'icon': 'inbox', 'intent': 'Handle my inbox'},
+        {'label': 'Draft an email', 'icon': 'edit', 'intent': 'Draft a new email'},
+        {'label': 'Plan my day', 'icon': 'calendar_today', 'intent': 'Plan my day'},
+        {'label': 'What can you do?', 'icon': 'help', 'intent': 'What can you help me with?'},
+      ],
+      'active_schedules': 1,
+      'total_schedules': 2,
+    };
+
+    http.Client _buildHomeClient({int status = 200, Map<String, dynamic>? body}) {
+      final responseBody = body ?? homeSummaryResponse;
+      return MockClient((request) async {
+        if (request.url.path == '/api/home/summary') {
+          return http.Response(jsonEncode(responseBody), status);
+        }
+        return http.Response('Not found', 404);
+      });
+    }
+
+    Widget buildHome(http.Client mockClient, {void Function(String)? onIntent, VoidCallback? onAgentsTap}) {
+      return Provider<AgentClient>(
+        create: (_) => AgentClient(client: mockClient),
+        dispose: (_, c) => c.dispose(),
+        child: MaterialApp(
+          theme: ThemeData(
+            brightness: Brightness.dark,
+            scaffoldBackgroundColor: const Color(0xFF0A0A0F),
+            colorScheme: const ColorScheme.dark(
+              surface: Color(0xFF12121A),
+              primary: Color(0xFF7C6EF0),
+            ),
+          ),
+          home: Scaffold(
+            body: HomeScreen(
+              onIntent: onIntent ?? (_) {},
+              onAgentsTap: onAgentsTap ?? () {},
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('shows loading spinner initially', (tester) async {
+      final client = _buildHomeClient();
+      await tester.pumpWidget(buildHome(client));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows greeting after load', (tester) async {
+      final client = _buildHomeClient();
+      await tester.pumpWidget(buildHome(client));
+      await tester.pump(const Duration(seconds: 1));
+      // Should show a greeting based on time of day
+      final hour = DateTime.now().hour;
+      final expectedGreeting = hour < 12 ? 'Good morning' : (hour < 17 ? 'Good afternoon' : 'Good evening');
+      expect(find.textContaining(expectedGreeting), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows quick action chips', (tester) async {
+      final client = _buildHomeClient();
+      await tester.pumpWidget(buildHome(client));
+      await tester.pump(const Duration(seconds: 1));
+      // "Handle my inbox" appears in quick actions and possibly in activity feed
+      expect(find.text('Handle my inbox'), findsAtLeast(1));
+      expect(find.text('Plan my day'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows connected tools section', (tester) async {
+      final client = _buildHomeClient();
+      await tester.pumpWidget(buildHome(client));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Gmail'), findsOneWidget);
+      expect(find.text('GitHub'), findsOneWidget);
+      expect(find.text('Connected'), findsOneWidget);
+      expect(find.text('Not connected'), findsAtLeast(1));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows agent mini cards', (tester) async {
+      final client = _buildHomeClient();
+      await tester.pumpWidget(buildHome(client));
+      await tester.pump(const Duration(seconds: 1));
+      // "email" appears in agent card and in activity row
+      expect(find.text('email'), findsAtLeast(1));
+      expect(find.text('code'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows recent activity', (tester) async {
+      final client = _buildHomeClient();
+      await tester.pumpWidget(buildHome(client));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Handle my inbox'), findsAtLeast(1));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('quick action tap fires onIntent', (tester) async {
+      String? firedIntent;
+      final client = _buildHomeClient();
+      await tester.pumpWidget(buildHome(client, onIntent: (i) => firedIntent = i));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.text('Plan my day'));
+      await tester.pump();
+      expect(firedIntent, 'Plan my day');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('view all agents tap fires onAgentsTap', (tester) async {
+      bool tapped = false;
+      final client = _buildHomeClient();
+      await tester.pumpWidget(buildHome(client, onAgentsTap: () => tapped = true));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.text('View all'));
+      await tester.pump();
+      expect(tapped, true);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('handles backend error gracefully', (tester) async {
+      final client = _buildHomeClient(status: 500);
+      await tester.pumpWidget(buildHome(client));
+      await tester.pump(const Duration(seconds: 1));
+      // Should not crash - might show empty or error state
+      expect(find.byType(HomeScreen), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('shows section headers', (tester) async {
+      final client = _buildHomeClient();
+      await tester.pumpWidget(buildHome(client));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Quick actions'), findsOneWidget);
+      expect(find.text('Connected tools'), findsOneWidget);
+      expect(find.text('Agents'), findsOneWidget);
+      expect(find.text('Recent activity'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+  });
+
+  // -- AgentClient homeSummary test --
+
+  group('AgentClient homeSummary', () {
+    test('parses home summary response', () async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/home/summary') {
+          return http.Response(
+            jsonEncode({
+              'tools': [],
+              'agents': [],
+              'recent_activity': [],
+              'quick_actions': [],
+              'active_schedules': 0,
+              'total_schedules': 0,
+            }),
+            200,
+          );
+        }
+        return http.Response('Not found', 404);
+      });
+
+      final client = AgentClient(client: mockClient);
+      final result = await client.homeSummary();
+      expect(result['tools'], isA<List>());
+      expect(result['agents'], isA<List>());
+      expect(result['quick_actions'], isA<List>());
+      expect(result['active_schedules'], 0);
+      client.dispose();
+    });
+
+    test('throws on non-200 status', () async {
+      final mockClient = MockClient((request) async {
+        return http.Response('Internal error', 500);
+      });
+
+      final client = AgentClient(client: mockClient);
+      expect(() => client.homeSummary(), throwsException);
       client.dispose();
     });
   });

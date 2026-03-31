@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'services/agent_client.dart';
 import 'ui/agents_dashboard.dart';
 import 'ui/approval_overlay.dart';
+import 'ui/home_screen.dart';
 import 'ui/onboarding.dart';
 import 'ui/patterns/chat.dart';
 import 'ui/patterns/diff.dart';
@@ -296,7 +297,7 @@ class MonetShellState extends State<MonetShell> {
   void _handleAgentsTap() {
     if (_activePattern == 'agents') {
       // Toggle off - return to previous pattern
-      setState(() => _activePattern = _preAgentsPattern ?? 'chat');
+      setState(() => _activePattern = _preAgentsPattern);
     } else {
       // Toggle on - show agents dashboard
       setState(() {
@@ -814,8 +815,16 @@ class MonetShellState extends State<MonetShell> {
     );
   }
 
+  void _handleHomeIntent(String intent) {
+    // When user picks a quick action from home, transition to chat as default
+    // (the routing event from the backend will set the correct pattern)
+    setState(() => _activePattern = 'chat');
+    _submitIntent(intent);
+  }
+
   Widget _buildIntentBar() {
-    // Hide the intent bar when chat pattern is active (chat has its own input)
+    // Hide the intent bar when chat or home pattern is active
+    // (chat has its own input, home has quick actions)
     if (_activePattern == null || _activePattern == 'chat') {
       return const SizedBox.shrink();
     }
@@ -895,7 +904,6 @@ class MonetShellState extends State<MonetShell> {
       case 'agents':
         child = const AgentsDashboard(key: ValueKey('agents'));
       case 'chat':
-      default:
         child = ChatPattern(
           key: const ValueKey('chat'),
           messages: _chatMessages,
@@ -905,6 +913,12 @@ class MonetShellState extends State<MonetShell> {
           onSuggestionTap: _submitIntent,
           onApprovalDecision: _handleChatApprovalDecision,
           onRetry: _retryLastIntent,
+        );
+      default:
+        child = HomeScreen(
+          key: const ValueKey('home'),
+          onIntent: _handleHomeIntent,
+          onAgentsTap: _handleAgentsTap,
         );
     }
     return AnimatedSwitcher(

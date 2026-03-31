@@ -688,6 +688,17 @@ class AgentClient {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  // --- Home screen summary ---
+
+  /// Fetch the aggregated home screen summary (tools, agents, activity, quick actions).
+  Future<Map<String, dynamic>> homeSummary() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/home/summary'));
+    if (response.statusCode != 200) {
+      throw Exception('Home summary failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   // --- Tool connections ---
 
   /// Get connection status for all configured tools (Gmail, GitHub).
