@@ -1,0 +1,33 @@
+[Unit]
+Description=Monet Keystroke Collector - OS-level interaction capture for personalization
+Documentation=file:///opt/monet/SCOPE.md
+After=monet-agent.service
+Wants=monet-agent.service
+
+[Service]
+Type=simple
+User=monet
+Group=input
+ExecStart=/opt/monet/venv/bin/python3 -m agent.keystroke_collector
+WorkingDirectory=/opt/monet
+Environment=MONET_DB_PATH=/var/lib/monet/monet.db
+Environment=MONET_KEYSTROKE_SESSION=system
+Restart=on-failure
+RestartSec=5
+
+# Security hardening (same pattern as monet-agent.service)
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/monet
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# The collector needs access to /dev/input/* for evdev
+SupplementaryGroups=input
+DeviceAllow=/dev/input/*
+
+[Install]
+WantedBy=multi-user.target

@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete - 671 passing tests (539 Python + 132 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-22 complete, Writing Agent complete, User-Created Agents complete, Scheduled Agent Execution complete, Keystroke Collection Pipeline complete - 741 passing tests (609 Python + 132 Flutter).**
 
 ---
 
@@ -227,7 +227,7 @@ Debian VM boots directly into Monet.
 
 ## Phase 5 - Polish (FUTURE)
 
-- [ ] Keystroke collection pipeline (OS-level capture -> SQLite -> personalization)
+- [x] Keystroke collection pipeline (OS-level capture -> SQLite -> personalization)
 - [ ] Dark/light theme
 - [ ] Animation polish on pattern transitions
 - [ ] More integrations (Slack, Calendar, Notion, Linear)
@@ -376,6 +376,16 @@ Debian VM boots directly into Monet.
 - **Test count:** 671 total (539 Python + 132 Flutter), all passing.
 - **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Keystroke collection pipeline not implemented. Voice input not implemented.
 
+### Implementation Notes (2026-03-31) - Batch 19
+
+- **Keystroke collection pipeline implemented (SCOPE.md - OS-level interaction capture for personalization):** `agent/keystroke_store.py` with KeystrokeStore class - SQLite-backed store for raw keystroke events. Two tables: `keystroke_events` (id, event_type, key_code, timestamp, context, modifiers, session_id) and `keystroke_hourly_agg` (pre-computed hourly aggregates for fast dashboard queries). Batch ingest with MAX_BATCH_SIZE=1000 cap, INSERT OR IGNORE for dedup, indexed on timestamp/context/session. Summary endpoint computes events_per_minute, peak_hour, top_contexts, active_days for the personalization engine. Auto-prune with configurable retention (default 30 days). Privacy-first: clear_all endpoint for full data wipe.
+- **Keystroke collector daemon:** `agent/keystroke_collector.py` with KeystrokeCollector class - threaded daemon that reads from Linux evdev devices (/dev/input/event\*), filters sensitive contexts (password fields, auth screens, sudo, gpg, ssh-askpass), batches events every 5 seconds, and writes to KeystrokeStore. Sway IPC integration for active window context (swaymsg -t get_tree). Modifier key tracking (ctrl, shift, alt, meta). On non-Linux (macOS dev), runs in mock mode - no evdev, but the queue/flush/ingest pipeline is fully functional for testing. Entry point: `python -m agent.keystroke_collector`.
+- **Keystroke API endpoints:** 7 new endpoints under /api/keystrokes: POST /ingest (batch insert from collector), GET /summary (personalization aggregates with configurable days param), GET /events (filtered query with since/until/context/session_id/limit), GET /count (event count with time range), GET /hourly (pre-computed hourly aggregates), POST /prune (retention-based cleanup), DELETE / (privacy reset - clear all data).
+- **Sensitive context filtering:** 12 sensitive keywords (password, passwd, secret, credential, keychain, unlock, sudo, login, auth, gpg, ssh-askpass, pinentry) checked case-insensitively against the active window title. Events from sensitive contexts are dropped at the collector level before they ever reach the store.
+- **OS integration:** `os/monet-keystroke.service` systemd unit runs alongside monet-agent.service. User=monet, Group=input for /dev/input/\* access. Same security hardening as the agent service (NoNewPrivileges, ProtectSystem=strict, PrivateTmp). `os/install.sh` updated to install and enable both services. `agent/requirements.txt` adds evdev>=1.7.0 (Linux-only conditional).
+- **Test count:** 741 total (609 Python + 132 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. Voice input not implemented.
+
 ---
 
 ## Architecture Notes
@@ -390,6 +400,7 @@ Debian VM boots directly into Monet.
 | Integrations    | Nango (managed OAuth, Gmail/GitHub) | Implemented                                                                    |
 | State           | SQLite                              | Implemented                                                                    |
 | IPC             | Unix socket / HTTP localhost        | Implemented                                                                    |
+| Keystroke       | evdev + SQLite pipeline             | Implemented (collector daemon + store + API)                                   |
 
 ## Known Discrepancies
 

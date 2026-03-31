@@ -105,14 +105,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Install systemd service for agent backend
+# 5. Install systemd services for agent backend and keystroke collector
 # ---------------------------------------------------------------------------
-echo "[5/7] Installing systemd service..."
+echo "[5/7] Installing systemd services..."
 
 cp "$SCRIPT_DIR/monet-agent.service" /etc/systemd/system/monet-agent.service
+cp "$SCRIPT_DIR/monet-keystroke.service" /etc/systemd/system/monet-keystroke.service
 systemctl daemon-reload
 systemctl enable monet-agent.service
-echo "monet-agent.service installed and enabled"
+systemctl enable monet-keystroke.service
+echo "monet-agent.service and monet-keystroke.service installed and enabled"
 
 # ---------------------------------------------------------------------------
 # 6. Configure Sway for monet user

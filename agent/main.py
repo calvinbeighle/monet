@@ -13,6 +13,7 @@ from agent.approval import ApprovalGate
 from agent.auth import AuthStore, UserExistsError
 from agent.custom_agent_store import CustomAgentConfig
 from agent.agents.custom import AVAILABLE_TOOL_SETS
+from agent.keystroke_store import KeystrokeEvent, KeystrokeStore
 from agent.models import ApprovalStatus
 from agent.nango import NangoManager
 from agent.runner import AgentRunner
@@ -34,6 +35,7 @@ system_mgr = SystemManager()
 nango_mgr = NangoManager()
 schedule_store = ScheduleStore(db_path=DEFAULT_DB_PATH)
 scheduler = AgentScheduler(schedule_store=schedule_store, runner=runner)
+keystroke_store = KeystrokeStore(db_path=DEFAULT_DB_PATH)
 
 
 class RunRequest(BaseModel):
@@ -633,3 +635,102 @@ def power_action(request: PowerAction):
     if not success:
         raise HTTPException(status_code=500, detail="Power action failed")
     return {"status": request.action}
+
+
+# --- Keystroke pipeline routes (SCOPE.md: keystroke collection) ---
+
+
+class KeystrokeIngestRequest(BaseModel):
+    events: list[dict]
+
+
+@app.post("/api/keystrokes/ingest")
+def ingest_keystrokes(request: KeystrokeIngestRequest):
+    """Batch ingest keystroke events from the collector daemon.
+
+    Accepts a list of raw event dicts and converts them to KeystrokeEvent
+    objects for storage. This is the primary write path for the pipeline.
+    """
+    events = []
+    for raw in request.events:
+        try:
+            events.append(
+                KeystrokeEvent(
+                    event_type=raw.get("event_type", "key_press"),
+                    key_code=raw.get("key_code", 0),
+                    timestamp=raw.get("timestamp", 0.0),
+                    context=raw.get("context", ""),
+                    modifiers=raw.get("modifiers", ""),
+                    session_id=raw.get("session_id", ""),
+                )
+            )
+        except (TypeError, KeyError) as e:
+            logger.warning("Skipping malformed keystroke event: %s", e)
+
+    count = keystroke_store.ingest(events)
+    return {"status": "ok", "ingested": count}
+
+
+@app.get("/api/keystrokes/summary")
+def keystroke_summary(days: int = 30):
+    """Get aggregated interaction patterns for the personalization engine.
+
+    Returns typing speed, peak hours, top contexts (apps/windows),
+    and other behavioral signals that agents use to personalize responses.
+    """
+    from dataclasses import asdict as _asdict
+
+    summary = keystroke_store.get_summary(days=days)
+    return _asdict(summary)
+
+
+@app.get("/api/keystrokes/events")
+def keystroke_events(
+    since: Optional[float] = None,
+    until: Optional[float] = None,
+    context: Optional[str] = None,
+    session_id: Optional[str] = None,
+    limit: int = 100,
+):
+    """Query raw keystroke events with optional filters.
+
+    Primarily for debugging and the activity dashboard.
+    """
+    return keystroke_store.get_events(
+        since=since,
+        until=until,
+        context=context,
+        session_id=session_id,
+        limit=min(limit, 1000),
+    )
+
+
+@app.get("/api/keystrokes/count")
+def keystroke_count(
+    since: Optional[float] = None,
+    until: Optional[float] = None,
+):
+    """Get total event count, optionally within a time range."""
+    return {"count": keystroke_store.get_event_count(since=since, until=until)}
+
+
+@app.get("/api/keystrokes/hourly")
+def keystroke_hourly(limit: int = 168):
+    """Get hourly aggregates for activity visualization."""
+    return keystroke_store.get_hourly_aggregates(limit=min(limit, 720))
+
+
+@app.post("/api/keystrokes/prune")
+def keystroke_prune(retention_days: int = 30):
+    """Delete events older than the retention period."""
+    if retention_days < 1:
+        raise HTTPException(status_code=400, detail="retention_days must be at least 1")
+    deleted = keystroke_store.prune(retention_days=retention_days)
+    return {"status": "pruned", "deleted": deleted}
+
+
+@app.delete("/api/keystrokes")
+def keystroke_clear():
+    """Delete all keystroke data. Privacy/reset endpoint."""
+    deleted = keystroke_store.clear_all()
+    return {"status": "cleared", "deleted": deleted}
