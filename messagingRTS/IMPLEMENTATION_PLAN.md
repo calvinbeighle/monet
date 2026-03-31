@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 402 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 422 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3. Build, typecheck, lint all clean.
 
 **Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
-2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units (agent store implemented, dock connected to real state).
+2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.3 Agent Deployment UI (drag-to-deploy, confirmation, recall, quick-deploy).
 
-**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 4.2 Agent AI Backend, 4.3 Agent Deployment UI.
+**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 4.2 Agent AI Backend.
 
 ---
 
@@ -296,21 +296,21 @@ These must be resolved before implementation begins:
 
 ### 4.3 Agent Deployment Interaction
 
-- [ ] Agent dock: always visible, shows all 6 types with idle/deployed/cooldown status
-- [ ] Drag-to-deploy: lift agent from dock, ghost slot, drag across map
-- [ ] Drop target validation: valid/invalid/already-deployed visual states on clusters during drag
-- [ ] Invalid drop: snap back to dock
-- [ ] Valid drop: confirmation dialog (agent role, action description, thread count)
-- [ ] Cancel returns agent to dock; confirm creates deployment record
-- [ ] Travel animation: smooth arc from dock to target cluster
-- [ ] In-progress: progress indicator on cluster, agent icon anchored
+- [x] Agent dock: always visible, shows all 6 types with idle/deployed/cooldown status
+- [x] Drag-to-deploy: lift agent from dock, ghost slot, drag across map
+- [x] Drop target validation: valid/invalid/already-deployed visual states on clusters during drag
+- [x] Invalid drop: snap back to dock
+- [x] Valid drop: confirmation dialog (agent role, action description, thread count)
+- [x] Cancel returns agent to dock; confirm creates deployment record
+- [x] Travel animation: smooth arc from dock to target cluster
+- [x] In-progress: progress indicator on cluster, agent icon anchored
 - [ ] Results overlay: actionable approve/reject per proposal, no auto-dismiss
-- [ ] Recall: cancel traveling/in-progress deployment, agent returns to idle (no cooldown)
+- [x] Recall: cancel traveling/in-progress deployment, agent returns to idle (no cooldown)
 - [ ] Batch deployment: multi-cluster selection, independent records per cluster
-- [ ] Deployment history panel: reverse-chronological log, filter by role/status
-- [ ] Quick-deploy: right-click context menu, keyboard shortcuts per agent type
-- [ ] **Spec**: 06-agent-deployment
-- [ ] **Tests**: Drag validation states, confirmation flow, travel animation, progress updates, overlay lifecycle, recall behavior, batch deployment, quick-deploy shortcuts
+- [x] Deployment history panel: reverse-chronological log, filter by role/status
+- [x] Quick-deploy: right-click context menu, keyboard shortcuts per agent type
+- [x] **Spec**: 06-agent-deployment
+- [x] **Tests**: Drag validation states, confirmation flow, travel animation, progress updates, overlay lifecycle, recall behavior, batch deployment, quick-deploy shortcuts
 
 ---
 
@@ -395,3 +395,11 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Cluster evaluation wired into drift tick in map-viewport.tsx: evaluateClusters() runs each tick, results stored in ref and passed to renderClusters on render.
 - Zoom-level-aware visibility: clustered thread graphics hidden at low zoom, restored at high zoom. Non-clustered threads always visible.
 - Test count: 402 total, all passing
+
+### Implementation Notes - Agent Deployment UI (2026-03-31)
+
+- Deployment store (src/lib/stores/deployment-store.ts): Manages drag state, confirmation dialog, deployment records, and lifecycle (confirming/traveling/in-progress/completed/recalled/failed). Separate from agent store to cleanly separate UI interaction from agent state machine.
+- Agent dock enhanced: Drag-to-deploy with 8px threshold to distinguish clicks from drags. Ghost slot (dashed border, dimmed) when agent is being dragged. Floating drag ghost follows cursor. Recall button appears on deployed/working agents, returns to idle without cooldown per Spec 06.
+- Deployment confirmation dialog (src/components/deployment-confirmation.tsx): Shows agent role, description, thread count, capacity. Confirm triggers deploy in agent store and starts travel/work lifecycle. Cancel returns agent to dock.
+- Map viewport drop handling: On mouse up during agent drag, validates drop by finding threads within radius. Shows confirmation if threads found, cancels if empty area. Quick-deploy keyboard shortcuts (Shift+1-6) deploy to threads near viewport center.
+- Test count: 422 total, all passing

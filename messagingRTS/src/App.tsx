@@ -16,6 +16,7 @@ import {
 } from "./components/deployment-history-panel";
 import { SessionSummaryModal, type SessionSummaryData } from "./components/session-summary-modal";
 import { NotificationArea } from "./components/notification-area";
+import { DeploymentConfirmation } from "./components/deployment-confirmation";
 import {
   loadPersistedThreads,
   startPeriodicPersist,
@@ -278,6 +279,9 @@ export function App() {
       {activePanel === "session-summary" && (
         <SessionSummaryModal data={sessionSummary} triggeredFrom={summaryTrigger} />
       )}
+
+      {/* Deployment confirmation dialog - floats above everything */}
+      <DeploymentConfirmation />
     </div>
   );
 }

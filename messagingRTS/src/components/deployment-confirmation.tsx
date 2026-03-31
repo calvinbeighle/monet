@@ -1,0 +1,80 @@
+// Deployment confirmation dialog per Spec 06
+// Shows agent role, description, thread count. Confirm deploys, cancel snaps agent back.
+
+import { AGENT_DEFINITIONS } from "../lib/types";
+import { useDeploymentStore } from "../lib/stores/deployment-store";
+import { useAgentStore } from "../lib/stores/agent-store";
+
+export function DeploymentConfirmation() {
+  const confirmation = useDeploymentStore((s) => s.confirmation);
+  const confirmDeployment = useDeploymentStore((s) => s.confirmDeployment);
+  const cancelConfirmation = useDeploymentStore((s) => s.cancelConfirmation);
+  const startTravel = useDeploymentStore((s) => s.startTravel);
+  const startWork = useDeploymentStore((s) => s.startWork);
+
+  if (!confirmation) return null;
+
+  const def = AGENT_DEFINITIONS[confirmation.agentRole];
+  const colorHex = `#${def.color.toString(16).padStart(6, "0")}`;
+
+  const handleConfirm = () => {
+    const record = confirmDeployment();
+    if (!record) return;
+
+    // Deploy the agent in the agent store
+    useAgentStore.getState().deploy(record.agentRole, record.clusterId, record.threadIds);
+
+    // Transition through travel -> working (simulated for now, AI backend will drive this)
+    startTravel(record.id);
+    setTimeout(() => {
+      useAgentStore.getState().startWork(record.agentRole);
+      startWork(record.id);
+    }, 1500);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
+      data-testid="deployment-confirmation-overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) cancelConfirmation();
+      }}
+    >
+      <div
+        className="w-80 rounded-lg border border-gray-700 bg-[#14142a] p-5 shadow-xl"
+        data-testid="deployment-confirmation"
+      >
+        <div className="mb-4 flex items-center gap-3">
+          <div className="h-4 w-4 rounded-full" style={{ backgroundColor: colorHex }} />
+          <h3 className="text-sm font-medium text-gray-200">Deploy {def.name}</h3>
+        </div>
+
+        <p className="mb-3 text-xs text-gray-400">{confirmation.description}</p>
+
+        <div className="mb-4 flex items-center gap-4 text-xs text-gray-500">
+          <span>
+            {confirmation.threadIds.length} thread{confirmation.threadIds.length !== 1 ? "s" : ""}
+          </span>
+          <span>Capacity: {def.capacity}</span>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-500 transition-colors"
+            onClick={handleConfirm}
+            data-testid="confirm-deploy"
+          >
+            Deploy Now
+          </button>
+          <button
+            className="flex-1 rounded border border-gray-600 px-3 py-1.5 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors"
+            onClick={cancelConfirmation}
+            data-testid="cancel-deploy"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

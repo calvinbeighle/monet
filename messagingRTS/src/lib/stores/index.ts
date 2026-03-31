@@ -1,6 +1,7 @@
 export { useThreadStore } from "./thread-store";
 export { useAppStore } from "./app-store";
 export { useAgentStore } from "./agent-store";
+export { useDeploymentStore } from "./deployment-store";
 export type {
   ShellState,
   ActivePanel,

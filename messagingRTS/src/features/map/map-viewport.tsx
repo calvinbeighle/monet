@@ -8,7 +8,9 @@ import { createZoneLayout, updateZoneSizes } from "./zone-layout";
 import { driftTick } from "./drift-engine";
 import { evaluateClusters } from "./clustering";
 import type { Cluster } from "../../lib/types/cluster";
-import { useThreadStore, useAppStore, useAgentStore } from "../../lib/stores";
+import { useThreadStore, useAppStore, useAgentStore, useDeploymentStore } from "../../lib/stores";
+import { getZoneAtPosition } from "./zone-layout";
+import { AGENT_DEFINITIONS, type AgentRole } from "../../lib/types";
 import { useNavigationStore } from "../navigation/navigation-store";
 import {
   searchThreads,
@@ -254,6 +256,48 @@ export function MapViewport() {
       isDraggingRef.current = false;
       useNavigationStore.getState().setEdgeScrollDirection(null);
 
+      // Handle agent drop per Spec 06 - if an agent is being dragged, validate and show confirmation
+      const deployDrag = useDeploymentStore.getState().dragState;
+      if (deployDrag) {
+        const renderer = rendererRef.current;
+        const container = containerRef.current;
+        if (renderer && container) {
+          const rect = container.getBoundingClientRect();
+          const screenX = e.clientX - rect.left;
+          const screenY = e.clientY - rect.top;
+          const cam = renderer.getCameraState();
+          const mapPos = screenToMap(screenX, screenY, cam, rect.width, rect.height);
+
+          // Find threads in the drop zone (within a radius)
+          const dropRadius = 200 / cam.zoom; // generous drop radius scaled by zoom
+          const threadArray = [...useThreadStore.getState().threads.values()];
+          const nearbyThreads = threadArray.filter((t) => {
+            const dist = Math.hypot(t.position.x - mapPos.x, t.position.y - mapPos.y);
+            return dist < dropRadius;
+          });
+
+          const zoneId = getZoneAtPosition(zonesRef.current, mapPos.x, mapPos.y);
+          const def = AGENT_DEFINITIONS[deployDrag.draggingRole];
+
+          if (nearbyThreads.length > 0) {
+            // Valid drop: threads found nearby
+            const threadIds = nearbyThreads.slice(0, def.capacity).map((t) => t.id);
+            useDeploymentStore.getState().showConfirmation({
+              agentRole: deployDrag.draggingRole,
+              clusterId: `zone-${zoneId}`,
+              threadIds,
+              description: `${def.name}: ${def.description.toLowerCase()} (${threadIds.length} thread${threadIds.length !== 1 ? "s" : ""} in ${zoneId})`,
+            });
+          } else {
+            // Invalid drop: no threads nearby, cancel
+            useDeploymentStore.getState().cancelDrag();
+          }
+        } else {
+          useDeploymentStore.getState().cancelDrag();
+        }
+        return;
+      }
+
       if (wasDragging) return; // It was a drag, not a click
 
       // Click handling per Spec 08
@@ -420,6 +464,43 @@ export function MapViewport() {
           useNavigationStore.getState().saveCameraHistory();
           useNavigationStore.getState().openDetailPanel();
           renderer.animateTo(thread.position.x, thread.position.y, getCanonicalZoom("detail"));
+        }
+        return;
+      }
+
+      // Quick-deploy shortcuts (Shift+1 through Shift+6) per Spec 06
+      // Deploys agent to threads near viewport center
+      const QUICK_DEPLOY_ROLES: Record<string, AgentRole> = {
+        "!": "closer", // Shift+1
+        "@": "researcher", // Shift+2
+        "#": "scheduler", // Shift+3
+        $: "cleaner", // Shift+4
+        "%": "drafter", // Shift+5
+        "^": "escalation-bot", // Shift+6
+      };
+      const quickDeployRole = QUICK_DEPLOY_ROLES[e.key];
+      if (quickDeployRole && e.shiftKey) {
+        e.preventDefault();
+        const agentStore = useAgentStore.getState();
+        if (agentStore.canDeployRole(quickDeployRole)) {
+          const cam = renderer.getCameraState();
+          const threadArray = [...useThreadStore.getState().threads.values()];
+          const dropRadius = 400 / cam.zoom;
+          const nearbyThreads = threadArray.filter((t) => {
+            const dist = Math.hypot(t.position.x - cam.x, t.position.y - cam.y);
+            return dist < dropRadius;
+          });
+          if (nearbyThreads.length > 0) {
+            const def = AGENT_DEFINITIONS[quickDeployRole];
+            const zId = getZoneAtPosition(zonesRef.current, cam.x, cam.y);
+            const threadIds = nearbyThreads.slice(0, def.capacity).map((t) => t.id);
+            useDeploymentStore.getState().showConfirmation({
+              agentRole: quickDeployRole,
+              clusterId: `zone-${zId}`,
+              threadIds,
+              description: `${def.name}: ${def.description.toLowerCase()} (${threadIds.length} thread${threadIds.length !== 1 ? "s" : ""} in ${zId})`,
+            });
+          }
         }
         return;
       }
