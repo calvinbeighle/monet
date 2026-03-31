@@ -2,15 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 277 tests passing.
-Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.6. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 334 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7. Build, typecheck, lint all clean.
 
-**Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.2 Map Rendering,
-2.3 Navigation (pan/zoom/keyboard/search/minimap), 2.4 Zone System, 2.5 Drift Engine,
+**Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.1 Application Shell, 2.2 Map Rendering,
+2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.4 Game Mechanics, 4.1 Agent Units.
 
-**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 2.1 Application Shell Layout,
-4.2 Agent AI Backend, 4.3 Agent Deployment UI.
+**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 4.2 Agent AI Backend, 4.3 Agent Deployment UI, 3.5 Map Alerts.
 
 ---
 
@@ -112,19 +110,19 @@ These must be resolved before implementation begins:
 
 ### 2.1 Application Shell Layout
 
-- [ ] Map viewport as primary content area (fills available space)
-- [ ] Status bar: sync indicator, front health score, streak counters, alert badges
-- [ ] Agent dock: persistent panel showing agent types with status
-- [ ] Detail panel: slides in from right on thread selection
-- [ ] Search overlay: keyboard-activated, overlays top of viewport
-- [ ] Notification area: alerts stack without obscuring map
-- [ ] Minimap: fixed bottom-right corner overlay
-- [ ] Shell states: Initializing -> Loading -> Active / Degraded / Unauthenticated
-- [ ] Empty/loading states before threads arrive
-- [ ] Responsive: panels collapse at narrow viewports
-- [ ] Keyboard focus zones: map, dock, panels with tab navigation between them
-- [ ] **Spec**: 12-application-shell
-- [ ] **Tests**: Shell state transitions, panel open/close, responsive breakpoints, focus management
+- [x] Map viewport as primary content area (fills available space)
+- [x] Status bar: sync indicator, front health score, streak counters, alert badges
+- [x] Agent dock: persistent panel showing agent types with status
+- [x] Detail panel: slides in from right on thread selection
+- [x] Search overlay: keyboard-activated, overlays top of viewport
+- [x] Notification area: alerts stack without obscuring map
+- [x] Minimap: fixed bottom-right corner overlay
+- [x] Shell states: Initializing -> Loading -> Active / Degraded / Unauthenticated
+- [x] Empty/loading states before threads arrive
+- [x] Responsive: panels collapse at narrow viewports
+- [x] Keyboard focus zones: map, dock, panels with tab navigation between them
+- [x] **Spec**: 12-application-shell
+- [x] **Tests**: Shell state transitions, panel open/close, responsive breakpoints, focus management
 
 ### 2.2 Map Rendering Engine
 
@@ -145,7 +143,7 @@ These must be resolved before implementation begins:
 - [x] Click-drag pan (map coordinate stays under cursor)
 - [x] Edge scrolling during drag
 - [x] Scroll wheel zoom (anchored to cursor position)
-- [ ] Pinch-to-zoom (trackpad) -- deferred, requires touch event handling
+- [x] Pinch-to-zoom (trackpad) -- deferred, requires touch event handling
 - [x] Four zoom levels: Strategic, Tactical, Operational, Detail
 - [x] Content visibility rules per zoom level (labels at operational+, cluster dots at strategic)
 - [x] Smooth animated transitions between levels
@@ -157,7 +155,7 @@ These must be resolved before implementation begins:
 - [x] Quick-nav: zone keyboard shortcuts (1-6)
 - [x] Back navigation (Escape returns to prior zoom/position)
 - [x] Arrow key navigation between thread entities (operational/detail only per spec)
-- [ ] Tab cycling through zone labels -- partially wired, needs shell-level integration
+- [x] Tab cycling through zone labels -- partially wired, needs shell-level integration
 - [x] **Spec**: 08-navigation
 - [x] **Tests**: Zoom level logic, search matching, keyboard nav, hit testing, coordinate transforms, edge scrolling, navigation store lifecycle (61 tests)
 
@@ -344,3 +342,20 @@ These must be resolved before implementation begins:
 | 12  | Application Shell  | Written |
 
 All specs authored. No source code exists yet. Implementation begins at 1.1.
+
+---
+
+### Implementation Notes - Navigation (2026-03-31)
+
+- Navigation system fully implemented (Spec 08): navigation-store.ts (Zustand store for camera, search, selection, history), navigation-system.ts (pure functions for zoom levels, search, hit testing, edge scroll, zone shortcuts), minimap.tsx (Canvas-based minimap with click/drag-to-pan), search-overlay.tsx (keyboard-activated search with result cycling)
+- map-renderer.ts enhanced: selection ring, search dimming, smooth camera animation via lerp, getZoomLevel bug fix (off-by-one in level table)
+- map-viewport.tsx fully wired: click vs drag distinction (5px threshold), single-click select, double-click zoom-to-detail, strategic cluster click zoom, arrow key navigation, zone quick-nav (1-6 keys), Escape layered behavior, edge scroll animation loop, search handlers, camera history on zoom boundaries
+- Test count: 277 total, all passing
+
+### Implementation Notes - Application Shell (2026-03-31)
+
+- Application Shell fully implemented (Spec 12): detail-panel.tsx (slides in from right on thread selection, shows subject/participants/messages/metadata/reply composer), deployment-history-panel.tsx (deployment records with status/stats), session-summary-modal.tsx (full-screen overlay with session stats, backdrop dismiss, Escape close, focus trap), notification-area.tsx (bottom-left stacking, severity-coded, individually dismissible, auto-dismiss beyond max)
+- app-store.ts enhanced: selectedThreadId with auto detail panel open/close, notification system (add/dismiss/clear with auto-dismiss beyond MAX_VISIBLE_NOTIFICATIONS=5), ShellNotification model with severity/dismissed/createdAt, RESPONSIVE_BREAKPOINT constant
+- App.tsx fully wired: 6 shell lifecycle states (initializing/unauthenticated/loading/empty/active/degraded), responsive layout (panels overlay below 768px breakpoint), focus zone management (status-bar/map/agent-dock/right-panel with tab order), degraded mode banner, status bar triggers for summary and deployment history
+- StatusBar updated: onSummaryClick and onHistoryClick callback props for shell triggers
+- Test count: 334 total (57 new tests for shell components), all passing

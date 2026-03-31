@@ -1,9 +1,15 @@
 // Status bar per Spec 12
 // Shows: sync indicator, front health score, streak counters, alert badges
+// Contains triggers for session summary and deployment history
 
 import { useAppStore } from "../lib/stores";
 
-export function StatusBar() {
+interface StatusBarProps {
+  onSummaryClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onHistoryClick?: () => void;
+}
+
+export function StatusBar({ onSummaryClick, onHistoryClick }: StatusBarProps = {}) {
   const syncStatus = useAppStore((s) => s.syncStatus);
   const frontHealthScore = useAppStore((s) => s.frontHealthScore);
   const streakInboxZero = useAppStore((s) => s.streakInboxZero);
@@ -38,6 +44,16 @@ export function StatusBar() {
           <div className={`h-2 w-2 rounded-full ${syncIndicator}`} data-testid="sync-indicator" />
           <span className="text-xs text-gray-400">{syncStatus}</span>
         </div>
+
+        {onHistoryClick && (
+          <button
+            className="text-xs text-gray-500 hover:text-gray-300"
+            onClick={onHistoryClick}
+            data-testid="history-trigger"
+          >
+            Deployments
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-6">
@@ -57,6 +73,16 @@ export function StatusBar() {
           <span className="text-xs text-gray-500">Zero Lost</span>
           <span className="text-sm font-mono text-gray-300">{streakZeroLost}d</span>
         </div>
+
+        {onSummaryClick && (
+          <button
+            className="text-xs text-gray-500 hover:text-gray-300"
+            onClick={onSummaryClick}
+            data-testid="summary-trigger"
+          >
+            Summary
+          </button>
+        )}
 
         {unreadAlertCount > 0 && (
           <div
