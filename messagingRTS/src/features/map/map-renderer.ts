@@ -32,14 +32,22 @@ export class MapRenderer {
   private zoneLabels: Map<ZoneId, Text> = new Map();
   private threadGraphics: Map<string, Graphics> = new Map();
   private threadLabels: Map<string, Text> = new Map();
+  // Selection ring rendered inline in renderThreads
 
   // Camera state
   private cameraX = 0;
   private cameraY = 0;
   private cameraZoom = 0.5; // start zoomed out to see whole map
 
+  // Selection and search state (set by viewport, used during render)
+  private selectedThreadId: string | null = null;
+  private searchHighlightIds: Set<string> = new Set();
+  private searchActive = false;
+
   // Animation state
   private pulseTime = 0;
+  private zoomAnimationTarget: { x: number; y: number; zoom: number } | null = null;
+  private zoomAnimationSpeed = 0.08; // fraction per frame
 
   async init(options: MapRendererOptions): Promise<void> {
     this.app = new Application();
@@ -115,7 +123,7 @@ export class MapRenderer {
   getZoomLevel(): "strategic" | "tactical" | "operational" | "detail" {
     if (this.cameraZoom < 0.25) return "strategic";
     if (this.cameraZoom < 0.6) return "tactical";
-    if (this.cameraZoom < 1.2) return "detail";
+    if (this.cameraZoom < 1.2) return "operational";
     return "detail";
   }
 
@@ -250,6 +258,23 @@ export class MapRenderer {
         g.stroke({ color: 0xffd700 as ColorSource, width: 2, alpha: 0.7 });
       }
 
+      // Selection ring per Spec 08
+      if (thread.id === this.selectedThreadId) {
+        g.circle(thread.position.x, thread.position.y, r + 6);
+        g.stroke({ color: 0xffffff as ColorSource, width: 2, alpha: 0.9 });
+      }
+
+      // Search dimming per Spec 08: non-matching entities visually recede
+      if (this.searchActive && this.searchHighlightIds.size > 0) {
+        if (!this.searchHighlightIds.has(thread.id)) {
+          g.alpha = 0.2;
+        } else {
+          g.alpha = 1.0;
+        }
+      } else {
+        g.alpha = 1.0;
+      }
+
       // Label (only at operational zoom or higher)
       if (zoomLevel === "operational" || zoomLevel === "detail") {
         let label = this.threadLabels.get(thread.id);
@@ -290,6 +315,31 @@ export class MapRenderer {
 
   private onTick(deltaMS: number): void {
     this.pulseTime += deltaMS / 1000;
+
+    // Smooth camera animation per Spec 08
+    if (this.zoomAnimationTarget) {
+      const t = this.zoomAnimationTarget;
+      const dx = t.x - this.cameraX;
+      const dy = t.y - this.cameraY;
+      const dz = t.zoom - this.cameraZoom;
+
+      const speed = this.zoomAnimationSpeed * (deltaMS / 16.67); // normalize to 60fps
+      this.cameraX += dx * speed;
+      this.cameraY += dy * speed;
+      this.cameraZoom += dz * speed;
+
+      // Snap when close enough
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(dz) < 0.005) {
+        this.cameraX = t.x;
+        this.cameraY = t.y;
+        this.cameraZoom = t.zoom;
+        this.zoomAnimationTarget = null;
+      }
+
+      if (this.app) {
+        this.updateCamera(this.app.stage.children[0] as Container);
+      }
+    }
   }
 
   getApp(): Application | null {
@@ -303,5 +353,46 @@ export class MapRenderer {
       zoom: this.cameraZoom,
       level: this.getZoomLevel(),
     };
+  }
+
+  // Programmatic camera control for navigation system
+  setCamera(x: number, y: number, zoom: number): void {
+    this.cameraX = x;
+    this.cameraY = y;
+    this.cameraZoom = Math.max(0.1, Math.min(2.0, zoom));
+    if (this.app) {
+      this.updateCamera(this.app.stage.children[0] as Container);
+    }
+  }
+
+  // Smooth animated camera transition per Spec 08
+  animateTo(x: number, y: number, zoom: number): void {
+    this.zoomAnimationTarget = {
+      x,
+      y,
+      zoom: Math.max(0.1, Math.min(2.0, zoom)),
+    };
+  }
+
+  isAnimating(): boolean {
+    return this.zoomAnimationTarget !== null;
+  }
+
+  // Selection and search state (driven by viewport)
+  setSelectedThread(id: string | null): void {
+    this.selectedThreadId = id;
+  }
+
+  setSearchHighlight(ids: string[], active: boolean): void {
+    this.searchHighlightIds = new Set(ids);
+    this.searchActive = active;
+  }
+
+  getScreenWidth(): number {
+    return this.app?.screen.width ?? 0;
+  }
+
+  getScreenHeight(): number {
+    return this.app?.screen.height ?? 0;
   }
 }

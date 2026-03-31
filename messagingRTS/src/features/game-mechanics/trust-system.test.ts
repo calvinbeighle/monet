@@ -93,7 +93,7 @@ describe("Trust system", () => {
 
     it("does not decay within threshold", () => {
       const now = Date.now();
-      let record = createTrustRecord("test@example.com");
+      const record = createTrustRecord("test@example.com");
       record.score = 50;
       record.tier = "established";
       record.lastReplyTimestamp = now - 1 * HOUR; // recent reply
@@ -104,7 +104,7 @@ describe("Trust system", () => {
 
     it("decays when past 2x critical threshold", () => {
       const now = Date.now();
-      let record = createTrustRecord("test@example.com");
+      const record = createTrustRecord("test@example.com");
       record.score = 50;
       record.tier = "established";
       // existing-relationship critical = 48h, so 2x = 96h
@@ -118,7 +118,7 @@ describe("Trust system", () => {
 
     it("respects established floor protection after 30 days", () => {
       const now = Date.now();
-      let record = createTrustRecord("test@example.com");
+      const record = createTrustRecord("test@example.com");
       record.score = 52; // just above established minimum (50)
       record.tier = "established";
       record.tierEntryDate = now - 35 * DAY; // 35 days at tier (>30)
@@ -131,7 +131,7 @@ describe("Trust system", () => {
 
     it("does not protect new contacts from decay", () => {
       const now = Date.now();
-      let record = createTrustRecord("test@example.com");
+      const record = createTrustRecord("test@example.com");
       record.score = 30;
       record.tier = "building";
       record.tierEntryDate = now - 60 * DAY;

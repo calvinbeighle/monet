@@ -2,13 +2,14 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 216 tests passing.
-Tags: rts-v0.0.1 through rts-v0.0.7. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 277 tests passing.
+Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.6. Build, typecheck, lint all clean.
 
 **Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.2 Map Rendering,
-2.4 Zone System, 2.5 Drift Engine, 2.6 Clustering, 3.1-3.4 Game Mechanics, 4.1 Agent Units.
+2.3 Navigation (pan/zoom/keyboard/search/minimap), 2.4 Zone System, 2.5 Drift Engine,
+2.6 Clustering, 3.1-3.4 Game Mechanics, 4.1 Agent Units.
 
-**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 2.3 Navigation (keyboard/search),
+**Next priorities**: 1.2 Gmail OAuth, 1.4 Thread Fetching, 2.1 Application Shell Layout,
 4.2 Agent AI Backend, 4.3 Agent Deployment UI.
 
 ---
@@ -141,24 +142,24 @@ These must be resolved before implementation begins:
 
 ### 2.3 Navigation (Pan, Zoom, Levels)
 
-- [ ] Click-drag pan (map coordinate stays under cursor)
-- [ ] Edge scrolling during drag
-- [ ] Scroll wheel zoom (anchored to cursor position)
-- [ ] Pinch-to-zoom (trackpad)
-- [ ] Four zoom levels: Strategic, Tactical, Operational, Detail
-- [ ] Content visibility rules per zoom level
-- [ ] Smooth animated transitions between levels
-- [ ] Single-click thread selection (opens detail panel)
-- [ ] Double-click zoom to Detail view
-- [ ] Click cluster dot at Strategic -> zoom to Tactical
-- [ ] Minimap: viewport indicator, click-to-pan, drag-to-pan
-- [ ] Search: keyword/sender/label matching, highlight results, pan to first match, cycle through results
-- [ ] Quick-nav: zone labels clickable, keyboard shortcuts per zone
-- [ ] Back navigation (Escape returns to prior zoom/position)
-- [ ] Arrow key navigation between thread entities
-- [ ] Tab cycling through zone labels
-- [ ] **Spec**: 08-navigation
-- [ ] **Tests**: Pan accuracy, zoom anchor correctness, level transitions, selection state machine, search highlighting, back navigation, keyboard nav
+- [x] Click-drag pan (map coordinate stays under cursor)
+- [x] Edge scrolling during drag
+- [x] Scroll wheel zoom (anchored to cursor position)
+- [ ] Pinch-to-zoom (trackpad) -- deferred, requires touch event handling
+- [x] Four zoom levels: Strategic, Tactical, Operational, Detail
+- [x] Content visibility rules per zoom level (labels at operational+, cluster dots at strategic)
+- [x] Smooth animated transitions between levels
+- [x] Single-click thread selection (opens detail panel)
+- [x] Double-click zoom to Detail view
+- [x] Click cluster dot at Strategic -> zoom to Tactical
+- [x] Minimap: viewport indicator, click-to-pan, drag-to-pan
+- [x] Search: keyword/sender/label matching, highlight results, pan to first match, cycle through results
+- [x] Quick-nav: zone keyboard shortcuts (1-6)
+- [x] Back navigation (Escape returns to prior zoom/position)
+- [x] Arrow key navigation between thread entities (operational/detail only per spec)
+- [ ] Tab cycling through zone labels -- partially wired, needs shell-level integration
+- [x] **Spec**: 08-navigation
+- [x] **Tests**: Zoom level logic, search matching, keyboard nav, hit testing, coordinate transforms, edge scrolling, navigation store lifecycle (61 tests)
 
 ### 2.4 Zone System
 

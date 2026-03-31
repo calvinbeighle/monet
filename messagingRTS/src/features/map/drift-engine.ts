@@ -79,7 +79,7 @@ export function driftTick(
   const updated: Thread[] = [];
 
   for (const thread of threads) {
-    let t = { ...thread };
+    const t = { ...thread };
 
     // 1. Re-evaluate urgency and value scores
     t.urgencyScore = computeUrgencyScore(t, now);

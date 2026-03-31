@@ -27,11 +27,11 @@ function generateClusterId(): string {
 }
 
 // Compute affinity between two threads
-export function computeAffinity(a: Thread, b: Thread, now: number = Date.now()): AffinityScore {
+export function computeAffinity(a: Thread, b: Thread, _now: number = Date.now()): AffinityScore {
   const participantOverlap = computeParticipantOverlap(a, b);
   const topicKeywordOverlap = computeTopicOverlap(a, b);
   const sharedLabelScore = computeSharedLabels(a, b);
-  const temporalProximity = computeTemporalProximity(a, b, now);
+  const temporalProximity = computeTemporalProximity(a, b);
 
   const composite =
     participantOverlap * WEIGHT_PARTICIPANT +
@@ -132,7 +132,7 @@ function computeSharedLabels(a: Thread, b: Thread): number {
 }
 
 // Temporal proximity based on most recent activity
-function computeTemporalProximity(a: Thread, b: Thread, _now: number): number {
+function computeTemporalProximity(a: Thread, b: Thread): number {
   const timeDiff = Math.abs(a.latestMessageTimestamp - b.latestMessageTimestamp);
   if (timeDiff >= RECENCY_WINDOW_MS) return 0;
   return 1.0 - timeDiff / RECENCY_WINDOW_MS;
