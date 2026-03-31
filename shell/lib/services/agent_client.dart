@@ -346,6 +346,122 @@ class AgentClient {
     );
   }
 
+  // --- System integration ---
+
+  /// Get full system state (WiFi, volume, brightness).
+  Future<Map<String, dynamic>> systemState() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/system/state'));
+    if (response.statusCode != 200) {
+      throw Exception('Failed to get system state: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Get current WiFi status.
+  Future<Map<String, dynamic>> wifiStatus() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/system/wifi/status'));
+    if (response.statusCode != 200) {
+      throw Exception('WiFi status failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Scan for available WiFi networks.
+  Future<List<Map<String, dynamic>>> wifiScan() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/system/wifi/scan'));
+    if (response.statusCode != 200) {
+      throw Exception('WiFi scan failed: ${response.statusCode}');
+    }
+    return (jsonDecode(response.body) as List<dynamic>)
+        .cast<Map<String, dynamic>>();
+  }
+
+  /// Connect to a WiFi network.
+  Future<void> wifiConnect(String ssid, {String? password}) async {
+    final body = <String, dynamic>{'ssid': ssid};
+    if (password != null) body['password'] = password;
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/system/wifi/connect'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('WiFi connect failed: ${response.statusCode}');
+    }
+  }
+
+  /// Disconnect from WiFi.
+  Future<void> wifiDisconnect() async {
+    await _client.post(Uri.parse('$baseUrl/api/system/wifi/disconnect'));
+  }
+
+  /// Get current volume state.
+  Future<Map<String, dynamic>> volumeGet() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/system/volume'));
+    if (response.statusCode != 200) {
+      throw Exception('Volume get failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Set volume level (0-100).
+  Future<Map<String, dynamic>> volumeSet(int level) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/system/volume'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'level': level}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Volume set failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Toggle mute.
+  Future<Map<String, dynamic>> volumeMuteToggle() async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/system/volume/mute'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Mute toggle failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Get current brightness.
+  Future<Map<String, dynamic>> brightnessGet() async {
+    final response = await _client.get(Uri.parse('$baseUrl/api/system/brightness'));
+    if (response.statusCode != 200) {
+      throw Exception('Brightness get failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Set brightness level (0-100).
+  Future<Map<String, dynamic>> brightnessSet(int level) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/system/brightness'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'level': level}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Brightness set failed: ${response.statusCode}');
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// Execute a power action (shutdown, restart, suspend).
+  Future<void> powerAction(String action) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/system/power'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'action': action}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception('Power action failed: ${response.statusCode}');
+    }
+  }
+
   void dispose() {
     _client.close();
   }

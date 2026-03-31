@@ -1090,4 +1090,232 @@ void main() {
       client.dispose();
     });
   });
+
+  // -- SystemStatus tests --
+
+  group('SystemStatus', () {
+    test('defaults are sensible', () {
+      const status = SystemStatus();
+      expect(status.wifiConnected, false);
+      expect(status.wifiSsid, isNull);
+      expect(status.wifiSignal, 0);
+      expect(status.volumeLevel, 50);
+      expect(status.volumeMuted, false);
+      expect(status.brightnessLevel, 100);
+    });
+
+    test('fromJson parses full state', () {
+      final status = SystemStatus.fromJson({
+        'wifi': {
+          'connected': true,
+          'ssid': 'HomeNet',
+          'signal': 85,
+          'ip_address': '192.168.1.10',
+        },
+        'volume': {'level': 75, 'muted': false},
+        'brightness': {'level': 60, 'max_brightness': 1000},
+      });
+      expect(status.wifiConnected, true);
+      expect(status.wifiSsid, 'HomeNet');
+      expect(status.wifiSignal, 85);
+      expect(status.volumeLevel, 75);
+      expect(status.volumeMuted, false);
+      expect(status.brightnessLevel, 60);
+    });
+
+    test('fromJson handles empty map', () {
+      final status = SystemStatus.fromJson({});
+      expect(status.wifiConnected, false);
+      expect(status.volumeLevel, 50);
+      expect(status.brightnessLevel, 100);
+    });
+
+    test('fromJson handles partial data', () {
+      final status = SystemStatus.fromJson({
+        'wifi': {'connected': true, 'ssid': 'Test'},
+      });
+      expect(status.wifiConnected, true);
+      expect(status.wifiSsid, 'Test');
+      expect(status.volumeLevel, 50); // default
+    });
+  });
+
+  // -- StatusBar system controls tests --
+
+  group('StatusBar system controls', () {
+    testWidgets('renders WiFi indicator', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            systemStatus: const SystemStatus(wifiConnected: true, wifiSignal: 80),
+          ),
+        ),
+      ));
+      expect(find.byIcon(Icons.wifi), findsOneWidget);
+    });
+
+    testWidgets('renders WiFi off icon when disconnected', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            systemStatus: const SystemStatus(wifiConnected: false),
+          ),
+        ),
+      ));
+      expect(find.byIcon(Icons.wifi_off), findsOneWidget);
+    });
+
+    testWidgets('renders WiFi 2 bar for medium signal', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            systemStatus: const SystemStatus(wifiConnected: true, wifiSignal: 50),
+          ),
+        ),
+      ));
+      expect(find.byIcon(Icons.wifi_2_bar), findsOneWidget);
+    });
+
+    testWidgets('renders WiFi 1 bar for weak signal', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            systemStatus: const SystemStatus(wifiConnected: true, wifiSignal: 20),
+          ),
+        ),
+      ));
+      expect(find.byIcon(Icons.wifi_1_bar), findsOneWidget);
+    });
+
+    testWidgets('renders volume indicator with level', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            systemStatus: const SystemStatus(volumeLevel: 75),
+          ),
+        ),
+      ));
+      expect(find.text('75%'), findsOneWidget);
+      expect(find.byIcon(Icons.volume_up), findsOneWidget);
+    });
+
+    testWidgets('renders volume down icon for low volume', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            systemStatus: const SystemStatus(volumeLevel: 30),
+          ),
+        ),
+      ));
+      expect(find.text('30%'), findsOneWidget);
+      expect(find.byIcon(Icons.volume_down), findsOneWidget);
+    });
+
+    testWidgets('renders muted volume indicator', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            systemStatus: const SystemStatus(volumeLevel: 50, volumeMuted: true),
+          ),
+        ),
+      ));
+      expect(find.text('Mute'), findsOneWidget);
+      expect(find.byIcon(Icons.volume_off), findsOneWidget);
+    });
+
+    testWidgets('renders brightness indicator with level', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            systemStatus: const SystemStatus(brightnessLevel: 80),
+          ),
+        ),
+      ));
+      // Brightness shows percentage - note volume also shows a percentage
+      // so we check for brightness_high icon specifically
+      expect(find.byIcon(Icons.brightness_high), findsOneWidget);
+    });
+
+    testWidgets('renders brightness low icon for dim screen', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            systemStatus: const SystemStatus(brightnessLevel: 30),
+          ),
+        ),
+      ));
+      expect(find.byIcon(Icons.brightness_low), findsOneWidget);
+    });
+
+    testWidgets('renders power button', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            onPowerTap: () {},
+          ),
+        ),
+      ));
+      expect(find.byIcon(Icons.power_settings_new), findsOneWidget);
+    });
+
+    testWidgets('WiFi tap calls onWifiTap', (tester) async {
+      bool tapped = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            onWifiTap: () => tapped = true,
+          ),
+        ),
+      ));
+      await tester.tap(find.byIcon(Icons.wifi_off));
+      expect(tapped, true);
+    });
+
+    testWidgets('volume tap calls onVolumeTap', (tester) async {
+      bool tapped = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            onVolumeTap: () => tapped = true,
+            systemStatus: const SystemStatus(volumeLevel: 50),
+          ),
+        ),
+      ));
+      await tester.tap(find.byIcon(Icons.volume_up));
+      expect(tapped, true);
+    });
+
+    testWidgets('power tap calls onPowerTap', (tester) async {
+      bool tapped = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: StatusBar(
+            onPowerTap: () => tapped = true,
+          ),
+        ),
+      ));
+      await tester.tap(find.byIcon(Icons.power_settings_new));
+      expect(tapped, true);
+    });
+  });
+
+  // -- AgentClient system API methods --
+
+  group('AgentClient system methods', () {
+    test('system API methods exist', () {
+      final client = AgentClient();
+      expect(client.systemState, isA<Function>());
+      expect(client.wifiStatus, isA<Function>());
+      expect(client.wifiScan, isA<Function>());
+      expect(client.wifiConnect, isA<Function>());
+      expect(client.wifiDisconnect, isA<Function>());
+      expect(client.volumeGet, isA<Function>());
+      expect(client.volumeSet, isA<Function>());
+      expect(client.volumeMuteToggle, isA<Function>());
+      expect(client.brightnessGet, isA<Function>());
+      expect(client.brightnessSet, isA<Function>());
+      expect(client.powerAction, isA<Function>());
+      client.dispose();
+    });
+  });
 }

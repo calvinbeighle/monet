@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Monet
+Description=Monet OS boot splash - minimal dark theme with pulsing indicator
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/monet
+ScriptFile=/usr/share/plymouth/themes/monet/monet.script

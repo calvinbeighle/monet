@@ -36,7 +36,9 @@ apt-get install -y \
     wl-clipboard \
     libgtk-3-0 libglib2.0-0 \
     fonts-noto fonts-noto-color-emoji \
-    dbus-x11
+    dbus-x11 \
+    brightnessctl \
+    plymouth plymouth-themes
 
 # ---------------------------------------------------------------------------
 # 2. Create monet user if it does not exist
@@ -125,9 +127,71 @@ chown -R "$MONET_USER:$MONET_USER" "/home/$MONET_USER/.config"
 echo "Sway config deployed to $SWAY_CONFIG_DIR/config"
 
 # ---------------------------------------------------------------------------
-# 7. Configure auto-login via systemd getty override
+# 7. Configure Plymouth boot splash and quiet boot
 # ---------------------------------------------------------------------------
-echo "[7/7] Configuring auto-login..."
+echo "[7/9] Configuring Plymouth boot splash..."
+
+# Deploy Monet Plymouth theme
+PLYMOUTH_THEME_DIR="/usr/share/plymouth/themes/monet"
+mkdir -p "$PLYMOUTH_THEME_DIR"
+cp "$SCRIPT_DIR/plymouth/monet.plymouth" "$PLYMOUTH_THEME_DIR/monet.plymouth"
+cp "$SCRIPT_DIR/plymouth/monet.script" "$PLYMOUTH_THEME_DIR/monet.script"
+
+# Set Monet as default Plymouth theme
+plymouth-set-default-theme monet
+update-initramfs -u 2>/dev/null || true
+
+echo "Plymouth theme installed"
+
+echo "[8/9] Configuring quiet boot..."
+
+# Add quiet boot parameters to GRUB
+GRUB_DEFAULT="/etc/default/grub"
+if [[ -f "$GRUB_DEFAULT" ]]; then
+    # Set quiet boot parameters
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash loglevel=0 vt.global_cursor_default=0"/' "$GRUB_DEFAULT"
+    # Hide GRUB menu (boot directly)
+    sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' "$GRUB_DEFAULT"
+    update-grub 2>/dev/null || true
+    echo "GRUB configured for quiet boot"
+else
+    echo "WARNING: /etc/default/grub not found - skipping GRUB config"
+fi
+
+# Suppress kernel messages
+cat > /etc/sysctl.d/99-monet-quiet.conf << EOF
+# Suppress kernel messages on console (Monet OS)
+kernel.printk = 1 1 1 1
+EOF
+
+# ---------------------------------------------------------------------------
+# 8. Configure polkit for unprivileged power management
+# ---------------------------------------------------------------------------
+echo "[8.5/9] Configuring polkit for power management..."
+
+# Allow monet user to shutdown/restart/suspend without password
+mkdir -p /etc/polkit-1/rules.d
+cat > /etc/polkit-1/rules.d/50-monet-power.rules << 'POLKIT'
+// Allow monet user to manage power without authentication
+polkit.addRule(function(action, subject) {
+    if ((action.id == "org.freedesktop.login1.power-off" ||
+         action.id == "org.freedesktop.login1.power-off-multiple-sessions" ||
+         action.id == "org.freedesktop.login1.reboot" ||
+         action.id == "org.freedesktop.login1.reboot-multiple-sessions" ||
+         action.id == "org.freedesktop.login1.suspend" ||
+         action.id == "org.freedesktop.login1.suspend-multiple-sessions") &&
+        subject.user == "monet") {
+        return polkit.Result.YES;
+    }
+});
+POLKIT
+
+echo "Polkit rules installed for power management"
+
+# ---------------------------------------------------------------------------
+# 9. Configure auto-login via systemd getty override
+# ---------------------------------------------------------------------------
+echo "[9/9] Configuring auto-login..."
 
 GETTY_DIR="/etc/systemd/system/getty@tty1.service.d"
 mkdir -p "$GETTY_DIR"

@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Task 19 complete - 319 passing tests (247 Python + 72 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Tasks 19-21 complete - 383 passing tests (293 Python + 90 Flutter).**
 
 ---
 
@@ -199,11 +199,13 @@ Debian VM boots directly into Monet.
 
 ### Task 21: System Integration
 
-- [ ] WiFi management via NetworkManager DBus API
-- [ ] Volume/brightness controls
-- [ ] Shutdown/restart from shell
-- [ ] Plymouth boot splash with Monet branding
-- [ ] Suppress kernel messages (quiet boot)
+- [x] WiFi management via NetworkManager (nmcli - scan, connect, disconnect, status; API endpoints + Flutter WiFi sheet)
+- [x] Volume/brightness controls (wpctl for PipeWire volume, brightnessctl for display; API endpoints + status bar indicators)
+- [x] Shutdown/restart from shell (systemctl power actions via API + Flutter power menu dialog; polkit rules for unprivileged access)
+- [x] Plymouth boot splash with Monet branding (monet.plymouth + monet.script - dark theme with pulsing dot, installed via install.sh)
+- [x] Suppress kernel messages (quiet boot - GRUB quiet splash loglevel=0, sysctl kernel.printk=1, vt.global_cursor_default=0)
+- [x] Sway hardware key bindings for volume (XF86Audio*) and brightness (XF86MonBrightness*)
+- [ ] Boot flow: needs VM testing to verify Plymouth + quiet boot + Sway auto-start end-to-end
 
 ### Task 22: Image Build Script
 
@@ -313,6 +315,13 @@ Debian VM boots directly into Monet.
 - **systemd service implemented:** `os/monet-agent.service` runs uvicorn on localhost:8000 with security hardening (NoNewPrivileges, ProtectSystem=strict, PrivateTmp, etc.), reads .env for API keys, restarts on failure with backoff, 512M memory limit.
 - **Diff syntax highlighting implemented (Task 10):** `SyntaxHighlighter` class in `shell/lib/ui/patterns/diff.dart` - lightweight regex-based tokenizer that highlights keywords (blue, VS Code-style), strings (warm orange), comments (muted green), numbers (light green), and decorators/annotations (yellow). Covers keywords from Python, JS/TS, Dart, Go, Rust, Java, C. No external dependencies - pure Dart regex. `DiffPattern` now uses `RichText` with `TextSpan` children instead of plain `Text` widgets.
 - **Test count:** 319 total (247 Python + 72 Flutter), all passing.
+
+### Implementation Notes (2026-03-30) - Batch 12
+
+- **System integration implemented (Task 21):** Full WiFi, volume, brightness, and power management stack. Backend: `agent/system.py` SystemManager class wraps nmcli (WiFi scan/connect/disconnect/status), wpctl (PipeWire volume get/set/mute), brightnessctl (display brightness get/set), and systemctl (shutdown/restart/suspend). All methods gracefully degrade when tools are missing (returns safe defaults). 11 new API endpoints under `/api/system/`.
+- **Flutter system controls:** StatusBar now shows real-time WiFi signal strength (3 tiers), volume level with mute toggle, brightness level, and power button. WiFi tap opens a bottom sheet with network scan, password dialog, and connect. Power tap opens a dialog with shutdown/restart/suspend options. System state polled every 10 seconds.
+- **OS layer updates:** Sway config adds XF86Audio* and XF86MonBrightness* hardware key bindings. install.sh now installs brightnessctl and plymouth. Plymouth theme (monet.plymouth + monet.script) renders dark background (#0A0A0F) with "M O N E T" text and pulsing dot. GRUB configured for quiet boot (quiet splash loglevel=0 vt.global_cursor_default=0). Kernel printk suppressed via sysctl. Polkit rules allow monet user to shutdown/restart/suspend without password.
+- **Test count:** 383 total (293 Python + 90 Flutter), all passing.
 
 ---
 

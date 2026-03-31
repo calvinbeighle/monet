@@ -1,0 +1,45 @@
+// Monet OS Plymouth boot splash script.
+// Minimal dark background (#0A0A0F) with a pulsing dot indicator.
+
+Window.SetBackgroundTopColor(0.04, 0.04, 0.06);
+Window.SetBackgroundBottomColor(0.04, 0.04, 0.06);
+
+// Monet branding text
+monet_text = Sprite();
+monet_text_image = Image.Text("M O N E T", 0.49, 0.43, 0.94, 1, "Sans 24");
+monet_text.SetImage(monet_text_image);
+monet_text.SetX(Window.GetWidth() / 2 - monet_text_image.GetWidth() / 2);
+monet_text.SetY(Window.GetHeight() / 2 - 40);
+
+// Pulsing progress dot
+dot = Sprite();
+progress_val = 0;
+direction = 1;
+
+fun refresh_callback() {
+    // Pulse opacity between 0.3 and 1.0
+    progress_val += direction * 0.02;
+    if (progress_val >= 1.0) {
+        progress_val = 1.0;
+        direction = -1;
+    }
+    if (progress_val <= 0.3) {
+        progress_val = 0.3;
+        direction = 1;
+    }
+
+    dot_image = Image.Text(".", 0.49, 0.43, 0.94, 1, "Sans 48");
+    dot.SetImage(dot_image);
+    dot.SetX(Window.GetWidth() / 2 - dot_image.GetWidth() / 2);
+    dot.SetY(Window.GetHeight() / 2 + 20);
+    dot.SetOpacity(progress_val);
+}
+
+Plymouth.SetRefreshFunction(refresh_callback);
+
+// Hide detailed boot messages
+fun message_callback(text) {
+    // Suppress all boot text messages
+}
+
+Plymouth.SetMessageFunction(message_callback);

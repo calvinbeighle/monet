@@ -14,6 +14,7 @@ from agent.auth import AuthStore, UserExistsError
 from agent.models import ApprovalStatus
 from agent.runner import AgentRunner
 from agent.session_store import DEFAULT_DB_PATH
+from agent.system import SystemManager
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s"
@@ -25,6 +26,7 @@ app = FastAPI(title="Monet Agent Backend", version="0.1.0")
 approval_gate = ApprovalGate()
 runner = AgentRunner(approval_gate=approval_gate)
 auth_store = AuthStore(db_path=DEFAULT_DB_PATH)
+system_mgr = SystemManager()
 
 
 class RunRequest(BaseModel):
@@ -190,3 +192,123 @@ def logout(token: str):
     if not revoked:
         raise HTTPException(status_code=404, detail="Token not found")
     return {"status": "logged_out"}
+
+
+# --- System integration routes ---
+
+
+@app.get("/api/system/state")
+def system_state():
+    """Get full system state (WiFi, volume, brightness)."""
+    from dataclasses import asdict as _asdict
+
+    return _asdict(system_mgr.get_state())
+
+
+@app.get("/api/system/wifi/status")
+def wifi_status():
+    """Get current WiFi connection status."""
+    from dataclasses import asdict as _asdict
+
+    return _asdict(system_mgr.wifi_status())
+
+
+@app.get("/api/system/wifi/scan")
+def wifi_scan():
+    """Scan for available WiFi networks."""
+    from dataclasses import asdict as _asdict
+
+    return [_asdict(n) for n in system_mgr.wifi_scan()]
+
+
+class WifiConnectRequest(BaseModel):
+    ssid: str
+    password: Optional[str] = None
+
+
+@app.post("/api/system/wifi/connect")
+def wifi_connect(request: WifiConnectRequest):
+    """Connect to a WiFi network."""
+    success = system_mgr.wifi_connect(request.ssid, request.password)
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to connect to WiFi network")
+    return {"status": "connected", "ssid": request.ssid}
+
+
+@app.post("/api/system/wifi/disconnect")
+def wifi_disconnect():
+    """Disconnect from the current WiFi network."""
+    success = system_mgr.wifi_disconnect()
+    return {"status": "disconnected" if success else "failed"}
+
+
+@app.get("/api/system/volume")
+def volume_get():
+    """Get current volume level and mute state."""
+    from dataclasses import asdict as _asdict
+
+    return _asdict(system_mgr.volume_get())
+
+
+class VolumeSetRequest(BaseModel):
+    level: int
+
+
+@app.post("/api/system/volume")
+def volume_set(request: VolumeSetRequest):
+    """Set volume to a percentage (0-100)."""
+    from dataclasses import asdict as _asdict
+
+    return _asdict(system_mgr.volume_set(request.level))
+
+
+@app.post("/api/system/volume/mute")
+def volume_mute_toggle():
+    """Toggle mute on the default audio sink."""
+    from dataclasses import asdict as _asdict
+
+    return _asdict(system_mgr.volume_mute_toggle())
+
+
+@app.get("/api/system/brightness")
+def brightness_get():
+    """Get current display brightness."""
+    from dataclasses import asdict as _asdict
+
+    return _asdict(system_mgr.brightness_get())
+
+
+class BrightnessSetRequest(BaseModel):
+    level: int
+
+
+@app.post("/api/system/brightness")
+def brightness_set(request: BrightnessSetRequest):
+    """Set brightness to a percentage (0-100)."""
+    from dataclasses import asdict as _asdict
+
+    return _asdict(system_mgr.brightness_set(request.level))
+
+
+class PowerAction(BaseModel):
+    action: str  # "shutdown", "restart", "suspend"
+
+
+@app.post("/api/system/power")
+def power_action(request: PowerAction):
+    """Execute a power action (shutdown, restart, suspend)."""
+    actions = {
+        "shutdown": system_mgr.power_shutdown,
+        "restart": system_mgr.power_restart,
+        "suspend": system_mgr.power_suspend,
+    }
+    fn = actions.get(request.action)
+    if fn is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid power action: {request.action}. Use: shutdown, restart, suspend",
+        )
+    success = fn()
+    if not success:
+        raise HTTPException(status_code=500, detail="Power action failed")
+    return {"status": request.action}

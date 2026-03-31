@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+
 import 'services/agent_client.dart';
 import 'ui/approval_overlay.dart';
 import 'ui/onboarding.dart';
@@ -138,10 +139,130 @@ class MonetShellState extends State<MonetShell> {
 
   StreamSubscription<AgentEvent>? _streamSub;
 
+  // System state (WiFi, volume, brightness)
+  SystemStatus _systemStatus = const SystemStatus();
+  Timer? _systemPollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _pollSystemState();
+    // Poll system state every 10 seconds
+    _systemPollTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _pollSystemState(),
+    );
+  }
+
+  Future<void> _pollSystemState() async {
+    try {
+      final client = context.read<AgentClient>();
+      final state = await client.systemState();
+      if (mounted) {
+        setState(() {
+          _systemStatus = SystemStatus.fromJson(state);
+        });
+      }
+    } catch (_) {
+      // Backend unreachable - keep last known state
+    }
+  }
+
+  void _handleWifiTap() {
+    // Show WiFi network list in a bottom sheet
+    final client = context.read<AgentClient>();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF12121A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (ctx) => _WifiSheet(client: client, onChanged: _pollSystemState),
+    );
+  }
+
+  void _handleVolumeTap() async {
+    final client = context.read<AgentClient>();
+    try {
+      final result = await client.volumeMuteToggle();
+      if (mounted) {
+        setState(() {
+          _systemStatus = SystemStatus(
+            wifiConnected: _systemStatus.wifiConnected,
+            wifiSsid: _systemStatus.wifiSsid,
+            wifiSignal: _systemStatus.wifiSignal,
+            volumeLevel: result['level'] as int? ?? _systemStatus.volumeLevel,
+            volumeMuted: result['muted'] as bool? ?? !_systemStatus.volumeMuted,
+            brightnessLevel: _systemStatus.brightnessLevel,
+          );
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _handleVolumeChanged(int level) async {
+    final client = context.read<AgentClient>();
+    try {
+      await client.volumeSet(level);
+      _pollSystemState();
+    } catch (_) {}
+  }
+
+  void _handleBrightnessChanged(int level) async {
+    final client = context.read<AgentClient>();
+    try {
+      await client.brightnessSet(level);
+      _pollSystemState();
+    } catch (_) {}
+  }
+
+  void _handlePowerTap() {
+    final client = context.read<AgentClient>();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF12121A),
+        title: Text('Power', style: TextStyle(color: Colors.white.withValues(alpha: 0.8))),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PowerOption(
+              icon: Icons.power_settings_new,
+              label: 'Shutdown',
+              onTap: () {
+                Navigator.of(ctx).pop();
+                client.powerAction('shutdown');
+              },
+            ),
+            const SizedBox(height: 8),
+            _PowerOption(
+              icon: Icons.restart_alt,
+              label: 'Restart',
+              onTap: () {
+                Navigator.of(ctx).pop();
+                client.powerAction('restart');
+              },
+            ),
+            const SizedBox(height: 8),
+            _PowerOption(
+              icon: Icons.bedtime,
+              label: 'Suspend',
+              onTap: () {
+                Navigator.of(ctx).pop();
+                client.powerAction('suspend');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _intentController.dispose();
     _streamSub?.cancel();
+    _systemPollTimer?.cancel();
     super.dispose();
   }
 
@@ -567,6 +688,12 @@ class MonetShellState extends State<MonetShell> {
             activeAgent: _isRunning ? _activeAgent : null,
             activePattern: _activePattern,
             onLogout: widget.onLogout,
+            systemStatus: _systemStatus,
+            onWifiTap: _handleWifiTap,
+            onVolumeTap: _handleVolumeTap,
+            onVolumeChanged: _handleVolumeChanged,
+            onBrightnessChanged: _handleBrightnessChanged,
+            onPowerTap: _handlePowerTap,
           ),
         ],
       ),
@@ -740,4 +867,203 @@ class _PendingApproval {
     required this.toolName,
     required this.parameters,
   });
+}
+
+/// WiFi network list bottom sheet.
+class _WifiSheet extends StatefulWidget {
+  final AgentClient client;
+  final VoidCallback onChanged;
+
+  const _WifiSheet({required this.client, required this.onChanged});
+
+  @override
+  State<_WifiSheet> createState() => _WifiSheetState();
+}
+
+class _WifiSheetState extends State<_WifiSheet> {
+  List<Map<String, dynamic>> _networks = [];
+  bool _scanning = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scan();
+  }
+
+  Future<void> _scan() async {
+    setState(() => _scanning = true);
+    try {
+      final networks = await widget.client.wifiScan();
+      if (mounted) setState(() { _networks = networks; _scanning = false; });
+    } catch (_) {
+      if (mounted) setState(() => _scanning = false);
+    }
+  }
+
+  Future<void> _connect(String ssid, String security) async {
+    String? password;
+    if (security != 'Open' && security.isNotEmpty) {
+      password = await _showPasswordDialog(ssid);
+      if (password == null) return; // cancelled
+    }
+    try {
+      await widget.client.wifiConnect(ssid, password: password);
+      widget.onChanged();
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to connect: $e')),
+        );
+      }
+    }
+  }
+
+  Future<String?> _showPasswordDialog(String ssid) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF12121A),
+        title: Text('Connect to $ssid',
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 16)),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: InputDecoration(
+            hintText: 'Password',
+            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+          ),
+          autofocus: true,
+          onSubmitted: (v) => Navigator.of(ctx).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('Cancel', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            child: const Text('Connect', style: TextStyle(color: Color(0xFF7C6EF0))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Text('WiFi Networks',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500)),
+                const Spacer(),
+                if (_scanning)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Color(0xFF7C6EF0)),
+                  )
+                else
+                  GestureDetector(
+                    onTap: _scan,
+                    child: Icon(Icons.refresh,
+                        size: 18, color: Colors.white.withValues(alpha: 0.5)),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_networks.isEmpty && !_scanning)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text('No networks found',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.4))),
+            )
+          else
+            ...List.generate(
+              _networks.length > 8 ? 8 : _networks.length,
+              (i) {
+                final net = _networks[i];
+                final ssid = net['ssid'] as String? ?? '';
+                final signal = net['signal'] as int? ?? 0;
+                final security = net['security'] as String? ?? '';
+                final connected = net['connected'] as bool? ?? false;
+                return ListTile(
+                  dense: true,
+                  leading: Icon(
+                    signal >= 70 ? Icons.wifi : signal >= 40 ? Icons.wifi_2_bar : Icons.wifi_1_bar,
+                    size: 18,
+                    color: connected
+                        ? const Color(0xFF7C6EF0)
+                        : Colors.white.withValues(alpha: 0.5),
+                  ),
+                  title: Text(ssid,
+                      style: TextStyle(
+                          color: connected
+                              ? const Color(0xFF7C6EF0)
+                              : Colors.white.withValues(alpha: 0.8),
+                          fontSize: 14)),
+                  subtitle: Text(
+                    connected ? 'Connected' : security,
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
+                  ),
+                  trailing: connected
+                      ? Icon(Icons.check, size: 16, color: const Color(0xFF7C6EF0))
+                      : null,
+                  onTap: connected ? null : () => _connect(ssid, security),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Power menu option row.
+class _PowerOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _PowerOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: Colors.white.withValues(alpha: 0.6)),
+            const SizedBox(width: 12),
+            Text(label,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.8), fontSize: 14)),
+          ],
+        ),
+      ),
+    );
+  }
 }
