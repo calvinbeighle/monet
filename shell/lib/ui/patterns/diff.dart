@@ -14,6 +14,84 @@ class DiffLine {
   });
 }
 
+/// Lightweight syntax highlighter for code diffs.
+/// Handles keywords, strings, comments, numbers, and annotations
+/// across common languages (Python, JS/TS, Dart, Go, Rust, Java, C).
+class SyntaxHighlighter {
+  static const _keywords = {
+    'if', 'else', 'elif', 'for', 'while', 'do', 'switch', 'case', 'break',
+    'continue', 'return', 'yield', 'throw', 'try', 'catch', 'finally',
+    'except', 'raise', 'with', 'match',
+    'class', 'function', 'def', 'fn', 'func', 'var', 'let', 'const', 'final',
+    'static', 'async', 'await', 'import', 'from', 'export', 'package',
+    'struct', 'enum', 'interface', 'type', 'typedef', 'impl', 'trait', 'pub',
+    'abstract', 'extends', 'implements', 'override', 'super', 'this', 'self',
+    'new', 'delete', 'void', 'int', 'float', 'double', 'bool', 'String',
+    'string', 'List', 'Map', 'Set', 'dict', 'list', 'tuple',
+    'true', 'false', 'null', 'None', 'nil', 'undefined', 'True', 'False',
+    'private', 'protected', 'public', 'readonly', 'required', 'late',
+    'in', 'is', 'as', 'not', 'and', 'or', 'lambda',
+  };
+
+  static final _tokenPattern = RegExp(
+    r'"(?:[^"\\]|\\.)*"'     // double-quoted strings
+    r"|'(?:[^'\\]|\\.)*'"    // single-quoted strings
+    r'|//.*|#.*'             // line comments
+    r'|\b\d+\.?\d*(?:[eE][+-]?\d+)?\b' // numbers
+    r'|@\w+'                 // annotations/decorators
+    r'|\b[a-zA-Z_]\w*\b'    // identifiers
+  );
+
+  /// Tokenize a line of code into styled spans.
+  static List<TextSpan> highlight(String code, Color baseColor) {
+    if (code.isEmpty) return [TextSpan(text: code, style: TextStyle(color: baseColor))];
+
+    final spans = <TextSpan>[];
+    final pattern = _tokenPattern;
+
+    int lastEnd = 0;
+    for (final match in pattern.allMatches(code)) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(
+          text: code.substring(lastEnd, match.start),
+          style: TextStyle(color: baseColor),
+        ));
+      }
+
+      final text = match.group(0)!;
+      final firstChar = text[0];
+      Color color;
+
+      if (firstChar == '"' || firstChar == "'") {
+        color = const Color(0xFFCE9178); // warm orange - strings
+      } else if (firstChar == '/' || firstChar == '#') {
+        color = const Color(0xFF6A9955); // muted green - comments
+      } else if (firstChar == '@') {
+        color = const Color(0xFFDCDCAA); // yellow - decorators
+      } else if (firstChar.codeUnitAt(0) >= 48 && firstChar.codeUnitAt(0) <= 57) {
+        color = const Color(0xFFB5CEA8); // light green - numbers
+      } else if (_keywords.contains(text)) {
+        color = const Color(0xFF569CD6); // blue - keywords
+      } else {
+        color = baseColor;
+      }
+
+      spans.add(TextSpan(text: text, style: TextStyle(color: color)));
+      lastEnd = match.end;
+    }
+
+    // Remaining text after last match
+    if (lastEnd < code.length) {
+      spans.add(TextSpan(
+        text: code.substring(lastEnd),
+        style: TextStyle(color: baseColor),
+      ));
+    }
+
+    return spans;
+  }
+}
+
 class DiffPattern extends StatefulWidget {
   final List<DiffLine> lines;
   final String leftTitle;
@@ -133,15 +211,15 @@ class _DiffPatternState extends State<DiffPattern> {
                   color: _leftBackground(line.type),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  child: Text(
-                    line.left ?? '',
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                      color: line.type == DiffType.removed ||
-                              line.type == DiffType.modified
-                          ? Colors.red.shade300
-                          : Colors.white70,
+                  child: RichText(
+                    text: TextSpan(
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                      children: SyntaxHighlighter.highlight(
+                        line.left ?? '',
+                        line.type == DiffType.removed || line.type == DiffType.modified
+                            ? Colors.red.shade300
+                            : Colors.white70,
+                      ),
                     ),
                   ),
                 ),
@@ -155,15 +233,15 @@ class _DiffPatternState extends State<DiffPattern> {
                   color: _rightBackground(line.type),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                  child: Text(
-                    line.right ?? '',
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                      color: line.type == DiffType.added ||
-                              line.type == DiffType.modified
-                          ? Colors.green.shade300
-                          : Colors.white70,
+                  child: RichText(
+                    text: TextSpan(
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                      children: SyntaxHighlighter.highlight(
+                        line.right ?? '',
+                        line.type == DiffType.added || line.type == DiffType.modified
+                            ? Colors.green.shade300
+                            : Colors.white70,
+                      ),
                     ),
                   ),
                 ),

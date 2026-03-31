@@ -588,8 +588,8 @@ void main() {
           ),
         ),
       ));
-      expect(find.text('old line'), findsOneWidget);
-      expect(find.text('new line'), findsOneWidget);
+      expect(find.text('old line', findRichText: true), findsOneWidget);
+      expect(find.text('new line', findRichText: true), findsOneWidget);
     });
 
     testWidgets('renders action buttons when onDecision provided', (tester) async {
@@ -640,6 +640,125 @@ void main() {
         ),
       ));
       expect(find.text('Approve All'), findsNothing);
+    });
+
+    testWidgets('syntax highlights keywords in diff lines', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: DiffPattern(
+            lines: const [
+              DiffLine(
+                left: 'def hello():',
+                right: 'async def hello():',
+                type: DiffType.modified,
+              ),
+            ],
+          ),
+        ),
+      ));
+      // Lines render via RichText with syntax highlighting
+      expect(find.text('def hello():', findRichText: true), findsOneWidget);
+      expect(find.text('async def hello():', findRichText: true), findsOneWidget);
+      // Verify RichText is used (not plain Text) for syntax highlighting
+      expect(find.byType(RichText), findsWidgets);
+    });
+
+    testWidgets('syntax highlights strings and comments', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: DiffPattern(
+            lines: const [
+              DiffLine(
+                left: 'x = "hello" # comment',
+                right: 'x = "world" # updated',
+                type: DiffType.modified,
+              ),
+            ],
+          ),
+        ),
+      ));
+      expect(find.text('x = "hello" # comment', findRichText: true), findsOneWidget);
+      expect(find.text('x = "world" # updated', findRichText: true), findsOneWidget);
+    });
+  });
+
+  // -- SyntaxHighlighter unit tests --
+
+  group('SyntaxHighlighter', () {
+    test('highlights keywords with blue color', () {
+      final spans = SyntaxHighlighter.highlight('if x return', Colors.white70);
+      // Should have spans for 'if', ' ', 'x', ' ', 'return'
+      final keywordSpans = spans.where(
+        (s) => s.style?.color == const Color(0xFF569CD6),
+      ).toList();
+      expect(keywordSpans.length, 2); // 'if' and 'return'
+      expect(keywordSpans[0].text, 'if');
+      expect(keywordSpans[1].text, 'return');
+    });
+
+    test('highlights string literals with orange color', () {
+      final spans = SyntaxHighlighter.highlight('x = "hello"', Colors.white70);
+      final stringSpans = spans.where(
+        (s) => s.style?.color == const Color(0xFFCE9178),
+      ).toList();
+      expect(stringSpans.length, 1);
+      expect(stringSpans[0].text, '"hello"');
+    });
+
+    test('highlights comments with green color', () {
+      final spans = SyntaxHighlighter.highlight('x = 1 // comment', Colors.white70);
+      final commentSpans = spans.where(
+        (s) => s.style?.color == const Color(0xFF6A9955),
+      ).toList();
+      expect(commentSpans.length, 1);
+      expect(commentSpans[0].text, '// comment');
+    });
+
+    test('highlights hash comments', () {
+      final spans = SyntaxHighlighter.highlight('x = 1 # python comment', Colors.white70);
+      final commentSpans = spans.where(
+        (s) => s.style?.color == const Color(0xFF6A9955),
+      ).toList();
+      expect(commentSpans.length, 1);
+      expect(commentSpans[0].text, '# python comment');
+    });
+
+    test('highlights numbers with light green color', () {
+      final spans = SyntaxHighlighter.highlight('x = 42', Colors.white70);
+      final numSpans = spans.where(
+        (s) => s.style?.color == const Color(0xFFB5CEA8),
+      ).toList();
+      expect(numSpans.length, 1);
+      expect(numSpans[0].text, '42');
+    });
+
+    test('highlights decorators with yellow color', () {
+      final spans = SyntaxHighlighter.highlight('@override', Colors.white70);
+      final decoratorSpans = spans.where(
+        (s) => s.style?.color == const Color(0xFFDCDCAA),
+      ).toList();
+      expect(decoratorSpans.length, 1);
+      expect(decoratorSpans[0].text, '@override');
+    });
+
+    test('returns base color for non-keyword identifiers', () {
+      final spans = SyntaxHighlighter.highlight('myVariable', Colors.white70);
+      expect(spans.length, 1);
+      expect(spans[0].style?.color, Colors.white70);
+      expect(spans[0].text, 'myVariable');
+    });
+
+    test('handles empty string', () {
+      final spans = SyntaxHighlighter.highlight('', Colors.white70);
+      expect(spans.length, 1);
+      expect(spans[0].text, '');
+    });
+
+    test('preserves non-matched characters', () {
+      final spans = SyntaxHighlighter.highlight('a + b', Colors.white70);
+      // 'a', ' + ', 'b' - operators and spaces preserved
+      final fullText = spans.map((s) => s.text).join();
+      expect(fullText, 'a + b');
     });
   });
 

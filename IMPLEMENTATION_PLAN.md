@@ -4,7 +4,7 @@
 > AI agents (Claude Agent SDK + Nango), 4 dynamic UI patterns, and approval gates.
 >
 > Source of truth: `docs/plans/2026-03-29-monet-mvp.md`
-> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete - 308 passing tests (247 Python + 61 Flutter).**
+> Status: **Phase 1 complete, Phase 2 complete, Phase 3 complete, Phase 4 Task 19 complete - 319 passing tests (247 Python + 72 Flutter).**
 
 ---
 
@@ -105,7 +105,7 @@ Flutter shell with all 4 UI patterns. Runs on Mac for dev, targets Linux aarch64
 
 - [x] Create `shell/lib/ui/patterns/diff.dart`
 - [x] Side-by-side text comparison
-- [ ] Syntax highlighting
+- [x] Syntax highlighting
 - [x] Color-coded added/removed/modified lines
 - [x] "Approve All" / "Reject All" buttons
 
@@ -181,12 +181,12 @@ Debian VM boots directly into Monet.
 
 ### Task 19: Debian VM Setup
 
-- [ ] Create `os/strip.sh` - remove GNOME, GDM, desktop apps; keep kernel, systemd, apt, NetworkManager, PipeWire
-- [ ] Create `os/install.sh` - install Sway, compile Flutter shell for aarch64, deploy agent backend
-- [ ] Create `os/sway.config` - launch Flutter shell fullscreen, no decorations, no bar
-- [ ] Create `os/monet-agent.service` - systemd unit for agent backend
-- [ ] Auto-login user
-- [ ] Boot flow: power on -> Debian -> auto-login -> Sway -> Monet shell fullscreen
+- [x] Create `os/strip.sh` - remove GNOME, GDM, desktop apps; keep kernel, systemd, apt, NetworkManager, PipeWire
+- [x] Create `os/install.sh` - install Sway, compile Flutter shell for aarch64, deploy agent backend
+- [x] Create `os/sway.config` - launch Flutter shell fullscreen, no decorations, no bar
+- [x] Create `os/monet-agent.service` - systemd unit for agent backend
+- [x] Auto-login user (configured via systemd getty override in install.sh)
+- [ ] Boot flow: power on -> Debian -> auto-login -> Sway -> Monet shell fullscreen (needs VM testing)
 
 ### Task 20: First-Boot Onboarding and Login
 
@@ -297,20 +297,37 @@ Debian VM boots directly into Monet.
 - **Logout wired end-to-end:** StatusBar has a logout button that calls /api/auth/logout to revoke the token server-side, then clears local storage and returns to the login screen.
 - **Test count:** 277 total (219 Python + 58 Flutter), all passing.
 
+### Implementation Notes (2026-03-30) - Batch 10
+
+- **Cross-pattern flow implemented end-to-end:** `FlowStep` and `FlowPlan` data models in `agent/models.py`. `IntentRouter.route_flow()` detects compound intents via keyword regex rules (3 flow rules: plan+inbox -> whiteboard->tinder->chat, review+fix -> diff->chat, brainstorm+prioritize -> whiteboard->tinder). `AgentRunner.stream_flow()` orchestrates multi-step execution with user-advance gates (threading.Event) between steps. State carries forward via `carry_map` on FlowStep (e.g., whiteboard nodes become tinder cards). New events: `flow_start`, `pattern_transition`, `flow_done`. `/api/flow/advance` endpoint signals user readiness. Flutter shell renders flow progress bar with step indicators and "Continue" button, handles all new events, auto-populates pattern data from carried state.
+- **`_stream_step` extracted:** Core streaming agent loop factored out of `stream_sync` into `_stream_step` so both single-step and multi-step paths share the same agent execution logic without duplication.
+- **API stream endpoint updated:** `/api/stream` now uses `stream_flow()` which transparently handles both single-step (delegates to `stream_sync`) and multi-step flows.
+- **Test count:** 308 total (247 Python + 61 Flutter), all passing.
+
+---
+
+### Implementation Notes (2026-03-30) - Batch 11
+
+- **Debian VM setup scripts implemented (Task 19):** `os/strip.sh` removes GNOME, GDM, X11, desktop apps, and unnecessary services from stock Debian 12. Keeps kernel, systemd, apt, NetworkManager, PipeWire, Python 3, SSH. `os/install.sh` installs Sway and Wayland stack, creates monet user, deploys agent backend in a Python venv at /opt/monet, copies pre-built Flutter shell binary, installs systemd service, configures Sway, and sets up auto-login via getty override + bash_profile Sway auto-start on tty1.
+- **Sway config implemented:** `os/sway.config` launches Flutter shell fullscreen with no decorations, no status bar, no titlebars. Background color matches Monet theme (#0A0A0F). Includes swayidle for lock/power-off, essential keybindings only (emergency terminal, reload, exit/shutdown/restart dialog). Input configured for natural scrolling touchpad.
+- **systemd service implemented:** `os/monet-agent.service` runs uvicorn on localhost:8000 with security hardening (NoNewPrivileges, ProtectSystem=strict, PrivateTmp, etc.), reads .env for API keys, restarts on failure with backoff, 512M memory limit.
+- **Diff syntax highlighting implemented (Task 10):** `SyntaxHighlighter` class in `shell/lib/ui/patterns/diff.dart` - lightweight regex-based tokenizer that highlights keywords (blue, VS Code-style), strings (warm orange), comments (muted green), numbers (light green), and decorators/annotations (yellow). Covers keywords from Python, JS/TS, Dart, Go, Rust, Java, C. No external dependencies - pure Dart regex. `DiffPattern` now uses `RichText` with `TextSpan` children instead of plain `Text` widgets.
+- **Test count:** 319 total (247 Python + 72 Flutter), all passing.
+
 ---
 
 ## Architecture Notes
 
-| Layer           | Choice                              | Status      |
-| --------------- | ----------------------------------- | ----------- |
-| Base OS         | Debian 12 aarch64 (stripped)        | Not started |
-| Compositor      | Sway                                | Not started |
-| Shell UI        | Flutter (native Wayland client)     | Implemented |
-| Agent backend   | Python + FastAPI                    | Implemented |
-| Agent framework | Claude Agent SDK                    | Implemented |
-| Integrations    | Nango (managed OAuth, Gmail/GitHub) | Implemented |
-| State           | SQLite                              | Implemented |
-| IPC             | Unix socket / HTTP localhost        | Implemented |
+| Layer           | Choice                              | Status                        |
+| --------------- | ----------------------------------- | ----------------------------- |
+| Base OS         | Debian 12 aarch64 (stripped)        | Scripts ready (needs VM test) |
+| Compositor      | Sway                                | Config ready (needs VM test)  |
+| Shell UI        | Flutter (native Wayland client)     | Implemented                   |
+| Agent backend   | Python + FastAPI                    | Implemented                   |
+| Agent framework | Claude Agent SDK                    | Implemented                   |
+| Integrations    | Nango (managed OAuth, Gmail/GitHub) | Implemented                   |
+| State           | SQLite                              | Implemented                   |
+| IPC             | Unix socket / HTTP localhost        | Implemented                   |
 
 ## Known Discrepancies
 

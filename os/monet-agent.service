@@ -1,0 +1,49 @@
+[Unit]
+Description=Monet Agent Backend (FastAPI)
+Documentation=https://github.com/monet-os/monet
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=monet
+Group=monet
+
+# Working directory and paths
+WorkingDirectory=/opt/monet
+ExecStart=/opt/monet/venv/bin/uvicorn agent.main:app --host 127.0.0.1 --port 8000
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/opt/monet/agent/.env
+
+# SQLite databases stored here
+Environment=MONET_DATA_DIR=/var/lib/monet
+
+# Restart policy - always restart on failure, with backoff
+Restart=on-failure
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/monet /opt/monet
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=monet-agent
+
+[Install]
+WantedBy=multi-user.target
