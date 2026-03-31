@@ -5,6 +5,7 @@ import {
   placeNewThread,
   onUserReply,
   onArchive,
+  onManualReclassify,
 } from "./drift-engine";
 import { createZoneLayout, getZoneCenter } from "./zone-layout";
 import { createThread } from "../../lib/types";
@@ -136,6 +137,31 @@ describe("driftTick", () => {
     expect(dist).toBeGreaterThan(5); // pushed apart from initial ~7px
   });
 
+  it("soft boundary: zone transitions gradually based on position, not scores", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    // Place thread physically in active-front zone
+    const afCenter = getZoneCenter(zones, "active-front");
+    thread.position = { x: afCenter.x, y: afCenter.y };
+    thread.targetPosition = { x: afCenter.x, y: afCenter.y };
+    thread.zone = "active-front";
+    // Scores that would target at-risk zone
+    thread.riskTier = "critical";
+    thread.lifecycleState = "at-risk";
+
+    // After one tick, thread should still be in active-front (hasn't moved far enough)
+    const [updated] = driftTick([thread], zones);
+    expect(updated.zone).toBe("active-front");
+
+    // After many ticks, thread should eventually drift to at-risk zone
+    let current = [updated];
+    for (let i = 0; i < 200; i++) {
+      current = driftTick(current, zones);
+    }
+    expect(current[0].zone).toBe("at-risk");
+  });
+
   it("handles empty thread list", () => {
     const zones = createZoneLayout();
     const result = driftTick([], zones);
@@ -245,5 +271,39 @@ describe("onArchive", () => {
     expect(updated.zone).toBe("base-handled");
     expect(updated.lifecycleState).toBe("handled");
     expect(updated.visualState).toBe("archived");
+  });
+});
+
+describe("onManualReclassify", () => {
+  it("moves thread to target zone and sets override flag", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.zone = "active-front";
+
+    const updated = onManualReclassify(thread, zones, "opportunities");
+
+    expect(updated.zone).toBe("opportunities");
+    expect(updated.previousZone).toBe("active-front");
+    expect(updated.userOverrideZone).toBe(true);
+  });
+
+  it("uses drop position when provided", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    const drop = { x: 3200, y: 800 };
+
+    const updated = onManualReclassify(thread, zones, "opportunities", drop);
+
+    expect(updated.targetPosition).toEqual(drop);
+  });
+
+  it("override prevents drift engine from changing zone", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.riskTier = "critical"; // would normally target at-risk
+
+    const reclassified = onManualReclassify(thread, zones, "opportunities");
+    expect(computeTargetZone(reclassified)).toBe("opportunities");
   });
 });

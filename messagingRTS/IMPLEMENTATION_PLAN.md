@@ -2,7 +2,7 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 395 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 399 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3. Build, typecheck, lint all clean.
 
 **Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
@@ -166,11 +166,11 @@ These must be resolved before implementation begins:
 - [x] Zone rendering: filled polygons with color tinting, boundary indicators, labels
 - [x] Thread count display per zone (including zero)
 - [x] Adaptive zone sizing: area scales proportional to thread population
-- [ ] Soft boundaries: threads drift across, not snap
+- [x] Soft boundaries: threads drift across, not snap
 - [x] Zone alerts: threshold evaluation, active/inactive states, visual indication
-- [ ] Manual thread reclassification via drag (user override flag)
-- [ ] **Spec**: 04-zone-system
-- [ ] **Tests**: Zone layout, count accuracy, adaptive sizing, alert threshold firing/resolution, drag override
+- [x] Manual thread reclassification via drag (user override flag)
+- [x] **Spec**: 04-zone-system
+- [x] **Tests**: Zone layout, count accuracy, adaptive sizing, alert threshold firing/resolution, drag override
 
 ### 2.5 Thread Positioning & Drift Engine
 
@@ -382,3 +382,9 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - App.tsx initialization flow: async load persisted threads -> set in thread store -> start periodic persist -> transition to active. beforeunload handler flushes to IndexedDB. Error fallback proceeds without persisted data.
 - App.test.tsx updated: mocks persistence manager to avoid IndexedDB dependency in jsdom, tests properly handle async initialization state.
 - Test count: 395 total, all passing
+
+### Implementation Notes - Zone Soft Boundaries & Manual Reclassification (2026-03-31)
+
+- Soft boundaries (Spec 04): Removed premature zone snap in driftTick. Zone assignment now follows actual position via getZoneAtPosition() rather than snapping immediately when scores change. Target position still pulls toward score-driven zone, but thread visually drifts across boundary. User actions (reply, archive) still snap since they are explicit decisions.
+- Manual reclassification: onManualReclassify() function added to drift-engine.ts. Sets userOverrideZone flag so drift engine respects manual placement. Accepts optional drop position for precision placement.
+- Test count: 399 total, all passing

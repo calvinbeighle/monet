@@ -89,13 +89,11 @@ export function driftTick(
     const lastActivity = t.lastUserReplyTimestamp ?? t.latestMessageTimestamp;
     t.neglectDuration = now - lastActivity;
 
-    // 3. Compute target zone and position
+    // 3. Compute target zone and position (soft boundary: zone follows position, not scores)
+    // Thread's zone is determined by its actual position (line 129), not snapped here.
+    // Target position pulls thread toward the score-driven zone gradually.
     const targetZone = computeTargetZone(t);
-    if (targetZone !== t.zone && !t.userOverrideZone) {
-      t.previousZone = t.zone;
-      t.zone = targetZone;
-    }
-    t.targetPosition = computeTargetPosition(t, zones, t.zone);
+    t.targetPosition = computeTargetPosition(t, zones, targetZone);
 
     // 4. Apply neglect-driven drift toward Lost zone
     if (t.neglectDuration > 0 && t.lifecycleState !== "handled") {
@@ -204,6 +202,26 @@ export function onArchive(thread: Thread, zones: Map<ZoneId, Zone>): Thread {
     targetPosition: position,
     lifecycleState: "handled",
     visualState: "archived",
+    lastModified: Date.now(),
+  };
+}
+
+// Manual reclassification: user drags thread to a different zone
+// Sets userOverrideZone flag so drift engine respects the manual placement.
+// Target position is set within the new zone; position follows via drift.
+export function onManualReclassify(
+  thread: Thread,
+  zones: Map<ZoneId, Zone>,
+  targetZone: ZoneId,
+  dropPosition?: { x: number; y: number },
+): Thread {
+  const position = dropPosition ?? getRandomPositionInZone(zones, targetZone);
+  return {
+    ...thread,
+    zone: targetZone,
+    previousZone: thread.zone,
+    targetPosition: position,
+    userOverrideZone: true,
     lastModified: Date.now(),
   };
 }
