@@ -4,6 +4,7 @@
 
 import { Application, Container, Graphics, Text, TextStyle, type ColorSource } from "pixi.js";
 import type { Thread, Zone, ZoneId } from "../../lib/types";
+import type { Cluster } from "../../lib/types/cluster";
 
 // Visual constants
 const THREAD_BASE_RADIUS = 8;
@@ -11,6 +12,10 @@ const THREAD_VALUE_SCALE = 2.0; // value score multiplier for radius
 const URGENCY_PULSE_BASE_RATE = 0.5; // base pulse frequency in Hz
 const URGENCY_PULSE_MAX_RATE = 3.0;
 const AGE_OPACITY_DECAY_DAYS = 30; // thread fully faded after this many days
+const CLUSTER_BOUNDARY_COLOR = 0x8888cc;
+const CLUSTER_BOUNDARY_ALPHA = 0.25;
+const CLUSTER_AGGREGATE_COLOR = 0x6666aa;
+const CLUSTER_PADDING = 30; // padding around member positions for boundary
 
 export interface MapRendererOptions {
   container: HTMLElement;
@@ -32,6 +37,8 @@ export class MapRenderer {
   private zoneLabels: Map<ZoneId, Text> = new Map();
   private threadGraphics: Map<string, Graphics> = new Map();
   private threadLabels: Map<string, Text> = new Map();
+  private clusterGraphics: Map<string, Graphics> = new Map();
+  private clusterLabels: Map<string, Text> = new Map();
   // Selection ring rendered inline in renderThreads
 
   // Camera state
@@ -95,6 +102,8 @@ export class MapRenderer {
     this.zoneLabels.clear();
     this.threadGraphics.clear();
     this.threadLabels.clear();
+    this.clusterGraphics.clear();
+    this.clusterLabels.clear();
   }
 
   // Camera control
@@ -301,6 +310,155 @@ export class MapRenderer {
       } else {
         const label = this.threadLabels.get(thread.id);
         if (label) label.visible = false;
+      }
+    }
+  }
+
+  // Render cluster visuals per Spec 02 section 5
+  // At operational/detail: draw boundary around members with label
+  // At strategic/tactical: collapse to aggregate representation (single dot + count)
+  renderClusters(clusters: Cluster[], threads: Thread[], _now: number = Date.now()): void {
+    if (!this.layers) return;
+
+    const activeClusterIds = new Set(clusters.map((c) => c.id));
+
+    // Remove graphics for clusters that no longer exist
+    for (const [id, g] of this.clusterGraphics) {
+      if (!activeClusterIds.has(id)) {
+        g.destroy();
+        this.clusterGraphics.delete(id);
+        const label = this.clusterLabels.get(id);
+        if (label) {
+          label.destroy();
+          this.clusterLabels.delete(id);
+        }
+      }
+    }
+
+    const zoomLevel = this.getZoomLevel();
+    const threadMap = new Map(threads.map((t) => [t.id, t]));
+
+    for (const cluster of clusters) {
+      // Get member positions
+      const memberPositions: { x: number; y: number }[] = [];
+      let maxUrgency = 0;
+      for (const tid of cluster.memberThreadIds) {
+        const t = threadMap.get(tid);
+        if (t) {
+          memberPositions.push(t.position);
+          maxUrgency = Math.max(maxUrgency, t.urgencyScore);
+        }
+      }
+      if (memberPositions.length < 2) continue;
+
+      let g = this.clusterGraphics.get(cluster.id);
+      if (!g) {
+        g = new Graphics();
+        this.layers.mid.addChild(g);
+        this.clusterGraphics.set(cluster.id, g);
+      }
+      g.clear();
+
+      if (zoomLevel === "strategic" || zoomLevel === "tactical") {
+        // Aggregate representation: single circle at centroid with member count
+        const r = 12 + cluster.memberThreadIds.length * 3;
+        const color = this.getUrgencyColor(maxUrgency);
+
+        // Glow
+        g.circle(cluster.centroid.x, cluster.centroid.y, r * 1.4);
+        g.fill({ color: color as ColorSource, alpha: 0.15 });
+        // Main circle
+        g.circle(cluster.centroid.x, cluster.centroid.y, r);
+        g.fill({ color: CLUSTER_AGGREGATE_COLOR as ColorSource, alpha: 0.6 });
+        // Urgency ring
+        g.circle(cluster.centroid.x, cluster.centroid.y, r);
+        g.stroke({ color: color as ColorSource, width: 2, alpha: 0.5 });
+
+        // Count label
+        let label = this.clusterLabels.get(cluster.id);
+        if (!label) {
+          label = new Text({
+            text: "",
+            style: new TextStyle({
+              fontFamily: "Inter, system-ui, sans-serif",
+              fontSize: 13,
+              fill: 0xffffff,
+              align: "center",
+            }),
+          });
+          this.layers.mid.addChild(label);
+          this.clusterLabels.set(cluster.id, label);
+        }
+        label.text = `${cluster.memberThreadIds.length}`;
+        label.position.set(
+          cluster.centroid.x - label.width / 2,
+          cluster.centroid.y - label.height / 2,
+        );
+        label.alpha = 0.9;
+        label.visible = true;
+
+        // Hide individual member thread graphics at low zoom
+        for (const tid of cluster.memberThreadIds) {
+          const tg = this.threadGraphics.get(tid);
+          if (tg) tg.visible = false;
+          const tl = this.threadLabels.get(tid);
+          if (tl) tl.visible = false;
+        }
+      } else {
+        // Operational/detail: draw boundary around members
+        const minX = Math.min(...memberPositions.map((p) => p.x)) - CLUSTER_PADDING;
+        const minY = Math.min(...memberPositions.map((p) => p.y)) - CLUSTER_PADDING;
+        const maxX = Math.max(...memberPositions.map((p) => p.x)) + CLUSTER_PADDING;
+        const maxY = Math.max(...memberPositions.map((p) => p.y)) + CLUSTER_PADDING;
+        const w = maxX - minX;
+        const h = maxY - minY;
+        const cornerRadius = Math.min(15, w * 0.1, h * 0.1);
+
+        g.roundRect(minX, minY, w, h, cornerRadius);
+        g.fill({
+          color: CLUSTER_BOUNDARY_COLOR as ColorSource,
+          alpha: CLUSTER_BOUNDARY_ALPHA * 0.3,
+        });
+        g.roundRect(minX, minY, w, h, cornerRadius);
+        g.stroke({
+          color: CLUSTER_BOUNDARY_COLOR as ColorSource,
+          width: 1.5,
+          alpha: CLUSTER_BOUNDARY_ALPHA,
+        });
+
+        // Cluster label above boundary
+        let label = this.clusterLabels.get(cluster.id);
+        if (!label) {
+          label = new Text({
+            text: "",
+            style: new TextStyle({
+              fontFamily: "Inter, system-ui, sans-serif",
+              fontSize: 11,
+              fill: 0xaaaacc,
+              align: "center",
+            }),
+          });
+          this.layers.mid.addChild(label);
+          this.clusterLabels.set(cluster.id, label);
+        }
+        label.text = cluster.label;
+        label.position.set((minX + maxX) / 2 - label.width / 2, minY - 16);
+        label.alpha = 0.6;
+        label.visible = true;
+
+        // Ensure member graphics are visible at this zoom level
+        for (const tid of cluster.memberThreadIds) {
+          const tg = this.threadGraphics.get(tid);
+          if (tg) tg.visible = true;
+        }
+      }
+    }
+
+    // Ensure non-clustered threads remain visible
+    const clusteredThreadIds = new Set(clusters.flatMap((c) => c.memberThreadIds));
+    for (const [id, tg] of this.threadGraphics) {
+      if (!clusteredThreadIds.has(id) && !tg.visible) {
+        tg.visible = true;
       }
     }
   }

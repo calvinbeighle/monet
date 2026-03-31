@@ -2,7 +2,7 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 399 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 402 tests passing. Tags: rts-v0.0.1 through rts-v0.0.7, v0.1.0 through v0.4.9, v0.5.1 through v0.5.3. Build, typecheck, lint all clean.
 
 **Implemented**: 1.1 Scaffolding, 1.3 Thread Data Model (partial), 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
@@ -184,8 +184,8 @@ These must be resolved before implementation begins:
 - [x] Collision avoidance: minimum separation distance enforcement
 - [x] Position persistence across sessions
 - [x] Score re-evaluation on session resume (reflect accumulated neglect)
-- [ ] **Spec**: 03-thread-positioning
-- [ ] **Tests**: Initial placement correctness, drift toward Lost over time, snap-back on reply, collision avoidance, persistence round-trip
+- [x] **Spec**: 03-thread-positioning
+- [x] **Tests**: Initial placement correctness, drift toward Lost over time, snap-back on reply, collision avoidance, persistence round-trip
 
 ### 2.6 Thread Clustering
 
@@ -196,7 +196,7 @@ These must be resolved before implementation begins:
 - [x] Cluster centroid from member positions
 - [x] Cluster label from common subject/participants
 - [x] Cluster dissolves when fewer than 2 members
-- [ ] Visual: cluster boundary, aggregate representation at low zoom
+- [x] Visual: cluster boundary, aggregate representation at low zoom
 - [x] Manual override: drag thread out of cluster
 - [x] New thread evaluated for cluster membership on arrival
 - [x] **Spec**: 11-thread-clustering
@@ -388,3 +388,10 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Soft boundaries (Spec 04): Removed premature zone snap in driftTick. Zone assignment now follows actual position via getZoneAtPosition() rather than snapping immediately when scores change. Target position still pulls toward score-driven zone, but thread visually drifts across boundary. User actions (reply, archive) still snap since they are explicit decisions.
 - Manual reclassification: onManualReclassify() function added to drift-engine.ts. Sets userOverrideZone flag so drift engine respects manual placement. Accepts optional drop position for precision placement.
 - Test count: 399 total, all passing
+
+### Implementation Notes - Cluster Visual Rendering (2026-03-31)
+
+- Cluster rendering added to MapRenderer (Spec 02 section 5): renderClusters() method on mid layer. At operational/detail zoom: rounded-rect boundary around member positions with cluster label. At strategic/tactical zoom: aggregate representation (single circle at centroid with urgency color ring, member count label), member thread graphics hidden.
+- Cluster evaluation wired into drift tick in map-viewport.tsx: evaluateClusters() runs each tick, results stored in ref and passed to renderClusters on render.
+- Zoom-level-aware visibility: clustered thread graphics hidden at low zoom, restored at high zoom. Non-clustered threads always visible.
+- Test count: 402 total, all passing

@@ -30,4 +30,35 @@ describe("MapRenderer", () => {
     const state = renderer.getCameraState();
     expect(["strategic", "tactical", "operational", "detail"]).toContain(state.level);
   });
+
+  it("zoom level thresholds match Spec 08", () => {
+    const renderer = new MapRenderer();
+
+    // Strategic: < 0.25
+    renderer.setCamera(0, 0, 0.15);
+    expect(renderer.getZoomLevel()).toBe("strategic");
+
+    // Tactical: 0.25 - 0.6
+    renderer.setCamera(0, 0, 0.4);
+    expect(renderer.getZoomLevel()).toBe("tactical");
+
+    // Operational: 0.6 - 1.2
+    renderer.setCamera(0, 0, 0.8);
+    expect(renderer.getZoomLevel()).toBe("operational");
+
+    // Detail: >= 1.2
+    renderer.setCamera(0, 0, 1.5);
+    expect(renderer.getZoomLevel()).toBe("detail");
+  });
+
+  it("has renderClusters method for cluster visual rendering", () => {
+    const renderer = new MapRenderer();
+    expect(typeof renderer.renderClusters).toBe("function");
+  });
+
+  it("renderClusters does nothing when layers not initialized", () => {
+    const renderer = new MapRenderer();
+    // Should not throw when called without init
+    expect(() => renderer.renderClusters([], [])).not.toThrow();
+  });
 });

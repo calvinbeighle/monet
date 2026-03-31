@@ -6,6 +6,8 @@ import { useRef, useEffect, useCallback, useState } from "react";
 import { MapRenderer } from "./map-renderer";
 import { createZoneLayout, updateZoneSizes } from "./zone-layout";
 import { driftTick } from "./drift-engine";
+import { evaluateClusters } from "./clustering";
+import type { Cluster } from "../../lib/types/cluster";
 import { useThreadStore, useAppStore, useAgentStore } from "../../lib/stores";
 import { useNavigationStore } from "../navigation/navigation-store";
 import {
@@ -37,6 +39,7 @@ export function MapViewport() {
   const rendererRef = useRef<MapRenderer | null>(null);
   const zonesRef = useRef(createZoneLayout());
   const driftIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const clustersRef = useRef<Cluster[]>([]);
   const cameraSyncRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const edgeScrollRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
   const isDraggingRef = useRef(false);
@@ -164,6 +167,10 @@ export function MapViewport() {
 
       useThreadStore.getState().setThreads(updated);
 
+      // Evaluate clusters per Spec 11 - runs alongside drift tick
+      const clusterResult = evaluateClusters(updated, clustersRef.current, now);
+      clustersRef.current = clusterResult.clusters;
+
       // Evaluate map alerts per Spec 07 - runs alongside drift tick
       const appState = useAppStore.getState();
       const newAlerts = evaluateAlerts(updated, appState.mapAlerts, now, appState.streakInboxZero);
@@ -189,6 +196,7 @@ export function MapViewport() {
     renderer.setSelectedThread(selectedThreadId);
     renderer.renderZones(zonesRef.current);
     renderer.renderThreads(threadArray);
+    renderer.renderClusters(clustersRef.current, threadArray);
   }, [threads, selectedThreadId]);
 
   // Sync search highlighting to renderer
