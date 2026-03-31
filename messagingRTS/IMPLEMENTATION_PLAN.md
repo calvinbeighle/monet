@@ -46,13 +46,13 @@ These must be resolved before implementation begins:
 
 ### 1.3 Thread Data Model & Persistence
 
-- [ ] Define thread data structure with all core properties (Spec 09)
-- [ ] Define computed properties: urgency score, value score, map position, zone, drift velocity, cluster membership
-- [ ] Define contact enrichment structure per participant
-- [ ] IndexedDB schema and CRUD operations for threads
-- [ ] Thread lifecycle state machine: new -> active -> waiting -> at-risk -> lost / handled
-- [ ] State transition logging with timestamps and trigger events
-- [ ] Merge logic: persisted state + fresh Gmail data on reload
+- [x] Define thread data structure with all core properties (Spec 09)
+- [x] Define computed properties: urgency score, value score, map position, zone, drift velocity, cluster membership
+- [x] Define contact enrichment structure per participant
+- [x] IndexedDB schema and CRUD operations for threads
+- [x] Thread lifecycle state machine: new -> active -> waiting -> at-risk -> lost / handled
+- [x] State transition logging with timestamps and trigger events
+- [x] Merge logic: persisted state + fresh Gmail data on reload
 - [ ] **Spec**: 09-thread-data-model
 - [ ] **Tests**: State transitions (all valid paths), persistence round-trip, merge on reload, thread removal when deleted from Gmail
 
