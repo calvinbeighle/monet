@@ -1,8 +1,8 @@
 # Trace Messaging - Implementation Plan
 
-## Status: Priority 2 in progress - Data ingestion layer built
+## Status: Priority 3 in progress - AI core services built
 
-Last audited: 2026-03-31 16:12 PDT
+Last audited: 2026-03-31 16:55 PDT
 
 ---
 
@@ -61,7 +61,7 @@ These files in `../messagingRTS/src/lib/` contain production-quality patterns to
 
 ## Priority 1: Foundation (specs: 14, 08) -- COMPLETED
 
-All items complete. 32 unit tests passing (types, stores, merge logic). TypeScript strict mode, zero errors. Zustand stores for activities, workstreams, and app shell. IndexedDB persistence with split-ownership merge. Application shell with routing, error boundary, and notifications. Timeline, detail, and settings views (placeholder UI with full data binding).
+All items complete. 48 unit tests passing (types, stores, merge logic). TypeScript strict mode, zero errors. Zustand stores for activities, workstreams, and app shell. IndexedDB persistence with split-ownership merge. Application shell with routing, error boundary, and notifications. Timeline, detail, and settings views (placeholder UI with full data binding).
 
 - [x] **1.1 Project scaffold** - `npm create vite@latest` with React + TypeScript. Install: `zustand`, `@tanstack/react-query`, `idb`, `tailwindcss`, `@tailwindcss/vite`. Configure `@/` path alias in `tsconfig.json` and `vite.config.ts`. Create directory structure: `src/lib/types/`, `src/lib/stores/`, `src/lib/utils/`, `src/lib/services/`, `src/components/`, `src/features/`. Set up Vitest with React Testing Library. Match dependency versions from messagingRTS package.json (react ^19.2.4, zustand ^5.0.12, @tanstack/react-query ^5.96.0, idb ^8.0.3, tailwindcss ^4.2.2, vite ^8.0.1, typescript ~5.9.3, vitest ^4.1.2).
 
@@ -120,7 +120,7 @@ Each source is independent - all 6 can be built in parallel. Local file sources 
     - `POST /api/trace/gmail/messages/{id}/modify` - archive/label
   - All endpoints return JSON arrays of pre-normalized activity record shapes (except Gmail proxy which returns raw Gmail API responses).
 
-- [ ] **2.0c Backend AI proxy endpoints** (decision 9) - Proxy Claude API calls through the backend to avoid exposing the Anthropic API key in browser code. Key from 1Password or env var. Endpoints:
+- [x] **2.0c Backend AI proxy endpoints** (decision 9) - Proxy Claude API calls through the backend to avoid exposing the Anthropic API key in browser code. Key from 1Password or env var. Endpoints:
   - `POST /api/trace/ai/detect` - accepts activity records, returns workstream clustering
   - `POST /api/trace/ai/link` - accepts new activity + candidate workstreams, returns assignment decision
   - `POST /api/trace/ai/summarize` - accepts workstream context, returns summary + recommended action
@@ -152,7 +152,7 @@ Each source is independent - all 6 can be built in parallel. Local file sources 
 
 Depends on P1 (types, stores) and P2 (data to cluster). The AI layer that makes workstreams actually work. All Claude API calls proxy through backend (2.0c).
 
-- [ ] **3.1 Workstream detection service** (spec 07) - After initial data load from all sources, send activity records to backend AI proxy for clustering. Signal weights (highest first): participant overlap, topic/keyword overlap, temporal proximity, project association (repo/space/project path), CRM association, label overlap. Adapt `AffinityScore` from messagingRTS. Requirements:
+- [x] **3.1 Workstream detection service** (spec 07) - After initial data load from all sources, send activity records to backend AI proxy for clustering. Signal weights (highest first): participant overlap, topic/keyword overlap, temporal proximity, project association (repo/space/project path), CRM association, label overlap. Adapt `AffinityScore` from messagingRTS. Requirements:
   - Minimum cluster: 2 activities from 2+ sources
   - Returns: workstream names, member IDs, confidence scores, rationale
   - Merge candidates: >60% participant overlap + >40% topic overlap -> AI evaluates (not automatic merge)
@@ -165,9 +165,9 @@ Depends on P1 (types, stores) and P2 (data to cluster). The AI layer that makes 
   - **Token limit guard:** if a workstream has >100 activities, send only the 50 most recent + 50 highest-scored (by urgency/recency) to stay within context limits. Include a count of omitted activities in the prompt.
   - **Failure handling:** if Claude API call fails, preserve existing workstream assignments. Log error. Frontend shows "AI unavailable" indicator on timeline. Retry on next 5-minute cycle.
 
-- [ ] **3.2 Context linking service** (spec 09) - Real-time evaluation of new activities. Fast-path (no AI call): same Gmail thread ID (confidence 1.0), same calendar event series (1.0), same repo+branch (0.9). If no fast-path: batch within 5-second window, send to backend AI proxy with top 5 candidate workstreams (ranked by: participant overlap score first, then recency of last activity). Thresholds: >=0.7 auto-assign, 0.4-0.7 flag uncertain, <0.4 unassigned. On assignment: increment workstream unread count, emit notification. Re-link uncertain assignments (<0.7) when workstreams merge/split. **Failure handling:** if Claude API call fails, leave activity unassigned (not silently dropped). Re-evaluate on next cycle. Updated activities (not just new) also trigger evaluation.
+- [x] **3.2 Context linking service** (spec 09) - Real-time evaluation of new activities. Fast-path (no AI call): same Gmail thread ID (confidence 1.0), same calendar event series (1.0), same repo+branch (0.9). If no fast-path: batch within 5-second window, send to backend AI proxy with top 5 candidate workstreams (ranked by: participant overlap score first, then recency of last activity). Thresholds: >=0.7 auto-assign, 0.4-0.7 flag uncertain, <0.4 unassigned. On assignment: increment workstream unread count, emit notification. Re-link uncertain assignments (<0.7) when workstreams merge/split. **Failure handling:** if Claude API call fails, leave activity unassigned (not silently dropped). Re-evaluate on next cycle. Updated activities (not just new) also trigger evaluation.
 
-- [ ] **3.3 AI summary service** (spec 12) - Per-workstream summary generation via backend AI proxy. Triggers: creation, new activity, user refresh, cache >30min old. Debounce: 60-second window after LAST activity arrives (not after first). Output: status summary (2-3 sentences), key developments (up to 3 bullets), recommended action (typed, references specific activity ID - if no action needed, type is "no-action" not null), urgency (low/medium/high). Urgency signals: time since last response, upcoming deadlines (calendar), deal stage (CRM), explicit urgency in content. Cache in IndexedDB `summaryCache` store. Include previous summary for continuity (highlight changes, not repeat). Cost control: send titles/participants/timestamps/previews only. **Token limit guard:** for workstreams with >100 activities, send only 50 most recent + summarize older activities as counts/date-ranges. **Failure handling:** on Claude API error, serve stale cached summary with "last updated X ago" indicator. Do not block UI.
+- [x] **3.3 AI summary service** (spec 12) - Per-workstream summary generation via backend AI proxy. Triggers: creation, new activity, user refresh, cache >30min old. Debounce: 60-second window after LAST activity arrives (not after first). Output: status summary (2-3 sentences), key developments (up to 3 bullets), recommended action (typed, references specific activity ID - if no action needed, type is "no-action" not null), urgency (low/medium/high). Urgency signals: time since last response, upcoming deadlines (calendar), deal stage (CRM), explicit urgency in content. Cache in IndexedDB `summaryCache` store. Include previous summary for continuity (highlight changes, not repeat). Cost control: send titles/participants/timestamps/previews only. **Token limit guard:** for workstreams with >100 activities, send only 50 most recent + summarize older activities as counts/date-ranges. **Failure handling:** on Claude API error, serve stale cached summary with "last updated X ago" indicator. Do not block UI.
 
 - [ ] **3.4 Contact enrichment integration** (spec 06 cross-cutting) - Merge HubSpot enrichment into participant records across all sources. Lookup by email address. Display: name, email, company, deal context, relationship score, VIP flag. Primary participant per workstream: most frequently appearing non-self participant. Adapt `ContactEnrichment` interface from messagingRTS.
 
@@ -295,6 +295,8 @@ Depends on P1 (shell, stores) and P3 (AI summaries to display).
 
 23. **Ingestion services lack unit tests** - Ingestion services need tests. Currently only covered by type checking - should add unit tests with fixture data.
 
+24. **AI ingestion service tests added** - 16 new tests covering workstream detection (mock API, error handling, existing workstream matching), context linking (fast-path deterministic matching for thread/branch/series, batch queuing), and AI summary (cache TTL, debounce, urgency normalization). All 48 tests pass.
+
 ## Spec Coverage
 
 | Spec                         | Plan Items            | Status      |
@@ -305,12 +307,12 @@ Depends on P1 (shell, stores) and P3 (AI summaries to display).
 | 04-file-activity-ingestion   | 2.0b, 2.4, 2.1a       | In progress |
 | 05-claude-sessions-ingestion | 2.0b, 2.5, 2.1a       | In progress |
 | 06-hubspot-ingestion         | 2.6, 3.4              | Not started |
-| 07-workstream-detection      | 2.0c, 3.1             | Not started |
+| 07-workstream-detection      | 2.0c, 3.1             | Complete    |
 | 08-workstream-data-model     | 1.2, 1.3, 1.4, 1.5    | Complete    |
-| 09-context-linking           | 2.0c, 3.2             | Not started |
+| 09-context-linking           | 2.0c, 3.2             | Complete    |
 | 10-workstream-timeline       | 4.1, 4.1a             | Not started |
 | 11-workstream-detail-view    | 4.2 (incl. merge UI)  | Not started |
-| 12-ai-summary                | 2.0c, 3.3             | Not started |
+| 12-ai-summary                | 2.0c, 3.3             | Complete    |
 | 13-email-actions             | 4.3                   | Not started |
 | 14-application-shell         | 1.6, 5.2, 5.3, 5.4    | In progress |
 

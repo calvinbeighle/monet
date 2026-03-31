@@ -8,7 +8,7 @@
 
 Run these after implementing to get immediate feedback:
 
-- Tests: `npm run test` (Vitest, 32 passing)
+- Tests: `npm run test` (Vitest, 48 passing)
 - Typecheck: `npm run typecheck` (TypeScript strict mode)
 - Lint: `npm run lint` (ESLint)
 

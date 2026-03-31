@@ -179,7 +179,7 @@ function findMatchingWorkstream(
     ).length;
     const overlapRatio = overlap / detectedActivityIds.length;
 
-    if (overlapRatio > 0.5 && overlap > bestOverlap) {
+    if (overlapRatio >= 0.5 && overlap > bestOverlap) {
       bestOverlap = overlap;
       bestMatch = ws;
     }
