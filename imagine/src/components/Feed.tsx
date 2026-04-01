@@ -19,6 +19,21 @@ export function Feed() {
     loadingRef.current = false;
   }, [addCard]);
 
+  // ESC to interrupt the current agent
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        const state = useFeedStore.getState();
+        const current = state.cards[state.activeIndex];
+        if (current && current.status === "working") {
+          state.interruptCard(current.id);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;

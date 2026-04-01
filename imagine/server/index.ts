@@ -29,13 +29,16 @@ app.get("/api/events", (req, res) => {
 
   const onUpdate = (card: unknown) => sendEvent("update", card);
   const onRemove = (id: string) => sendEvent("remove", { id });
+  const onDone = (card: any) => sendEvent("surface", { id: card.id });
 
   manager.on("update", onUpdate);
   manager.on("remove", onRemove);
+  manager.on("agent-done", onDone);
 
   req.on("close", () => {
     manager.off("update", onUpdate);
     manager.off("remove", onRemove);
+    manager.off("agent-done", onDone);
   });
 });
 
@@ -61,6 +64,16 @@ app.post("/api/cards/:id/instruct", (req, res) => {
 app.post("/api/cards", (_req, res) => {
   const card = manager.createAgent();
   res.json(card);
+});
+
+// Interrupt a running agent
+app.post("/api/cards/:id/interrupt", (req, res) => {
+  try {
+    manager.interruptAgent(req.params.id);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(404).json({ error: e.message });
+  }
 });
 
 // Remove a card

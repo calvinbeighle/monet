@@ -277,6 +277,21 @@ export class AgentManager extends EventEmitter {
     }
   }
 
+  interruptAgent(id: string): void {
+    const agent = this.agents.get(id);
+    if (!agent) throw new Error(`Agent ${id} not found`);
+    if (agent.abort) {
+      agent.abort.abort();
+      agent.abort = null;
+    }
+    if (agent.card.status === "working") {
+      agent.card.status = "done";
+      agent.card.summary = "Interrupted";
+      this.emit("update", agent.card);
+      this.emit("agent-done", agent.card);
+    }
+  }
+
   removeAgent(id: string): void {
     const agent = this.agents.get(id);
     if (!agent) return;
