@@ -84,6 +84,50 @@ describe("Trust system", () => {
     });
   });
 
+  describe("createTrustRecord", () => {
+    it("defaults decayActive to false", () => {
+      const record = createTrustRecord("test@example.com");
+      expect(record.decayActive).toBe(false);
+    });
+  });
+
+  describe("decayActive flag (Spec 07)", () => {
+    it("sets decayActive to true when decay is active", () => {
+      const now = Date.now();
+      const record = createTrustRecord("test@example.com");
+      record.score = 50;
+      record.tier = "established";
+      // existing-relationship critical = 48h, so 2x = 96h
+      record.lastReplyTimestamp = now - 100 * HOUR;
+      record.tierEntryDate = now - 10 * 24 * 60 * 60 * 1000;
+
+      const decayed = evaluateDecay(record, "existing-relationship", now);
+      expect(decayed.decayActive).toBe(true);
+    });
+
+    it("sets decayActive to false when within threshold (no decay)", () => {
+      const now = Date.now();
+      const record = createTrustRecord("test@example.com");
+      record.score = 50;
+      record.tier = "established";
+      record.lastReplyTimestamp = now - 1 * HOUR; // recent, no decay
+      record.decayActive = true; // was previously active
+
+      const result = evaluateDecay(record, "existing-relationship", now);
+      expect(result.decayActive).toBe(false);
+    });
+
+    it("onTimeReply clears decayActive", () => {
+      const record = createTrustRecord("test@example.com");
+      record.score = 40;
+      record.tier = "building";
+      record.decayActive = true;
+
+      const updated = onTimeReply(record, "existing-relationship");
+      expect(updated.decayActive).toBe(false);
+    });
+  });
+
   describe("evaluateDecay", () => {
     it("does not decay when no prior interaction", () => {
       const record = createTrustRecord("test@example.com");

@@ -20,6 +20,7 @@ function makeTrustRecord(email: string, score: number): TrustRecord {
     tierEntryDate: Date.now() - 60 * 24 * 60 * 60 * 1000, // 60 days ago
     lastReplyTimestamp: Date.now() - 10 * 60 * 1000, // 10 min ago
     lastDecayCheck: Date.now(),
+    decayActive: false,
   };
 }
 
@@ -188,6 +189,60 @@ describe("Game loop", () => {
       // Second tick should not double-count
       const result2 = runGameTick([thread], {}, stats, createStreakState(), now + 200);
       expect(result2.sessionStatsDelta).toBeNull();
+    });
+  });
+
+  describe("60-second thread type fallback (Spec 07)", () => {
+    it("sets threadType to existing-relationship for new-lifecycle threads older than 60s", () => {
+      const now = Date.now();
+      const thread = {
+        ...createThread("t1", "Test", "snippet"),
+        threadType: "cold-outreach" as const,
+        lifecycleState: "new" as const,
+        riskTimerStart: now - 61_000, // 61 seconds old
+      };
+
+      const result = runGameTick([thread], {}, createSessionStats(), createStreakState(), now);
+      expect(result.updatedThreads[0].threadType).toBe("existing-relationship");
+    });
+
+    it("does not change threadType for new-lifecycle threads younger than 60s", () => {
+      const now = Date.now();
+      const thread = {
+        ...createThread("t1", "Test", "snippet"),
+        threadType: "cold-outreach" as const,
+        lifecycleState: "new" as const,
+        riskTimerStart: now - 30_000, // 30 seconds old
+      };
+
+      const result = runGameTick([thread], {}, createSessionStats(), createStreakState(), now);
+      expect(result.updatedThreads[0].threadType).toBe("cold-outreach");
+    });
+
+    it("does not change threadType for active-lifecycle threads older than 60s", () => {
+      const now = Date.now();
+      const thread = {
+        ...createThread("t1", "Test", "snippet"),
+        threadType: "cold-outreach" as const,
+        lifecycleState: "active" as const,
+        riskTimerStart: now - 61_000,
+      };
+
+      const result = runGameTick([thread], {}, createSessionStats(), createStreakState(), now);
+      expect(result.updatedThreads[0].threadType).toBe("cold-outreach");
+    });
+
+    it("does not change threadType when already existing-relationship", () => {
+      const now = Date.now();
+      const thread = {
+        ...createThread("t1", "Test", "snippet"),
+        threadType: "existing-relationship" as const,
+        lifecycleState: "new" as const,
+        riskTimerStart: now - 61_000,
+      };
+
+      const result = runGameTick([thread], {}, createSessionStats(), createStreakState(), now);
+      expect(result.updatedThreads[0].threadType).toBe("existing-relationship");
     });
   });
 

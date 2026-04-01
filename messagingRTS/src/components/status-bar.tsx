@@ -23,6 +23,7 @@ export function StatusBar({
   const streakInboxZero = useAppStore((s) => s.streakInboxZero);
   const streakZeroLost = useAppStore((s) => s.streakZeroLost);
   const unreadAlertCount = useAppStore((s) => s.unreadAlertCount);
+  const lostThreadCount = useAppStore((s) => s.sessionStats.lostThreadCount);
   const filter = useFilterStore((s) => s.filter);
   const filterActive = isFilterActive(filter);
 
@@ -94,6 +95,13 @@ export function StatusBar({
           <span className="text-xs text-gray-500">Zero Lost</span>
           <span className="text-sm font-mono text-gray-300">{streakZeroLost}d</span>
         </div>
+
+        {lostThreadCount > 0 && (
+          <div className="flex items-center gap-2" data-testid="lost-tally">
+            <span className="text-xs text-gray-500">Lost</span>
+            <span className="text-sm font-mono text-red-400">{lostThreadCount}</span>
+          </div>
+        )}
 
         {onSummaryClick && (
           <button

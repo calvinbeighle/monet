@@ -12,6 +12,7 @@ export interface SessionSummaryData {
   opportunitiesMissed: number;
   risksMitigated: number;
   agentsDeployed: number;
+  lostThreadCount: number;
   netHealthChange: number;
   sessionDurationMs: number;
 }
@@ -115,6 +116,10 @@ export function SessionSummaryModal({ data, triggeredFrom }: SessionSummaryModal
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500">Agents Deployed</span>
             <span className="text-sm font-mono text-gray-300">{data.agentsDeployed}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">Threads Lost</span>
+            <span className="text-sm font-mono text-red-400">{data.lostThreadCount}</span>
           </div>
 
           <div className="border-t border-gray-800 pt-3">

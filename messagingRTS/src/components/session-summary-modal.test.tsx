@@ -11,6 +11,7 @@ const mockData: SessionSummaryData = {
   agentsDeployed: 3,
   netHealthChange: 15,
   sessionDurationMs: 45 * 60000,
+  lostThreadCount: 0,
 };
 
 function resetStores() {
@@ -90,5 +91,29 @@ describe("SessionSummaryModal", () => {
     render(<SessionSummaryModal data={mockData} triggeredFrom={null} />);
     const backdrop = screen.getByTestId("session-summary-backdrop");
     expect(backdrop.className).toContain("z-50");
+  });
+
+  describe("lostThreadCount (Spec 07)", () => {
+    it("shows Threads Lost label", () => {
+      render(<SessionSummaryModal data={mockData} triggeredFrom={null} />);
+      expect(screen.getByText("Threads Lost")).toBeInTheDocument();
+    });
+
+    it("displays lostThreadCount value next to the Threads Lost label", () => {
+      const dataWithLost = { ...mockData, lostThreadCount: 7 };
+      render(<SessionSummaryModal data={dataWithLost} triggeredFrom={null} />);
+      const label = screen.getByText("Threads Lost");
+      // The count is in a sibling span within the same row
+      const row = label.closest("div");
+      expect(row).toHaveTextContent("7");
+    });
+
+    it("shows 0 for Threads Lost when lostThreadCount is 0", () => {
+      const dataNoLost = { ...mockData, lostThreadCount: 0 };
+      render(<SessionSummaryModal data={dataNoLost} triggeredFrom={null} />);
+      const label = screen.getByText("Threads Lost");
+      const row = label.closest("div");
+      expect(row).toHaveTextContent("0");
+    });
   });
 });

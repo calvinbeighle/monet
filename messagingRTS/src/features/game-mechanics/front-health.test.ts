@@ -19,6 +19,7 @@ function makeTrustRecord(score: number): TrustRecord {
     tierEntryDate: Date.now(),
     lastReplyTimestamp: null,
     lastDecayCheck: Date.now(),
+    decayActive: false,
   };
 }
 
@@ -28,8 +29,9 @@ describe("Front health", () => {
       expect(getHealthTier(100)).toBe("healthy");
       expect(getHealthTier(75)).toBe("healthy");
       expect(getHealthTier(50)).toBe("degraded");
-      expect(getHealthTier(25)).toBe("degraded");
-      expect(getHealthTier(24)).toBe("critical");
+      expect(getHealthTier(74)).toBe("degraded");
+      expect(getHealthTier(49)).toBe("critical");
+      expect(getHealthTier(25)).toBe("critical");
       expect(getHealthTier(0)).toBe("critical");
     });
   });

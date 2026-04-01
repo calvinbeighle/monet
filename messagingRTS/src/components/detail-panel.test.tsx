@@ -178,6 +178,7 @@ describe("DetailPanel", () => {
           tierEntryDate: Date.now() - 30 * 24 * 60 * 60 * 1000,
           lastReplyTimestamp: Date.now() - 60 * 1000,
           lastDecayCheck: Date.now(),
+          decayActive: false,
         },
       },
     });
@@ -260,6 +261,7 @@ describe("DetailPanel", () => {
           tierEntryDate: Date.now() - 60 * 24 * 60 * 60 * 1000,
           lastReplyTimestamp: Date.now() - 5 * 60 * 1000,
           lastDecayCheck: Date.now(),
+          decayActive: false,
         },
       },
     });

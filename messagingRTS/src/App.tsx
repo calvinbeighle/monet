@@ -69,6 +69,7 @@ export function App() {
     opportunitiesMissed: sessionStats.opportunitiesMissed,
     risksMitigated: sessionStats.risksMitigated,
     agentsDeployed: sessionStats.agentsDeployed,
+    lostThreadCount: sessionStats.lostThreadCount,
     netHealthChange: frontHealthScore - initialHealthScore,
     sessionDurationMs: Date.now() - sessionStats.sessionStart,
   };
@@ -243,8 +244,8 @@ export function App() {
           statusBarRef.current?.focus();
           return;
         }
-        // Close right panel if focused there
-        if (focusZone === "right-panel" && hasRightPanel) {
+        // Close right panel - from map focus or right-panel focus per Spec 12 Section 5
+        if (hasRightPanel && (focusZone === "right-panel" || focusZone === "map")) {
           setActivePanel("none");
           setFocusZone("map");
           mapRef.current?.focus();

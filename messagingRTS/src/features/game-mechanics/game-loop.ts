@@ -33,6 +33,10 @@ export interface GameTickResult {
 // Track previous opportunity states to detect transitions for session stats
 let previousOpportunityStates: Map<string, string> = new Map();
 
+// Thread type fallback timeout per Spec 07: "If no type is assigned within
+// 60 seconds of ingestion, the thread defaults to existing-relationship."
+const TYPE_FALLBACK_TIMEOUT_MS = 60_000;
+
 // Main game tick - called on every drift tick (200ms)
 export function runGameTick(
   threads: Thread[],
@@ -47,6 +51,17 @@ export function runGameTick(
     streakState: null,
     sessionStatsDelta: null,
   };
+
+  // 0. Thread type fallback: ensure untyped threads default after 60 seconds per Spec 07
+  for (const t of threads) {
+    if (t.threadType !== "existing-relationship") {
+      // Agent may have assigned a type - check if it's been more than 60s without confirmation
+      const age = now - t.riskTimerStart;
+      if (age > TYPE_FALLBACK_TIMEOUT_MS && t.lifecycleState === "new") {
+        t.threadType = "existing-relationship";
+      }
+    }
+  }
 
   // 1. Tick opportunity windows - transitions ripe -> fading -> expired
   const preOpportunityStates = new Map<string, string>();

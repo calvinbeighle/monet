@@ -9,6 +9,7 @@ export interface TrustRecord {
   tierEntryDate: number; // timestamp when entered current tier
   lastReplyTimestamp: number | null;
   lastDecayCheck: number;
+  decayActive: boolean; // per Spec 07: true when trust decay is currently active
 }
 
 export type TrustTier = "new" | "building" | "established" | "high-trust";

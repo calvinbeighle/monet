@@ -21,6 +21,9 @@ import { useSyncStore } from "../../lib/stores/sync-store";
 import { useAppStore } from "../../lib/stores";
 import type { ThreadChangeEvent, ThreadChangeType, ActionQueueEntry } from "../../lib/types";
 import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
+import { placeNewThread } from "../map/drift-engine";
+import { createZoneLayout } from "../map/zone-layout";
+import { evaluateClusters } from "../map/clustering";
 
 // Injectable fetch functions for testing
 let _fetchHistoryChanges = fetchHistoryChanges;
@@ -385,9 +388,13 @@ async function processChangeEvents(events: ThreadChangeEvent[]): Promise<void> {
           }
         }
       } else {
-        // New thread - set lifecycle to "new"
+        // New thread - place with cluster bias per Spec 11 Section 3
         thread.lifecycleState = "new";
-        threadStore.setThread(thread);
+        const allThreads = [...threadStore.threads.values()];
+        const { clusters } = evaluateClusters(allThreads, []);
+        const zones = createZoneLayout();
+        const placed = placeNewThread(thread, zones, allThreads, clusters);
+        threadStore.setThread(placed);
       }
     } catch (err) {
       // If we can't fetch a specific thread (deleted?), remove it from store

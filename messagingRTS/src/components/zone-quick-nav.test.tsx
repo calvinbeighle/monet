@@ -59,4 +59,46 @@ describe("ZoneQuickNav", () => {
     // Should not throw when clicking without callback
     fireEvent.click(screen.getByTestId("zone-nav-active-front"));
   });
+
+  describe("focusedZone prop (Spec 08 Section 16)", () => {
+    it("marks the focused zone button as aria-selected=true", () => {
+      render(<ZoneQuickNav focusedZone="opportunities" />);
+      const btn = screen.getByTestId("zone-nav-opportunities");
+      expect(btn).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("marks non-focused zone buttons as aria-selected=false", () => {
+      render(<ZoneQuickNav focusedZone="opportunities" />);
+      expect(screen.getByTestId("zone-nav-active-front")).toHaveAttribute("aria-selected", "false");
+      expect(screen.getByTestId("zone-nav-at-risk")).toHaveAttribute("aria-selected", "false");
+      expect(screen.getByTestId("zone-nav-lost")).toHaveAttribute("aria-selected", "false");
+    });
+
+    it("highlights only the focused zone with tabIndex 0", () => {
+      render(<ZoneQuickNav focusedZone="at-risk" />);
+      expect(screen.getByTestId("zone-nav-at-risk")).toHaveAttribute("tabIndex", "0");
+      expect(screen.getByTestId("zone-nav-active-front")).toHaveAttribute("tabIndex", "-1");
+    });
+
+    it("no zone is highlighted when focusedZone is null", () => {
+      render(<ZoneQuickNav focusedZone={null} />);
+      const allButtons = [
+        screen.getByTestId("zone-nav-active-front"),
+        screen.getByTestId("zone-nav-opportunities"),
+        screen.getByTestId("zone-nav-at-risk"),
+        screen.getByTestId("zone-nav-lost"),
+        screen.getByTestId("zone-nav-noise"),
+        screen.getByTestId("zone-nav-base-handled"),
+      ];
+      for (const btn of allButtons) {
+        expect(btn).toHaveAttribute("aria-selected", "false");
+      }
+    });
+
+    it("no zone is highlighted when focusedZone is undefined", () => {
+      render(<ZoneQuickNav />);
+      const btn = screen.getByTestId("zone-nav-active-front");
+      expect(btn).toHaveAttribute("aria-selected", "false");
+    });
+  });
 });

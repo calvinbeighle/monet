@@ -35,6 +35,7 @@ import { evaluateAlerts } from "../game-mechanics/map-alerts";
 import { runGameTick, isTrustDecayDue, runTrustDecay } from "../game-mechanics/game-loop";
 import { Minimap } from "../../components/minimap";
 import { SearchOverlay } from "../../components/search-overlay";
+import { ZoneQuickNav } from "../../components/zone-quick-nav";
 import type { ZoneId } from "../../lib/types";
 import type { BatchTarget } from "../../lib/stores/deployment-store";
 
@@ -86,6 +87,8 @@ export function MapViewport() {
     startY: number;
     clusterId: string | null;
   } | null>(null);
+  // Tab zone cycling state per Spec 08 Section 16
+  const tabFocusedZoneRef = useRef<ZoneId | null>(null);
 
   const threads = useThreadStore((s) => s.threads);
   const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
@@ -106,6 +109,8 @@ export function MapViewport() {
   const [zonesSnapshot, setZonesSnapshot] = useState(createZoneLayout);
   // Track whether a thread drag is active for cursor styling
   const [isThreadDragging, setIsThreadDragging] = useState(false);
+  // Tab-focused zone for zone label cycling per Spec 08 Section 16
+  const [tabFocusedZone, setTabFocusedZone] = useState<ZoneId | null>(null);
 
   // Initialize PixiJS renderer
   useEffect(() => {
@@ -129,7 +134,7 @@ export function MapViewport() {
           // Initial camera: center on thread centroid per Spec 08
           const threadArray = [...useThreadStore.getState().threads.values()];
           const centroid = computeThreadCentroid(threadArray);
-          renderer.setCamera(centroid.x, centroid.y, 0.5); // Strategic overview
+          renderer.setCamera(centroid.x, centroid.y, 0.15); // Strategic overview per Spec 08
 
           // Sync initial camera state
           const camState = renderer.getCameraState();
@@ -663,14 +668,31 @@ export function MapViewport() {
             useNavigationStore.getState().saveCameraHistory();
             renderer.animateTo(thread.position.x, thread.position.y, getCanonicalZoom("tactical"));
           }
+        } else if (zoomLevel === "tactical") {
+          // At tactical zoom, threads are dots without labels - no selection per Spec 08
+          // Zoom closer to see details
+          const thread = useThreadStore.getState().threads.get(hitId);
+          if (thread) {
+            useNavigationStore.getState().saveCameraHistory();
+            renderer.animateTo(
+              thread.position.x,
+              thread.position.y,
+              getCanonicalZoom("operational"),
+            );
+          }
         } else {
-          // Single click -> select per Spec 08
+          // Operational/Detail: single click -> select per Spec 08
           // Clear batch selection on normal click
           if (useThreadStore.getState().selectedThreadIds.size > 0) {
             useThreadStore.getState().clearBatchSelection();
           }
           selectThread(hitId);
           useNavigationStore.getState().openDetailPanel();
+          // Trigger New->Active lifecycle transition on thread open per Spec 09
+          const thread = useThreadStore.getState().threads.get(hitId);
+          if (thread && thread.lifecycleState === "new") {
+            useThreadStore.getState().transitionState(hitId, "active", "user-opened");
+          }
         }
       } else {
         // Click empty space -> clear selection per Spec 08
@@ -779,10 +801,42 @@ export function MapViewport() {
         return;
       }
 
-      // Tab - cycle through zone labels per Spec 08
+      // Tab - cycle through zone labels per Spec 08 Section 16
       if (e.key === "Tab") {
         e.preventDefault();
-        // Tab cycling through zone quick-nav labels handled at shell level
+        const zoneIds: ZoneId[] = [
+          "active-front",
+          "opportunities",
+          "at-risk",
+          "lost",
+          "noise",
+          "base-handled",
+        ];
+        const currentFocused = tabFocusedZoneRef.current;
+        const currentIdx = currentFocused ? zoneIds.indexOf(currentFocused) : -1;
+        const direction = e.shiftKey ? -1 : 1;
+        const nextIdx =
+          currentIdx === -1 ? 0 : (currentIdx + direction + zoneIds.length) % zoneIds.length;
+        tabFocusedZoneRef.current = zoneIds[nextIdx];
+        setTabFocusedZone(zoneIds[nextIdx]);
+        return;
+      }
+
+      // Enter on focused zone label -> navigate to zone per Spec 08
+      if (e.key === "Enter" && tabFocusedZoneRef.current && !selectedThreadId) {
+        e.preventDefault();
+        const zoneId = tabFocusedZoneRef.current;
+        const zone = zonesRef.current.get(zoneId);
+        if (zone && renderer) {
+          const container = containerRef.current;
+          const vw = container?.clientWidth ?? 800;
+          const vh = container?.clientHeight ?? 600;
+          const zoneTarget = zoomToFitZone(zone, vw, vh);
+          useNavigationStore.getState().saveCameraHistory();
+          renderer.animateTo(zoneTarget.centerX, zoneTarget.centerY, zoneTarget.zoom);
+        }
+        tabFocusedZoneRef.current = null;
+        setTabFocusedZone(null);
         return;
       }
 
@@ -988,6 +1042,20 @@ export function MapViewport() {
     renderer.animateTo(mapX, mapY, cam.zoom);
   }, []);
 
+  // Zone quick-nav click handler per Spec 08
+  const handleZoneQuickNav = useCallback((zoneId: ZoneId) => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    const zone = zonesRef.current.get(zoneId);
+    if (!zone) return;
+    const container = containerRef.current;
+    const vw = container?.clientWidth ?? 800;
+    const vh = container?.clientHeight ?? 600;
+    const zoneTarget = zoomToFitZone(zone, vw, vh);
+    useNavigationStore.getState().saveCameraHistory();
+    renderer.animateTo(zoneTarget.centerX, zoneTarget.centerY, zoneTarget.zoom);
+  }, []);
+
   // Minimap shows only visible (filtered) threads per Spec 09
   const visibleThreadArray = getVisibleThreads([...threads.values()], filter);
 
@@ -1069,6 +1137,7 @@ export function MapViewport() {
         onCyclePrevious={handleSearchCyclePrev}
         onClose={handleSearchClose}
       />
+      <ZoneQuickNav onNavigate={handleZoneQuickNav} focusedZone={tabFocusedZone} />
       <Minimap
         threads={visibleThreadArray}
         zones={zonesSnapshot}

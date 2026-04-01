@@ -47,6 +47,7 @@ export function createTrustRecord(contactEmail: string): TrustRecord {
     tierEntryDate: now,
     lastReplyTimestamp: null,
     lastDecayCheck: now,
+    decayActive: false,
   };
 }
 
@@ -68,6 +69,7 @@ export function onTimeReply(
     consecutiveStreak: newStreak,
     lastReplyTimestamp: now,
     tierEntryDate: newTier !== record.tier ? now : record.tierEntryDate,
+    decayActive: false, // on-time reply clears decay
   };
 }
 
@@ -84,7 +86,13 @@ export function evaluateDecay(
   const decayThreshold = thresholds.critical * 2;
   const timeSinceReply = now - record.lastReplyTimestamp;
 
-  if (timeSinceReply <= decayThreshold) return record;
+  if (timeSinceReply <= decayThreshold) {
+    // Not decaying - ensure flag is cleared
+    if (record.decayActive) {
+      return { ...record, decayActive: false };
+    }
+    return record;
+  }
 
   // Check established tier floor protection per Spec 07:
   // "established contacts with 30+ days at tier don't drop below established"
@@ -109,5 +117,6 @@ export function evaluateDecay(
     consecutiveStreak: 0, // decay resets streak
     lastDecayCheck: now,
     tierEntryDate: newTier !== record.tier ? now : record.tierEntryDate,
+    decayActive: true, // per Spec 07: flag that decay is active on this contact
   };
 }

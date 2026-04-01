@@ -282,6 +282,7 @@ describe("AppStore - trust records, session stats, streaks", () => {
       tierEntryDate: 1000000,
       lastReplyTimestamp: 2000000,
       lastDecayCheck: 3000000,
+      decayActive: false,
     };
     useAppStore.getState().setTrustRecords({ "alice@example.com": record });
     const stored = useAppStore.getState().trustRecords;

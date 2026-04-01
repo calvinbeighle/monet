@@ -10,7 +10,7 @@ export type HealthTier = "healthy" | "degraded" | "critical";
 
 export function getHealthTier(score: number): HealthTier {
   if (score >= 75) return "healthy";
-  if (score >= 25) return "degraded";
+  if (score >= 50) return "degraded";
   return "critical";
 }
 
