@@ -2,7 +2,7 @@
 // Shows: sync indicator, front health score, streak counters, alert badges
 // Contains triggers for session summary, deployment history, filter panel, and alert list
 
-import { useAppStore } from "../lib/stores";
+import { useAppStore, useSyncStore } from "../lib/stores";
 import { useFilterStore, isFilterActive } from "../lib/stores/filter-store";
 
 interface StatusBarProps {
@@ -19,6 +19,7 @@ export function StatusBar({
   onAlertClick,
 }: StatusBarProps = {}) {
   const syncStatus = useAppStore((s) => s.syncStatus);
+  const syncMode = useSyncStore((s) => s.syncMode);
   const frontHealthScore = useAppStore((s) => s.frontHealthScore);
   const streakInboxZero = useAppStore((s) => s.streakInboxZero);
   const streakZeroLost = useAppStore((s) => s.streakZeroLost);
@@ -36,14 +37,19 @@ export function StatusBar({
           ? "text-orange-400"
           : "text-red-400";
 
+  // Per Spec 10/12: distinct visual state for initial load vs incremental sync
+  const isInitialLoad = syncMode === "initial-load" && syncStatus === "syncing";
   const syncIndicator =
     syncStatus === "connected"
       ? "bg-green-500"
-      : syncStatus === "syncing"
-        ? "bg-blue-500"
-        : syncStatus === "error"
-          ? "bg-red-500"
-          : "bg-gray-500";
+      : isInitialLoad
+        ? "bg-yellow-500 animate-pulse"
+        : syncStatus === "syncing"
+          ? "bg-blue-500"
+          : syncStatus === "error"
+            ? "bg-red-500"
+            : "bg-gray-500";
+  const syncLabel = isInitialLoad ? "loading" : syncStatus;
 
   return (
     <div
@@ -53,7 +59,7 @@ export function StatusBar({
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
           <div className={`h-2 w-2 rounded-full ${syncIndicator}`} data-testid="sync-indicator" />
-          <span className="text-xs text-gray-400">{syncStatus}</span>
+          <span className="text-xs text-gray-400">{syncLabel}</span>
         </div>
 
         {onHistoryClick && (

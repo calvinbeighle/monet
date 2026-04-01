@@ -235,6 +235,10 @@ export function evaluateClusters(
 
   // Build new clusters using greedy assignment
   // Track which existing cluster IDs have been reused to avoid double-assignment
+  // Per Spec 11: only active (2+ member) cluster IDs can be reused; dissolved IDs are retired
+  const activeClusterIds = new Set(
+    existingClusters.filter((c) => c.memberThreadIds.length >= 2).map((c) => c.id),
+  );
   const usedExistingIds = new Set<string>();
   const newClusters: Cluster[] = [];
   const assigned = new Set<string>();
@@ -253,6 +257,7 @@ export function evaluateClusters(
       const reuseId = findExistingClusterId(
         existingClusterMembers,
         usedExistingIds,
+        activeClusterIds,
         pair.a,
         pair.b,
       );
@@ -285,7 +290,8 @@ export function evaluateClusters(
       const membersData = clusterA.memberThreadIds.map((id) => threadMap.get(id)!).filter(Boolean);
       clusterA.centroid = computeCentroid(membersData);
       clusterA.label = deriveLabel(membersData);
-      clusterA.visualExtent = clusterA.memberThreadIds.length;
+      // Per Spec 11: extent does not decrease unless member count decreases (high-water mark)
+      clusterA.visualExtent = Math.max(clusterA.visualExtent, clusterA.memberThreadIds.length);
       clusterA.lastMembershipChange = now;
     } else if (!clusterA && clusterB) {
       // Add A to B's cluster
@@ -294,7 +300,8 @@ export function evaluateClusters(
       const membersData = clusterB.memberThreadIds.map((id) => threadMap.get(id)!).filter(Boolean);
       clusterB.centroid = computeCentroid(membersData);
       clusterB.label = deriveLabel(membersData);
-      clusterB.visualExtent = clusterB.memberThreadIds.length;
+      // Per Spec 11: extent does not decrease unless member count decreases (high-water mark)
+      clusterB.visualExtent = Math.max(clusterB.visualExtent, clusterB.memberThreadIds.length);
       clusterB.lastMembershipChange = now;
     }
     // Both assigned to different clusters - don't merge (one cluster per thread)
@@ -318,22 +325,27 @@ export function evaluateClusters(
 }
 
 // Find an existing cluster ID that contains both threads (for ID stability across evaluations)
-// Per Spec 11: dissolved cluster identifiers are not reused, but stable clusters keep their ID
+// Per Spec 11: dissolved cluster identifiers are not reused; only reuse IDs for clusters
+// that are still active (2+ members) in the current evaluation
 function findExistingClusterId(
   existingClusterMembers: Map<string, Set<string>>,
   usedIds: Set<string>,
+  activeClusterIds: Set<string>,
   threadA: string,
   threadB: string,
 ): string | null {
   for (const [clusterId, members] of existingClusterMembers) {
     if (usedIds.has(clusterId)) continue;
+    // Only reuse IDs of clusters that are still active (not dissolved)
+    if (!activeClusterIds.has(clusterId)) continue;
     if (members.has(threadA) && members.has(threadB)) {
       return clusterId;
     }
   }
-  // Also check if either thread was in an existing cluster (partial overlap)
+  // Also check if either thread was in an active existing cluster (partial overlap)
   for (const [clusterId, members] of existingClusterMembers) {
     if (usedIds.has(clusterId)) continue;
+    if (!activeClusterIds.has(clusterId)) continue;
     if (members.has(threadA) || members.has(threadB)) {
       return clusterId;
     }

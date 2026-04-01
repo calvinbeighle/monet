@@ -84,7 +84,8 @@ export function SearchOverlay({
   return (
     <div
       ref={overlayRef}
-      className="absolute top-0 left-0 right-0 z-20 flex items-center gap-2 bg-black/80 px-4 py-2 backdrop-blur-sm border-b border-white/10"
+      className="absolute top-0 left-0 right-0 flex items-center gap-2 bg-black/80 px-4 py-2 backdrop-blur-sm border-b border-white/10"
+      style={{ zIndex: 25 }}
       data-testid="search-overlay"
       role="search"
       aria-label="Search threads"
