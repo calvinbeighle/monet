@@ -2,7 +2,7 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 1146 tests passing. Tags through v0.9.3.
+**Current state**: 1167 tests passing. Tags through v0.9.5.
 
 **Implemented**: All 12 specs fully implemented. 1.1-1.7 Foundation (Gmail auth, thread model, fetching, sync, outbound actions, offline queue), 2.1-2.6 Core Map (shell, rendering, navigation, zones, drift, clustering), 3.1-3.5 Game Mechanics (risk scoring, trust, opportunities, front health, alerts), 4.1-4.3 Agent System (units, AI backend, deployment UI), 5.1-5.8 Spec Compliance Round 1 (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1-6.5 Spec Compliance Round 2 (quota UI, travel arc, history filters, cluster indicator, draft store), 7.1-7.6 Spec Compliance Round 3 (organic drift, cluster migration, cluster-biased placement, failed thread identification, batch queue, zone quick-nav), 8.1-8.7 Spec Compliance Round 4 (clustering affinity nudge, collision avoidance on target positions, wobble stability, onLabel/onMarkRead handlers, reauth banner, read-state-change sync, failedThreadIds full propagation), 9.1-9.3 Spec Compliance Round 5 (topicTags on Thread model with topic-biased placement, drifting-lost and approaching-archive lifecycle states, extractKeywords reuse from clustering), 10.1-10.3 Spec Compliance Round 6 (arrow key New->Active transition, search close focus zone restoration, three-step Escape with composerActive state), 11.1-11.3 Spec Compliance Round 7 (draft deletion on send, deployment progress/outcomeSummary fields, trust tier-crossing and 3-consecutive visual indicators), 12.1-12.4 Spec Compliance Round 8 (pinch-to-zoom gesture, snap-back animation on cancelled drag, agent hover tooltip with elapsed time, lastPositioningTick written after drift tick), 13.1-13.2 Spec Compliance Round 9 (smoothed urgency pulse fade-out with lerp, zoom density blend transitions with smooth crossfade), 14.1-14.6 Spec Compliance Round 10 (zoom min/max boundary flash, label truncation at tactical zoom, soft boundary membership indicator, context menu cluster filter, contact enrichment from message history, new thread evaluation timing already correct), 15.1-15.4 Spec Compliance Round 11 (quotaExhausted wiring, archived pulse suppression, cluster migration animation, cluster label at aggregate zoom, zone alert wiring, smooth zone boundaries, agent-completed alert, session counter reset, zoom anchor math fix, strategic cluster click, cooldown timer in agent dock, outcomeSummary rendering in deployment history, cluster-only deployment target validation per Spec 11 Section 10), 16.1-16.4 Spec Compliance Round 12 (dissolved cluster ID retirement per Spec 11, visualExtent high-water mark per Spec 11, search overlay z-index above notifications per Spec 12, distinct initial-load sync indicator per Spec 10).
 
@@ -16,14 +16,8 @@ Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
 **Medium**:
 
-- Spec 03: Deadline detection not implemented in urgency scoring (NLP extraction needed)
-- Spec 03: Body content not scanned for value keywords (only subject scanned)
-- Spec 03: High-value/low-urgency threads not stabilized in Opportunities zone
-- Spec 07: Opportunity window start not stored on thread record (custom windows incorrect)
-- Spec 07: Front health risk load not weighted by thread type
 - Spec 09: Persistence batched every 5s, not on every property change (beforeunload mitigates)
 - Spec 09: vipFlag always false, organization always null (no external enrichment API)
-- Spec 12: Status bar left-to-right ordering does not match spec sequence
 
 **Low**:
 
@@ -651,3 +645,13 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Spec 07: createAgentCompletedAlert fired on deployment completion, session stats reset on summary modal dismissal
 - Spec 08: Zoom anchor math fixed (screen-to-map coordinate conversion), strategic cluster dot click hit-tests clusters
 - Test count: 1146 total (4 new tests), all passing
+
+### Implementation Notes - Spec Compliance Round 13 (2026-04-01)
+
+- Deadline detection (Spec 03): 14 regex patterns match deadline phrases in message subject and body (day names, month+date, deadline/due/EOD/ASAP keywords, ISO dates, expiration phrases). detectDeadline() exported from scoring.ts. Urgency boost of +0.15 when deadline found.
+- Body keyword scanning (Spec 03): computeValueScore now scans thread.messages[].bodyPlain and bodyHtml for value keywords in addition to subject. Same keyword list (deal, contract, proposal, etc.).
+- Opportunity zone stabilization (Spec 03): driftTick skips neglect drift for threads whose targetZone is "opportunities". High-value/low-urgency threads occupy stable positions per spec.
+- Opportunity window start (Spec 07): opportunityWindowStart field added to Thread interface. flagOpportunity stores the open timestamp. evaluateOpportunity uses stored start for custom window durations instead of back-calculating from DEFAULT_WINDOW_MS.
+- Risk load weighting (Spec 07): computeRiskLoad in front-health.ts now weights each thread's tier score by THREAD_TYPE_RISK_WEIGHT (internal=1.5, warm-intro=1.4, existing-relationship=1.0, cold-outreach=0.8, transactional=0.5). Tighter tolerance = higher weight.
+- Status bar ordering (Spec 12): All four primary indicators (sync, health, streaks, alert badge) now render left-to-right in a single flex group per Spec 12 Section 3. Additional items (lost tally, deployments, filter, summary) grouped separately on the right.
+- Test count: 1167 total (21 new: 12 deadline detection, 2 body keyword, 1 drift stabilization, 3 opportunity window start, 1 risk weighting, 1 status bar ordering, 1 sync-engine fixture), all passing. Typecheck and lint clean.
