@@ -12,6 +12,12 @@ export interface AgentSuggestion {
   category: "code" | "email" | "research" | "automation" | "writing" | "other";
 }
 
+export interface SessionHistory {
+  instruction: string;
+  status: string;
+  rawOutput: string;
+}
+
 async function queryDb<T = any>(sql: string): Promise<T[]> {
   const pool = new pg.Pool({
     connectionString: DB_URL,
@@ -29,71 +35,92 @@ async function queryDb<T = any>(sql: string): Promise<T[]> {
   }
 }
 
-async function gatherCodingSessions(): Promise<string> {
+async function getTraceContext(): Promise<string> {
   const sessions = await queryDb(`
-    SELECT project_name, first_user_message, start_time, end_time,
-           user_turns, tool_use_count, model, task_summary,
-           estimated_cost_usd
+    SELECT project_name, first_user_message, start_time,
+           user_turns, tool_use_count, task_summary
     FROM ai_sessions
     WHERE start_time > NOW() - INTERVAL '14 days'
       AND source = 'claude_code'
       AND project_name IS NOT NULL
     ORDER BY start_time DESC
-    LIMIT 30
+    LIMIT 25
   `);
 
-  if (sessions.length === 0) return "No recent Claude Code sessions found.";
+  if (sessions.length === 0) return "";
 
   return (
-    "CLAUDE CODE SESSIONS (last 2 weeks):\n" +
+    "TRACE DATA - Claude Code sessions (last 2 weeks):\n" +
     sessions
       .map((s: any) => {
-        const msg = (s.first_user_message || "").slice(0, 150);
-        const summary = (s.task_summary || "").slice(0, 100);
-        const cost = s.estimated_cost_usd
-          ? `$${Number(s.estimated_cost_usd).toFixed(2)}`
-          : "";
-        return `- ${s.project_name} | ${s.user_turns} turns | ${s.start_time} | "${msg}" ${summary ? `| Summary: ${summary}` : ""} ${cost}`;
+        const msg = (s.first_user_message || "").slice(0, 120);
+        const summary = (s.task_summary || "").slice(0, 80);
+        return `- ${s.project_name} | ${s.user_turns} turns | ${s.start_time} | "${msg}" ${summary ? `[${summary}]` : ""}`;
       })
       .join("\n")
   );
 }
 
-export async function getPredictions(): Promise<AgentSuggestion[]> {
-  try {
-    const context = await gatherCodingSessions();
+function formatInAppHistory(history: SessionHistory[]): string {
+  if (history.length === 0) return "";
 
-    if (context.includes("No recent")) return [];
+  return (
+    "IN-APP HISTORY - What the user has done in this session:\n" +
+    history
+      .map((h, i) => {
+        const output = h.rawOutput.slice(0, 200);
+        return `${i + 1}. [${h.status}] "${h.instruction}" -> ${output}`;
+      })
+      .join("\n")
+  );
+}
+
+export async function getPredictions(
+  inAppHistory: SessionHistory[] = [],
+): Promise<AgentSuggestion[]> {
+  try {
+    const [traceContext] = await Promise.all([getTraceContext()]);
+    const appContext = formatInAppHistory(inAppHistory);
+
+    // Need at least some context to make predictions
+    if (!traceContext && !appContext) return [];
+
+    const contextSections = [traceContext, appContext]
+      .filter(Boolean)
+      .join("\n\n");
 
     const client = new Anthropic();
 
     const response = await client.messages.create({
       model: "claude-opus-4-6",
-      max_tokens: 2000,
+      max_tokens: 1500,
       messages: [
         {
           role: "user",
-          content: `You are deciding the order of a TikTok-style coding agent feed. The user swipes through cards, each one is a Claude Code agent they can instruct.
+          content: `You are the prediction engine for a super terminal - a TikTok-style feed of Claude Code agents. Each card is a coding agent the user can instruct. You decide what the NEXT card should suggest.
 
-Based on their recent Claude Code session history below, decide which PROJECTS the user most likely wants to work on next, and in what order.
+${contextSections}
 
-${context}
+Based on the combination of:
+1. What the user has been doing in THIS session (in-app history) - highest signal
+2. Their broader coding patterns from Trace data - background context
 
-Return a JSON array of 5-10 suggestions, ordered by what the user most likely wants to work on next. Each item:
+Predict what the user most likely wants to do NEXT. Return a JSON array of 3-5 suggestions for the next cards in the stack. Each:
 {
   "instruction": "",
-  "reason": "1-line explanation of why this project should be next - reference specific session data",
+  "reason": "1-line context hint shown on the card - be specific and actionable",
   "score": 0-100,
   "category": "code"
 }
 
-Leave "instruction" empty - the user will type their own. You are only deciding the ORDER and providing context about WHY each project matters.
+Leave "instruction" empty - the user types their own. Your "reason" is a smart hint that helps them decide what to work on.
 
-Think about:
-- Which projects have the most momentum (recent sessions, many turns)?
-- Which projects were worked on most recently?
-- Which ones look like they have unfinished work?
-- Deduplicate - group sessions by project, don't repeat the same project.
+Rules:
+- If they have in-app history, heavily weight what they've been doing and suggest logical next steps.
+- If they only have trace data, suggest projects they'd likely want to continue.
+- Be specific - reference actual project names, tasks, and context.
+- Don't suggest things they've already done in this session.
+- Think like a great assistant who knows what comes next.
 
 Return ONLY the JSON array.`,
         },
