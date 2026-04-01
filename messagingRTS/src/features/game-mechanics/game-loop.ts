@@ -8,6 +8,7 @@ import type { TrustRecord, SessionStats, StreakState } from "../../lib/types/gam
 import { tickOpportunities } from "./opportunity-system";
 import { computeFrontHealth, evaluateStreaks } from "./front-health";
 import { evaluateDecay, createTrustRecord, onTimeReply as trustOnTimeReply } from "./trust-system";
+import { getLatencyThresholds } from "../../lib/utils/scoring";
 import type { ThreadType } from "../../lib/types";
 
 // Throttle trust decay evaluation to every 30 seconds (heavy computation, slow-changing)
@@ -165,16 +166,31 @@ export function runTrustDecay(
 }
 
 // Handle trust update on user reply - called from outbound actions
+// Per Spec 07: trust only increases if the reply was within the elevated threshold (on-time)
 export function updateTrustOnReply(
   trustRecords: Record<string, TrustRecord>,
   participantEmails: string[],
   threadType: ThreadType,
+  elapsedSinceRiskStart: number = 0,
   now: number = Date.now(),
 ): Record<string, TrustRecord> {
+  const thresholds = getLatencyThresholds(threadType);
+  const isOnTime = elapsedSinceRiskStart <= thresholds.elevated;
+
   const updated = { ...trustRecords };
   for (const email of participantEmails) {
     const existing = updated[email] ?? createTrustRecord(email);
-    updated[email] = trustOnTimeReply(existing, threadType, now);
+    if (isOnTime) {
+      updated[email] = trustOnTimeReply(existing, threadType, now);
+    } else {
+      // Late reply: create record if new (so we track the contact), but no trust increase
+      // Reset streak since reply was late
+      if (!trustRecords[email]) {
+        updated[email] = { ...existing, lastReplyTimestamp: now };
+      } else {
+        updated[email] = { ...existing, lastReplyTimestamp: now, consecutiveStreak: 0 };
+      }
+    }
   }
   return updated;
 }

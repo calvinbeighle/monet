@@ -14,7 +14,7 @@ import type { ThreadLifecycleState } from "../types";
 
 const VALID_TRANSITIONS: Record<ThreadLifecycleState, ThreadLifecycleState[]> = {
   new: ["active", "handled"],
-  active: ["waiting", "handled"],
+  active: ["waiting", "at-risk", "handled"],
   waiting: ["active", "at-risk", "handled"],
   "at-risk": ["active", "lost", "handled"],
   lost: ["active", "handled"],
@@ -62,6 +62,7 @@ export function resolveTransition(
 
     case "time-threshold-waiting":
       if (current === "waiting") return "at-risk";
+      if (current === "active") return "at-risk";
       return null;
 
     case "time-threshold-lost":

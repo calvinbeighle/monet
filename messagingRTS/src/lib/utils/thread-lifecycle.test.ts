@@ -30,7 +30,6 @@ describe("Thread lifecycle state machine", () => {
       ["new", "at-risk"],
       ["new", "lost"],
       ["active", "new"],
-      ["active", "at-risk"],
       ["active", "lost"],
       ["waiting", "new"],
       ["waiting", "lost"],
@@ -107,6 +106,10 @@ describe("Thread lifecycle state machine", () => {
 
     it("time-threshold-waiting: waiting -> at-risk", () => {
       expect(resolveTransition("waiting", "time-threshold-waiting")).toBe("at-risk");
+    });
+
+    it("time-threshold-waiting: active -> at-risk (Spec 09)", () => {
+      expect(resolveTransition("active", "time-threshold-waiting")).toBe("at-risk");
     });
 
     it("time-threshold-lost: at-risk -> lost", () => {

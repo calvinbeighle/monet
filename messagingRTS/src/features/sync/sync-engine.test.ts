@@ -167,6 +167,7 @@ describe("SyncEngine", () => {
         clusterMembership: null,
         stateHistory: [],
         threadType: "existing-relationship",
+        riskScore: 0,
         riskTier: "safe",
         riskTimerStart: Date.now(),
         opportunityState: "none",

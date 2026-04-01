@@ -3,6 +3,7 @@ import {
   computeUrgencyScore,
   computeValueScore,
   computeRiskTier,
+  computeRiskScore,
   getLatencyThresholds,
 } from "./scoring";
 import { createThread } from "../types";
@@ -239,6 +240,60 @@ describe("computeRiskTier", () => {
     // Same time, but transactional has looser thresholds (48h/96h/168h)
     thread.threadType = "transactional";
     expect(computeRiskTier(thread, now)).toBe("safe");
+  });
+});
+
+describe("computeRiskScore", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  it("returns 0 when risk timer just started", () => {
+    const thread = createThread("t1", "Subject", "snippet");
+    const now = Date.now();
+    thread.riskTimerStart = now;
+    expect(computeRiskScore(thread, now)).toBe(0);
+  });
+
+  it("returns 100 at or beyond the lost threshold", () => {
+    const thread = createThread("t1", "Subject", "snippet");
+    const now = Date.now();
+    thread.riskTimerStart = now - 100 * HOUR; // existing-relationship lost = 96h
+    expect(computeRiskScore(thread, now)).toBe(100);
+  });
+
+  it("returns ~33 at the elevated threshold", () => {
+    const thread = createThread("t1", "Subject", "snippet");
+    const now = Date.now();
+    // existing-relationship elevated = 24h
+    thread.riskTimerStart = now - 24 * HOUR;
+    const score = computeRiskScore(thread, now);
+    expect(score).toBeCloseTo(33, 0);
+  });
+
+  it("returns ~66 at the critical threshold", () => {
+    const thread = createThread("t1", "Subject", "snippet");
+    const now = Date.now();
+    // existing-relationship critical = 48h
+    thread.riskTimerStart = now - 48 * HOUR;
+    const score = computeRiskScore(thread, now);
+    expect(score).toBeCloseTo(66, 0);
+  });
+
+  it("rises continuously (not in discrete jumps)", () => {
+    const thread = createThread("t1", "Subject", "snippet");
+    const now = Date.now();
+    const scores: number[] = [];
+    for (let h = 0; h <= 96; h += 4) {
+      thread.riskTimerStart = now - h * HOUR;
+      scores.push(computeRiskScore(thread, now));
+    }
+    // Each score should be >= the previous one (monotonically increasing)
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i]).toBeGreaterThanOrEqual(scores[i - 1]);
+    }
+    // There should be no large jumps (continuous)
+    for (let i = 1; i < scores.length; i++) {
+      expect(scores[i] - scores[i - 1]).toBeLessThan(10);
+    }
   });
 });
 

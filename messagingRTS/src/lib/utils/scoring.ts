@@ -121,6 +121,27 @@ export function getLatencyThresholds(threadType: Thread["threadType"]) {
   };
 }
 
+// Compute continuous risk score (0-100) per Spec 07
+// Rises continuously between thresholds, not in discrete jumps
+export function computeRiskScore(thread: Thread, now: number = Date.now()): number {
+  const elapsed = now - thread.riskTimerStart;
+  const thresholds = getLatencyThresholds(thread.threadType);
+
+  if (elapsed <= 0) return 0;
+  if (elapsed >= thresholds.lost) return 100;
+
+  // Piecewise linear: 0->elevated = 0-33, elevated->critical = 33-66, critical->lost = 66-100
+  if (elapsed < thresholds.elevated) {
+    return (elapsed / thresholds.elevated) * 33;
+  }
+  if (elapsed < thresholds.critical) {
+    return (
+      33 + ((elapsed - thresholds.elevated) / (thresholds.critical - thresholds.elevated)) * 33
+    );
+  }
+  return 66 + ((elapsed - thresholds.critical) / (thresholds.lost - thresholds.critical)) * 34;
+}
+
 // Compute risk tier based on time since risk timer started
 export function computeRiskTier(thread: Thread, now: number = Date.now()): Thread["riskTier"] {
   const elapsed = now - thread.riskTimerStart;

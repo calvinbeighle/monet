@@ -279,5 +279,43 @@ describe("Game loop", () => {
       expect(result["a@test.com"].score).toBe(3);
       expect(result["b@test.com"].score).toBe(3);
     });
+
+    it("does not increase trust for late reply (beyond elevated threshold)", () => {
+      const record = makeTrustRecord("alice@test.com", 40);
+      record.consecutiveStreak = 3;
+      // existing-relationship elevated threshold is 24h = 86400000ms
+      const lateElapsed = 25 * 60 * 60 * 1000; // 25 hours - beyond elevated
+      const result = updateTrustOnReply(
+        { "alice@test.com": record },
+        ["alice@test.com"],
+        "existing-relationship",
+        lateElapsed,
+      );
+      // Score should NOT increase
+      expect(result["alice@test.com"].score).toBe(40);
+      // Streak should reset
+      expect(result["alice@test.com"].consecutiveStreak).toBe(0);
+    });
+
+    it("increases trust for on-time reply (within elevated threshold)", () => {
+      const record = makeTrustRecord("alice@test.com", 40);
+      // existing-relationship elevated threshold is 24h
+      const onTimeElapsed = 10 * 60 * 60 * 1000; // 10 hours - within elevated
+      const result = updateTrustOnReply(
+        { "alice@test.com": record },
+        ["alice@test.com"],
+        "existing-relationship",
+        onTimeElapsed,
+      );
+      expect(result["alice@test.com"].score).toBe(45);
+    });
+
+    it("creates record for new contact even on late reply", () => {
+      const lateElapsed = 100 * 60 * 60 * 1000;
+      const result = updateTrustOnReply({}, ["new@test.com"], "existing-relationship", lateElapsed);
+      expect(result["new@test.com"]).toBeDefined();
+      expect(result["new@test.com"].score).toBe(0); // no trust increase
+      expect(result["new@test.com"].lastReplyTimestamp).not.toBeNull();
+    });
   });
 });

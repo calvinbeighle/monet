@@ -109,6 +109,7 @@ export interface Thread {
 
   // Game mechanics
   threadType: ThreadType;
+  riskScore: number; // continuous 0-100 risk score per Spec 07
   riskTier: RiskTier;
   riskTimerStart: number; // timestamp when risk clock started
   opportunityState: OpportunityState;
@@ -154,6 +155,7 @@ export function createThread(id: string, subject: string, snippet: string): Thre
     stateHistory: [],
 
     threadType: "existing-relationship",
+    riskScore: 0,
     riskTier: "safe",
     riskTimerStart: now,
     opportunityState: "none",

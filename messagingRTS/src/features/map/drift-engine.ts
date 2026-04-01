@@ -4,7 +4,12 @@
 
 import type { Thread, ZoneId } from "../../lib/types";
 import type { Zone } from "../../lib/types";
-import { computeUrgencyScore, computeValueScore, computeRiskTier } from "../../lib/utils/scoring";
+import {
+  computeUrgencyScore,
+  computeValueScore,
+  computeRiskTier,
+  computeRiskScore,
+} from "../../lib/utils/scoring";
 import { resolveTransition } from "../../lib/utils/thread-lifecycle";
 import { getZoneCenter, getRandomPositionInZone, getZoneAtPosition } from "./zone-layout";
 
@@ -90,9 +95,10 @@ export function driftTick(
     const lastActivity = t.lastUserReplyTimestamp ?? t.latestMessageTimestamp;
     t.neglectDuration = now - lastActivity;
 
-    // 2b. Update risk tier from latency thresholds per Spec 07
+    // 2b. Update risk score and tier from latency thresholds per Spec 07
     const prevRiskTier = t.riskTier;
     if (t.lifecycleState !== "handled") {
+      t.riskScore = computeRiskScore(t, now);
       t.riskTier = computeRiskTier(t, now);
     }
 
@@ -232,6 +238,7 @@ export function onUserReply(thread: Thread, zones: Map<ZoneId, Zone>): Thread {
     targetPosition: position,
     neglectDuration: 0,
     lastUserReplyTimestamp: Date.now(),
+    riskScore: 0,
     riskTier: "safe",
     riskTimerStart: Date.now(),
     userOverrideZone: false,

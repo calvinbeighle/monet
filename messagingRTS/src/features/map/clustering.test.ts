@@ -261,4 +261,59 @@ describe("evaluateClusters", () => {
     // Only one non-handled thread, can't form cluster
     expect(clusters.length).toBe(0);
   });
+
+  it("preserves cluster ID across evaluation passes (Spec 11 ID stability)", () => {
+    const now = Date.now();
+    const t1 = createThread("t1", "Project update", "s");
+    t1.participants = [makeContact("alice@co.com"), makeContact("bob@co.com")];
+    t1.latestMessageTimestamp = now;
+    t1.position = { x: 100, y: 100 };
+
+    const t2 = createThread("t2", "Re: Project update", "s");
+    t2.participants = [makeContact("alice@co.com"), makeContact("bob@co.com")];
+    t2.latestMessageTimestamp = now;
+    t2.position = { x: 110, y: 100 };
+
+    // First evaluation: forms cluster
+    const { clusters: pass1 } = evaluateClusters([t1, t2], [], now);
+    expect(pass1.length).toBe(1);
+    const originalId = pass1[0].id;
+
+    // Second evaluation: same threads, passing existing clusters
+    const { clusters: pass2 } = evaluateClusters([t1, t2], pass1, now);
+    expect(pass2.length).toBe(1);
+    expect(pass2[0].id).toBe(originalId); // ID must be stable
+  });
+
+  it("manual override exclusion persists across evaluation passes with stable IDs", () => {
+    const now = Date.now();
+    const t1 = createThread("t1", "Subject", "s");
+    t1.participants = [makeContact("alice@co.com")];
+    t1.latestMessageTimestamp = now;
+    t1.position = { x: 100, y: 100 };
+
+    const t2 = createThread("t2", "Subject", "s");
+    t2.participants = [makeContact("alice@co.com")];
+    t2.latestMessageTimestamp = now;
+    t2.position = { x: 110, y: 100 };
+
+    const t3 = createThread("t3", "Subject", "s");
+    t3.participants = [makeContact("alice@co.com")];
+    t3.latestMessageTimestamp = now;
+    t3.position = { x: 120, y: 100 };
+
+    // Form clusters
+    const { clusters: pass1 } = evaluateClusters([t1, t2, t3], [], now);
+    expect(pass1.length).toBe(1);
+    const clusterId = pass1[0].id;
+
+    // Exclude t1 from the cluster
+    excludeFromCluster("t1", clusterId);
+
+    // Re-evaluate with existing clusters
+    const { clusters: pass2 } = evaluateClusters([t1, t2, t3], pass1, now);
+    // t1 should not be in the cluster anymore
+    const t1Cluster = pass2.find((c) => c.memberThreadIds.includes("t1"));
+    expect(t1Cluster).toBeUndefined();
+  });
 });

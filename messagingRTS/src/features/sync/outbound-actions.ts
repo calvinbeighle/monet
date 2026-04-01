@@ -192,12 +192,15 @@ export async function sendReplyAction(
     clearDraftRecord(threadId);
 
     // Update trust scores for all participants per Spec 07
+    // Pass elapsed time since risk timer start to gate on-time check
     const appState = useAppStore.getState();
     const participantEmails = thread.participants.map((p) => p.email);
+    const elapsedSinceRiskStart = Date.now() - thread.riskTimerStart;
     const updatedTrust = updateTrustOnReply(
       appState.trustRecords,
       participantEmails,
       thread.threadType,
+      elapsedSinceRiskStart,
     );
     appState.setTrustRecords(updatedTrust);
 
@@ -266,6 +269,7 @@ function applyReplyOptimisticUpdate(
     messageCount: thread.messageCount + 1,
     latestMessageTimestamp: now,
     // Per Spec 07: risk reset to safe + clock restart on reply
+    riskScore: 0,
     riskTier: "safe",
     riskTimerStart: now,
     lastUserReplyTimestamp: now,

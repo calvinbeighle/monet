@@ -178,6 +178,12 @@ export async function performIncrementalSync(): Promise<void> {
 
     console.error("[SyncEngine] Incremental sync failed:", err);
     useSyncStore.getState().recordSyncFailure();
+    // Per Spec 10: propagate error status to app after 2+ consecutive failures
+    const syncState = useSyncStore.getState();
+    if (syncState.connectivityStatus === "error") {
+      useAppStore.getState().setSyncStatus("error");
+      useAppStore.getState().setShellState("degraded");
+    }
   }
 }
 

@@ -207,9 +207,11 @@ export function evaluateClusters(
   const threadMap = new Map(threads.map((t) => [t.id, t]));
   const threadUpdates = new Map<string, string | null>();
 
-  // Build current cluster membership
+  // Build current cluster membership and index for ID reuse
   const memberOf = new Map<string, string>(); // threadId -> clusterId
+  const existingClusterMembers = new Map<string, Set<string>>(); // clusterId -> Set<threadId>
   for (const cluster of existingClusters) {
+    existingClusterMembers.set(cluster.id, new Set(cluster.memberThreadIds));
     for (const threadId of cluster.memberThreadIds) {
       memberOf.set(threadId, cluster.id);
     }
@@ -232,6 +234,8 @@ export function evaluateClusters(
   affinityPairs.sort((x, y) => y.score.composite - x.score.composite);
 
   // Build new clusters using greedy assignment
+  // Track which existing cluster IDs have been reused to avoid double-assignment
+  const usedExistingIds = new Set<string>();
   const newClusters: Cluster[] = [];
   const assigned = new Set<string>();
 
@@ -245,16 +249,30 @@ export function evaluateClusters(
 
     if (!clusterA && !clusterB) {
       // Neither assigned - create new cluster
-      if (isExcluded(pair.a, "") || isExcluded(pair.b, "")) continue; // skip if generic exclusion
+      // Try to reuse an existing cluster ID if these threads were previously clustered together
+      const reuseId = findExistingClusterId(
+        existingClusterMembers,
+        usedExistingIds,
+        pair.a,
+        pair.b,
+      );
+      if (reuseId && (isExcluded(pair.a, reuseId) || isExcluded(pair.b, reuseId))) continue;
+      if (!reuseId && (isExcluded(pair.a, "") || isExcluded(pair.b, ""))) continue;
+
+      const clusterId = reuseId ?? generateClusterId();
+      if (reuseId) usedExistingIds.add(reuseId);
 
       const membersData = [threadMap.get(pair.a)!, threadMap.get(pair.b)!];
+      const existingForTimestamp = reuseId
+        ? existingClusters.find((c) => c.id === reuseId)
+        : undefined;
       const cluster: Cluster = {
-        id: generateClusterId(),
+        id: clusterId,
         memberThreadIds: [pair.a, pair.b],
         centroid: computeCentroid(membersData),
         label: deriveLabel(membersData),
         visualExtent: 2,
-        formationTimestamp: now,
+        formationTimestamp: existingForTimestamp?.formationTimestamp ?? now,
         lastMembershipChange: now,
       };
       newClusters.push(cluster);
@@ -297,6 +315,30 @@ export function evaluateClusters(
   }
 
   return { clusters: validClusters, threadUpdates };
+}
+
+// Find an existing cluster ID that contains both threads (for ID stability across evaluations)
+// Per Spec 11: dissolved cluster identifiers are not reused, but stable clusters keep their ID
+function findExistingClusterId(
+  existingClusterMembers: Map<string, Set<string>>,
+  usedIds: Set<string>,
+  threadA: string,
+  threadB: string,
+): string | null {
+  for (const [clusterId, members] of existingClusterMembers) {
+    if (usedIds.has(clusterId)) continue;
+    if (members.has(threadA) && members.has(threadB)) {
+      return clusterId;
+    }
+  }
+  // Also check if either thread was in an existing cluster (partial overlap)
+  for (const [clusterId, members] of existingClusterMembers) {
+    if (usedIds.has(clusterId)) continue;
+    if (members.has(threadA) || members.has(threadB)) {
+      return clusterId;
+    }
+  }
+  return null;
 }
 
 function findCluster(clusters: Cluster[], threadId: string): Cluster | undefined {
