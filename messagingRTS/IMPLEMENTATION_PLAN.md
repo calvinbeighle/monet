@@ -2,7 +2,7 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 896 tests passing. Tags through v0.7.8.
+**Current state**: 906 tests passing. Tags through v0.7.9.
 
 **Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
@@ -550,3 +550,12 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Escape behavior enhanced: Escape now closes filter panel and alert list popovers (returning focus to status bar) before checking right panel closure.
 - Agent dock compact form (Spec 12 Section 11): AgentDock now accepts isCompact prop. Below RESPONSIVE_BREAKPOINT (768px), dock height reduces from h-16 to h-10, agent entries show only color dot and optional count badge (no name, no status label), with full info available via title tooltip. All entries remain interactive (draggable, recallable) in compact form.
 - Test count: 896 total (20 new: 6 Tab cycling, 2 ARIA attributes, 1 Escape behavior, 2 responsive dock, 2 session-summary ARIA, 3 filter-panel a11y, 4 alert-list a11y), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Spec Compliance Fixes (2026-04-01)
+
+- Lifecycle state machine fix (Spec 09): Added `active -> at-risk` as a valid transition. Previously, only `waiting -> at-risk` was allowed, meaning active threads that never entered waiting state could not transition to at-risk when risk thresholds were crossed. `resolveTransition("active", "time-threshold-waiting")` now returns `"at-risk"`. Drift engine already emits this event on critical risk tier crossing, so active threads now correctly transition.
+- Continuous risk score 0-100 (Spec 07): Added `riskScore` field to Thread interface (continuous numeric 0-100). `computeRiskScore()` in scoring.ts uses piecewise linear interpolation between latency thresholds: 0->elevated maps to 0-33, elevated->critical maps to 33-66, critical->lost maps to 66-100. Wired into drift engine tick alongside existing `computeRiskTier()`. Reset to 0 on user reply.
+- Trust on-time gate (Spec 07): `updateTrustOnReply()` now accepts `elapsedSinceRiskStart` parameter and checks against the elevated threshold before awarding trust. Late replies (beyond elevated threshold) create/update the contact record but do not increase score and reset the consecutive streak to 0. Callers in outbound-actions.ts pass `Date.now() - thread.riskTimerStart`.
+- Cluster ID stability (Spec 11): `evaluateClusters()` now reuses existing cluster IDs when threads from a previous cluster are re-clustered together. `findExistingClusterId()` checks existing cluster membership for overlap. This fixes manual override exclusions which previously broke across evaluation ticks because new IDs were generated every pass.
+- Sync error propagation (Spec 10): After `recordSyncFailure()` in incremental sync catch block, now checks if sync store transitioned to "error" (which happens at 2+ consecutive failures) and propagates to app store's sync status and shell state. Previously, the 2-failure threshold was correctly implemented in the sync store but never propagated to the user-visible app state.
+- Test count: 906 total (10 new: 1 lifecycle transition, 5 risk score, 3 trust on-time gate, 2 cluster ID stability, minus 1 removed invalid-transition test for active->at-risk), all passing. Typecheck and lint clean.
