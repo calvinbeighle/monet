@@ -316,4 +316,123 @@ describe("evaluateClusters", () => {
     const t1Cluster = pass2.find((c) => c.memberThreadIds.includes("t1"));
     expect(t1Cluster).toBeUndefined();
   });
+
+  it("cluster label uses participant name when present in ALL members (Spec 11)", () => {
+    const now = Date.now();
+    const alice = makeContact("alice@co.com", "Alice");
+
+    // All 3 threads include Alice - label should use "Alice"
+    const t1 = createThread("t1", "Topic", "s");
+    t1.participants = [alice];
+    t1.latestMessageTimestamp = now;
+    t1.position = { x: 100, y: 100 };
+
+    const t2 = createThread("t2", "Topic", "s");
+    t2.participants = [alice];
+    t2.latestMessageTimestamp = now;
+    t2.position = { x: 110, y: 100 };
+
+    const t3 = createThread("t3", "Topic", "s");
+    t3.participants = [alice];
+    t3.latestMessageTimestamp = now;
+    t3.position = { x: 120, y: 100 };
+
+    const { clusters } = evaluateClusters([t1, t2, t3], [], now);
+    expect(clusters.length).toBe(1);
+    expect(clusters[0].label).toContain("Alice");
+  });
+
+  it("cluster label does NOT use participant when they are absent from some members (Spec 11)", () => {
+    const now = Date.now();
+    const alice = makeContact("alice@co.com", "Alice");
+    const bob = makeContact("bob@co.com", "Bob");
+
+    // t1 has alice+bob, t2 has only bob - alice is not in all members
+    const t1 = createThread("t1", "Topic", "s");
+    t1.participants = [alice, bob];
+    t1.latestMessageTimestamp = now;
+    t1.position = { x: 100, y: 100 };
+
+    const t2 = createThread("t2", "Topic", "s");
+    t2.participants = [bob];
+    t2.latestMessageTimestamp = now;
+    t2.position = { x: 110, y: 100 };
+
+    const { clusters } = evaluateClusters([t1, t2], [], now);
+    expect(clusters.length).toBe(1);
+    // Alice is not in all members so label should NOT be "Alice"
+    // Bob is in all members so label should contain "Bob"
+    expect(clusters[0].label).not.toContain("Alice");
+    expect(clusters[0].label).toContain("Bob");
+  });
+});
+
+describe("computeAffinity - topicTags", () => {
+  it("uses topicTags for topic overlap when available", () => {
+    const t1 = createThread("t1", "Unrelated subject", "s");
+    t1.participants = [makeContact("alice@co.com")];
+    t1.topicTags = ["budget", "q3", "review"];
+
+    const t2 = createThread("t2", "Another subject", "s");
+    t2.participants = [makeContact("alice@co.com")];
+    t2.topicTags = ["budget", "review", "planning"];
+
+    const affinity = computeAffinity(t1, t2);
+    expect(affinity.topicKeywordOverlap).toBeGreaterThan(0);
+  });
+
+  it("topicTags produce higher overlap than non-matching subjects", () => {
+    const now = Date.now();
+
+    // With topicTags that match
+    const t1Tags = createThread("t1", "Random noise subject", "s");
+    t1Tags.participants = [makeContact("alice@co.com")];
+    t1Tags.latestMessageTimestamp = now;
+    t1Tags.topicTags = ["contract", "renewal", "deadline"];
+
+    const t2Tags = createThread("t2", "Completely different words", "s");
+    t2Tags.participants = [makeContact("alice@co.com")];
+    t2Tags.latestMessageTimestamp = now;
+    t2Tags.topicTags = ["contract", "renewal", "negotiation"];
+
+    const affinityWithTags = computeAffinity(t1Tags, t2Tags, now);
+
+    // Without topicTags - falls back to non-matching subjects
+    const t1NoTags = createThread("t3", "Random noise subject", "s");
+    t1NoTags.participants = [makeContact("alice@co.com")];
+    t1NoTags.latestMessageTimestamp = now;
+
+    const t2NoTags = createThread("t4", "Completely different words", "s");
+    t2NoTags.participants = [makeContact("alice@co.com")];
+    t2NoTags.latestMessageTimestamp = now;
+
+    const affinityNoTags = computeAffinity(t1NoTags, t2NoTags, now);
+
+    expect(affinityWithTags.topicKeywordOverlap).toBeGreaterThan(
+      affinityNoTags.topicKeywordOverlap,
+    );
+  });
+
+  it("falls back to subject keywords when topicTags are empty", () => {
+    const t1 = createThread("t1", "Budget review meeting", "s");
+    t1.participants = [makeContact("alice@co.com")];
+    t1.topicTags = []; // empty - should fall back to subject
+
+    const t2 = createThread("t2", "Budget review follow-up", "s");
+    t2.participants = [makeContact("alice@co.com")];
+    t2.topicTags = []; // empty - should fall back to subject
+
+    const affinityEmpty = computeAffinity(t1, t2);
+
+    // Without topicTags field set (undefined) should behave identically
+    const t3 = createThread("t3", "Budget review meeting", "s");
+    t3.participants = [makeContact("alice@co.com")];
+
+    const t4 = createThread("t4", "Budget review follow-up", "s");
+    t4.participants = [makeContact("alice@co.com")];
+
+    const affinityUndefined = computeAffinity(t3, t4);
+
+    expect(affinityEmpty.topicKeywordOverlap).toBe(affinityUndefined.topicKeywordOverlap);
+  });
 });

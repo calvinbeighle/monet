@@ -103,14 +103,16 @@ describe("Map alerts", () => {
       expect(isHighValueUrgent(thread, now)).toBe(true);
     });
 
-    it("returns false when value score is below threshold", () => {
+    it("returns true regardless of value score when opportunity is active per Spec 07", () => {
+      // Per Spec 07: alert fires for "opportunity-flag true and <30 min on window"
+      // valueScore is not a gating factor
       const now = Date.now();
       const thread = makeThread({
         valueScore: 0.5,
         opportunityState: "ripe",
         opportunityWindowEnd: now + 20 * 60 * 1000,
       });
-      expect(isHighValueUrgent(thread, now)).toBe(false);
+      expect(isHighValueUrgent(thread, now)).toBe(true);
     });
 
     it("returns false when opportunity is none", () => {

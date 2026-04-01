@@ -481,7 +481,7 @@ export function App() {
         aria-label="Agent dock"
         className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/60 focus-visible:outline-offset-[-2px]"
       >
-        <AgentDock isCompact={isCompact} />
+        <AgentDock isCompact={isCompact} onHistoryClick={handleStatusBarHistoryClick} />
       </div>
 
       {/* Session summary modal - full-screen overlay */}

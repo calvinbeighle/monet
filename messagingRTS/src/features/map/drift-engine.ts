@@ -337,6 +337,18 @@ export function driftTick(
         t.zone = newZone;
       }
 
+      // Per Spec 01/09: approaching-archive completes to handled when position converges
+      if (t.lifecycleState === "approaching-archive") {
+        const next = resolveTransition(t.lifecycleState, "archive-drift-complete");
+        if (next) {
+          t.stateHistory = [
+            ...t.stateHistory,
+            { from: t.lifecycleState, to: next, timestamp: now, trigger: "archive-drift-complete" },
+          ];
+          t.lifecycleState = next;
+        }
+      }
+
       t.lastModified = now;
       updated.push(t);
       continue;
@@ -375,8 +387,11 @@ export function driftTick(
     updated.push(t);
   }
 
-  // 6. Collision avoidance pass on target positions per Spec 03 Section 2:
-  // Applied after clustering adjustments, before actual position update
+  // 7. Collision avoidance pass on target positions per Spec 03 Section 2:
+  // Applied after all target positions are finalized.
+  // Note: positions for this tick are already computed above. The collision
+  // avoidance adjusts targetPosition so the NEXT tick's positions will
+  // respect minimum separation.
   applyCollisionAvoidance(updated);
 
   return updated;

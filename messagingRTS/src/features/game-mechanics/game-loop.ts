@@ -123,7 +123,15 @@ export function runGameTick(
     // Use local date per Spec 07: "midnight in the user's local timezone"
     const d = new Date(now);
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const newStreaks = evaluateStreaks(result.updatedThreads, streakState, today);
+    const effectiveStats = result.sessionStatsDelta
+      ? { ...sessionStats, ...result.sessionStatsDelta }
+      : sessionStats;
+    const newStreaks = evaluateStreaks(
+      result.updatedThreads,
+      streakState,
+      today,
+      effectiveStats.lostThreadCount,
+    );
     if (
       newStreaks.inboxZeroDays !== streakState.inboxZeroDays ||
       newStreaks.zeroLostDays !== streakState.zeroLostDays ||
@@ -158,9 +166,14 @@ export function runTrustDecay(
   const updated = { ...trustRecords };
   let changed = false;
 
-  // Build a map of contact email -> thread type (use most recent thread type)
+  // Build a map of contact email -> thread type from most recent thread per Spec 07
+  // Sort threads by latest message timestamp descending so the first encounter per
+  // contact email is the most recent thread type
+  const sortedThreads = [...threads].sort(
+    (a, b) => b.latestMessageTimestamp - a.latestMessageTimestamp,
+  );
   const contactThreadTypes = new Map<string, ThreadType>();
-  for (const thread of threads) {
+  for (const thread of sortedThreads) {
     for (const p of thread.participants) {
       if (!contactThreadTypes.has(p.email)) {
         contactThreadTypes.set(p.email, thread.threadType);

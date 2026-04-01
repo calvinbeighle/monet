@@ -301,6 +301,112 @@ describe("Game loop", () => {
       const result = runTrustDecay(records, [], Date.now());
       expect(result).toBe(records); // same reference = no changes
     });
+
+    it("uses most recent thread type per contact when multiple threads exist (Spec 07)", () => {
+      const now = Date.now();
+      // alice appears in two threads - one old warm-intro and one recent transactional
+      // The most recent thread type (transactional) should be used for decay thresholds
+      const oldThread = {
+        ...createThread("t-old", "Old thread", "s"),
+        threadType: "warm-intro" as const,
+        latestMessageTimestamp: now - 10 * 24 * 60 * 60 * 1000, // 10 days ago
+        participants: [
+          {
+            email: "alice@test.com",
+            displayName: "Alice",
+            organization: "",
+            vipFlag: false,
+            relationshipScore: 0,
+            responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+          },
+        ],
+      };
+      const recentThread = {
+        ...createThread("t-recent", "Recent thread", "s"),
+        threadType: "transactional" as const,
+        latestMessageTimestamp: now - 1 * 24 * 60 * 60 * 1000, // 1 day ago
+        participants: [
+          {
+            email: "alice@test.com",
+            displayName: "Alice",
+            organization: "",
+            vipFlag: false,
+            relationshipScore: 0,
+            responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+          },
+        ],
+      };
+
+      const record = makeTrustRecord("alice@test.com", 60);
+      // Last reply 30 days ago - would trigger decay under any thread type
+      record.lastReplyTimestamp = now - 30 * 24 * 60 * 60 * 1000;
+
+      // Run decay with both threads - most recent (transactional) should be used
+      const result = runTrustDecay({ "alice@test.com": record }, [oldThread, recentThread], now);
+
+      // Run decay with only the recent thread to get the reference result
+      const resultOnlyRecent = runTrustDecay({ "alice@test.com": record }, [recentThread], now);
+
+      // Both should produce the same result since most-recent-first sorting
+      // gives transactional as the thread type in both cases
+      expect(result["alice@test.com"].score).toBe(resultOnlyRecent["alice@test.com"].score);
+    });
+
+    it("sorts threads by latestMessageTimestamp descending before building contact map", () => {
+      const now = Date.now();
+      // alice appears in two threads - order in array is oldest first, newest last
+      const olderThread = {
+        ...createThread("t1", "Older", "s"),
+        threadType: "cold-outreach" as const,
+        latestMessageTimestamp: now - 5 * 24 * 60 * 60 * 1000, // 5 days ago
+        participants: [
+          {
+            email: "alice@test.com",
+            displayName: "Alice",
+            organization: "",
+            vipFlag: false,
+            relationshipScore: 0,
+            responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+          },
+        ],
+      };
+      const newerThread = {
+        ...createThread("t2", "Newer", "s"),
+        threadType: "existing-relationship" as const,
+        latestMessageTimestamp: now - 1 * 24 * 60 * 60 * 1000, // 1 day ago
+        participants: [
+          {
+            email: "alice@test.com",
+            displayName: "Alice",
+            organization: "",
+            vipFlag: false,
+            relationshipScore: 0,
+            responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+          },
+        ],
+      };
+
+      const record = makeTrustRecord("alice@test.com", 60);
+      record.lastReplyTimestamp = now - 30 * 24 * 60 * 60 * 1000;
+
+      // Pass older first, then newer - implementation must sort, not use array order
+      const resultOlderFirst = runTrustDecay(
+        { "alice@test.com": record },
+        [olderThread, newerThread],
+        now,
+      );
+
+      // Pass newer first, then older - result must be identical (sort is deterministic)
+      const resultNewerFirst = runTrustDecay(
+        { "alice@test.com": record },
+        [newerThread, olderThread],
+        now,
+      );
+
+      expect(resultOlderFirst["alice@test.com"].score).toBe(
+        resultNewerFirst["alice@test.com"].score,
+      );
+    });
   });
 
   describe("updateTrustOnReply", () => {

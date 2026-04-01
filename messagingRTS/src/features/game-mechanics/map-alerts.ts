@@ -11,7 +11,7 @@ import { getLatencyThresholds } from "../../lib/utils/scoring";
 const ABOUT_TO_BE_LOST_WINDOW_MS = 30 * 60 * 1000; // 30 minutes before lost threshold
 const HIGH_VALUE_WINDOW_MS = 30 * 60 * 1000; // <30 min remaining on opportunity window
 const STREAK_AT_RISK_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours before midnight
-const HIGH_VALUE_SCORE_THRESHOLD = 0.7; // value score must exceed this
+// HIGH_VALUE_SCORE_THRESHOLD removed per Spec 07: alert gates on opportunity flag only
 
 let alertIdCounter = 0;
 
@@ -40,10 +40,10 @@ export function isAboutToBeLost(thread: Thread, now: number): boolean {
   return timeToLost > 0 && timeToLost <= ABOUT_TO_BE_LOST_WINDOW_MS;
 }
 
-// Check if a thread is high-value with <30 min on opportunity window
+// Check if a thread has opportunity flag with <30 min on opportunity window
+// Per Spec 07: "a thread with opportunity-flag true and less than 30 minutes on the window clock"
 export function isHighValueUrgent(thread: Thread, now: number): boolean {
   if (thread.opportunityState !== "ripe" && thread.opportunityState !== "fading") return false;
-  if (thread.valueScore < HIGH_VALUE_SCORE_THRESHOLD) return false;
   if (!thread.opportunityWindowEnd) return false;
   const timeRemaining = thread.opportunityWindowEnd - now;
   return timeRemaining > 0 && timeRemaining <= HIGH_VALUE_WINDOW_MS;

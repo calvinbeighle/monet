@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { NotificationArea } from "./notification-area";
 import { useAppStore } from "../lib/stores/app-store";
 
@@ -170,6 +170,69 @@ describe("NotificationArea - map alerts", () => {
     const state = useAppStore.getState();
     expect(state.mapAlerts[0].acknowledged).toBe(true);
     expect(state.unreadAlertCount).toBe(0);
+  });
+
+  it("auto-dismisses info notifications after 8 seconds", () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+
+    useAppStore.setState({
+      notifications: [
+        {
+          id: "n-info",
+          message: "Info message",
+          severity: "info",
+          dismissed: false,
+          createdAt: now,
+        },
+        {
+          id: "n-warn",
+          message: "Warning message",
+          severity: "warning",
+          dismissed: false,
+          createdAt: now,
+        },
+      ],
+    });
+
+    render(<NotificationArea />);
+    expect(screen.getByText("Info message")).toBeInTheDocument();
+    expect(screen.getByText("Warning message")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(8001);
+    });
+
+    const state = useAppStore.getState();
+    expect(state.notifications.find((n) => n.id === "n-info")!.dismissed).toBe(true);
+    // Warning should not be dismissed
+    expect(state.notifications.find((n) => n.id === "n-warn")!.dismissed).toBe(false);
+
+    vi.useRealTimers();
+  });
+
+  it("does not auto-dismiss non-info notifications", () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+
+    useAppStore.setState({
+      notifications: [
+        { id: "n1", message: "Warning", severity: "warning", dismissed: false, createdAt: now },
+        { id: "n2", message: "Critical", severity: "critical", dismissed: false, createdAt: now },
+        { id: "n3", message: "Success", severity: "success", dismissed: false, createdAt: now },
+      ],
+    });
+
+    render(<NotificationArea />);
+
+    act(() => {
+      vi.advanceTimersByTime(10000);
+    });
+
+    const state = useAppStore.getState();
+    expect(state.notifications.every((n) => !n.dismissed)).toBe(true);
+
+    vi.useRealTimers();
   });
 
   it("shows both notifications and map alerts together", () => {

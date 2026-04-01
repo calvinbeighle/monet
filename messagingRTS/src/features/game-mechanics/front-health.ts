@@ -107,18 +107,23 @@ function computeLossScore(threads: Thread[], stats: SessionStats): number {
 }
 
 // Streak evaluation per Spec 07: at midnight local time
+// sessionLostCount tracks threads that entered lost tier at any point during the day,
+// even if they were later recovered - this is the correct metric per Spec 07.
 export function evaluateStreaks(
   threads: Thread[],
   currentStreaks: StreakState,
   today: string, // YYYY-MM-DD
+  sessionLostCount: number = 0,
 ): StreakState {
   if (currentStreaks.lastEvaluationDate === today) return currentStreaks;
 
   // Inbox zero: all threads in safe tier at end of day
   const allSafe = threads.every((t) => t.riskTier === "safe" || t.lifecycleState === "handled");
 
-  // Zero lost: no threads entered lost tier during the day
-  const anyLost = threads.some((t) => t.riskTier === "lost" && t.lifecycleState !== "handled");
+  // Zero lost: no threads entered lost tier during the day (using session tracking)
+  // Per Spec 07: "no threads entered the lost tier during the day" - this must use
+  // session-tracked count, not current state, because recovered threads would be missed
+  const anyLost = sessionLostCount > 0;
 
   return {
     inboxZeroDays: allSafe ? currentStreaks.inboxZeroDays + 1 : 0,

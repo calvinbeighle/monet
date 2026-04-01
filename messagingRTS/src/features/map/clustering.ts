@@ -63,10 +63,13 @@ function computeParticipantOverlap(a: Thread, b: Thread): number {
   return union > 0 ? shared / union : 0;
 }
 
-// Topic keyword overlap from subjects (normalized)
+// Topic keyword overlap from topicTags (body-derived) per Spec 11
+// Falls back to subject keywords if topicTags are not available
 function computeTopicOverlap(a: Thread, b: Thread): number {
-  const wordsA = extractKeywords(a.subject);
-  const wordsB = extractKeywords(b.subject);
+  const wordsA =
+    a.topicTags && a.topicTags.length > 0 ? new Set(a.topicTags) : extractKeywords(a.subject);
+  const wordsB =
+    b.topicTags && b.topicTags.length > 0 ? new Set(b.topicTags) : extractKeywords(b.subject);
   if (wordsA.size === 0 && wordsB.size === 0) return 0;
 
   let shared = 0;
@@ -169,7 +172,8 @@ function deriveLabel(threads: Thread[]): string {
     }
   }
 
-  if (bestCount >= 2 && bestParticipant) {
+  // Per Spec 11: participant label preferred only when participant spans ALL members
+  if (bestCount >= threads.length && bestParticipant) {
     return bestParticipant;
   }
 

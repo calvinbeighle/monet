@@ -25,6 +25,7 @@ import { useDraftStore } from "../../lib/stores/draft-store";
 import type { Thread, ThreadMessage } from "../../lib/types";
 import { updateTrustOnReply } from "../game-mechanics/game-loop";
 import { captureOpportunity } from "../game-mechanics/opportunity-system";
+import { resolveTransition } from "../../lib/utils/thread-lifecycle";
 
 // --- Draft State Machine per Spec 01 ---
 // None -> Unsaved: user begins typing
@@ -282,6 +283,17 @@ function applyReplyOptimisticUpdate(
     attachments: [],
   };
 
+  // Per Spec 09: lifecycle transition before computed properties are recalculated
+  const nextState = resolveTransition(thread.lifecycleState, "user-replied");
+  const lifecycleUpdate: Partial<Thread> = {};
+  if (nextState) {
+    lifecycleUpdate.lifecycleState = nextState;
+    lifecycleUpdate.stateHistory = [
+      ...thread.stateHistory,
+      { from: thread.lifecycleState, to: nextState, timestamp: now, trigger: "user-replied" },
+    ];
+  }
+
   useThreadStore.getState().updateThread(threadId, {
     messages: [...thread.messages, optimisticMessage],
     messageCount: thread.messageCount + 1,
@@ -292,6 +304,7 @@ function applyReplyOptimisticUpdate(
     riskTimerStart: now,
     lastUserReplyTimestamp: now,
     neglectDuration: 0,
+    ...lifecycleUpdate,
   });
 }
 

@@ -4,9 +4,13 @@
 // Each item is individually dismissible/acknowledgeable with animated removal.
 // Auto-dismisses oldest beyond MAX_VISIBLE_NOTIFICATIONS.
 
+import { useEffect } from "react";
 import { useAppStore } from "../lib/stores";
 import type { ShellNotification } from "../lib/stores";
 import type { MapAlert, MapAlertType } from "../lib/types/game-mechanics";
+
+// Per Spec 10 Section 6: conflict notifications auto-dismiss after a readable duration
+const AUTO_DISMISS_MS = 8000;
 
 const severityStyles: Record<string, string> = {
   info: "border-blue-800 bg-blue-950/80",
@@ -39,6 +43,23 @@ export function NotificationArea() {
 
   const visibleNotifications = notifications.filter((n: ShellNotification) => !n.dismissed);
   const activeAlerts = mapAlerts.filter((a: MapAlert) => !a.acknowledged && !a.autoResolved);
+
+  // Auto-dismiss info notifications after AUTO_DISMISS_MS per Spec 10 Section 6
+  useEffect(() => {
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const n of visibleNotifications) {
+      if (n.severity === "info") {
+        const age = Date.now() - n.createdAt;
+        const remaining = AUTO_DISMISS_MS - age;
+        if (remaining > 0) {
+          timers.push(setTimeout(() => dismissNotification(n.id), remaining));
+        } else {
+          dismissNotification(n.id);
+        }
+      }
+    }
+    return () => timers.forEach(clearTimeout);
+  }, [visibleNotifications, dismissNotification]);
 
   if (visibleNotifications.length === 0 && activeAlerts.length === 0) return null;
 

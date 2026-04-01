@@ -270,6 +270,89 @@ describe("OutboundActions", () => {
       expect(getDraftState("t1")).toBe("none");
     });
 
+    it("transitions lifecycle state via user-replied event on successful send", async () => {
+      // new -> active
+      const newThread = makeThread("t-new", { lifecycleState: "new" });
+      useThreadStore.getState().setThread(newThread);
+      await sendReplyAction("t-new", {
+        threadId: "t-new",
+        to: ["alice@example.com"],
+        subject: "Re: Subject t-new",
+        body: "Reply from new",
+        inReplyTo: "msg-t-new-1",
+        references: ["msg-t-new-1"],
+      });
+      expect(useThreadStore.getState().getThread("t-new")!.lifecycleState).toBe("active");
+
+      // active -> waiting
+      vi.clearAllMocks();
+      mockSendReply.mockResolvedValue({ id: "sent-msg-2", threadId: "t-active" });
+      const activeThread = makeThread("t-active", { lifecycleState: "active" });
+      useThreadStore.getState().setThread(activeThread);
+      await sendReplyAction("t-active", {
+        threadId: "t-active",
+        to: ["alice@example.com"],
+        subject: "Re: Subject t-active",
+        body: "Reply from active",
+        inReplyTo: "msg-t-active-1",
+        references: ["msg-t-active-1"],
+      });
+      expect(useThreadStore.getState().getThread("t-active")!.lifecycleState).toBe("waiting");
+
+      // at-risk -> active
+      vi.clearAllMocks();
+      mockSendReply.mockResolvedValue({ id: "sent-msg-3", threadId: "t-atrisk" });
+      const atRiskThread = makeThread("t-atrisk", { lifecycleState: "at-risk" });
+      useThreadStore.getState().setThread(atRiskThread);
+      await sendReplyAction("t-atrisk", {
+        threadId: "t-atrisk",
+        to: ["alice@example.com"],
+        subject: "Re: Subject t-atrisk",
+        body: "Reply from at-risk",
+        inReplyTo: "msg-t-atrisk-1",
+        references: ["msg-t-atrisk-1"],
+      });
+      expect(useThreadStore.getState().getThread("t-atrisk")!.lifecycleState).toBe("active");
+    });
+
+    it("records stateHistory entry with user-replied trigger on lifecycle transition", async () => {
+      const thread = makeThread("t1", { lifecycleState: "new" });
+      useThreadStore.getState().setThread(thread);
+
+      await sendReplyAction("t1", {
+        threadId: "t1",
+        to: ["alice@example.com"],
+        subject: "Re: Subject t1",
+        body: "Reply",
+        inReplyTo: "msg-t1-1",
+        references: ["msg-t1-1"],
+      });
+
+      const updated = useThreadStore.getState().getThread("t1")!;
+      const entry = updated.stateHistory.find((h) => h.trigger === "user-replied");
+      expect(entry).toBeDefined();
+      expect(entry?.from).toBe("new");
+      expect(entry?.to).toBe("active");
+    });
+
+    it("does not change lifecycleState when no valid transition exists (waiting state has no user-replied transition)", async () => {
+      // waiting does not have a user-replied transition in the lifecycle
+      const thread = makeThread("t1", { lifecycleState: "waiting" });
+      useThreadStore.getState().setThread(thread);
+
+      await sendReplyAction("t1", {
+        threadId: "t1",
+        to: ["alice@example.com"],
+        subject: "Re: Subject t1",
+        body: "Reply",
+        inReplyTo: "msg-t1-1",
+        references: ["msg-t1-1"],
+      });
+
+      const updated = useThreadStore.getState().getThread("t1")!;
+      expect(updated.lifecycleState).toBe("waiting");
+    });
+
     it("deletes Gmail draft on successful send per Spec 01", async () => {
       const thread = makeThread("t1");
       useThreadStore.getState().setThread(thread);

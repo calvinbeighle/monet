@@ -188,7 +188,7 @@ describe("Streaks", () => {
     expect(updated.zeroLostDays).toBe(1);
   });
 
-  it("resets zero-lost streak when a thread is lost", () => {
+  it("resets zero-lost streak when session has lost threads", () => {
     const threads = [
       {
         ...createThread("t1", "S", "s"),
@@ -197,8 +197,49 @@ describe("Streaks", () => {
       },
     ];
     const streaks = { ...createStreakState(), zeroLostDays: 10, lastEvaluationDate: "2026-03-30" };
-    const updated = evaluateStreaks(threads, streaks, "2026-03-31");
+    // Per Spec 07: sessionLostCount tracks threads that entered lost tier at any point
+    const updated = evaluateStreaks(threads, streaks, "2026-03-31", 1);
 
     expect(updated.zeroLostDays).toBe(0);
+  });
+
+  it("increments zero-lost streak when sessionLostCount is 0 even if a thread is currently lost", () => {
+    // A thread that shows as lost now but sessionLostCount=0 means it was already lost
+    // before the day started - so the day is considered zero-lost
+    const threads = [
+      {
+        ...createThread("t1", "S", "s"),
+        riskTier: "lost" as const,
+        lifecycleState: "lost" as const,
+      },
+    ];
+    const streaks = { ...createStreakState(), zeroLostDays: 5, lastEvaluationDate: "2026-03-30" };
+    const updated = evaluateStreaks(threads, streaks, "2026-03-31", 0);
+
+    expect(updated.zeroLostDays).toBe(6);
+  });
+
+  it("resets zero-lost streak when sessionLostCount > 0 even if no threads are currently lost", () => {
+    // Thread was lost but recovered - sessionLostCount still captures it
+    const threads = [
+      {
+        ...createThread("t1", "S", "s"),
+        riskTier: "safe" as const,
+        lifecycleState: "active" as const,
+      },
+    ];
+    const streaks = { ...createStreakState(), zeroLostDays: 3, lastEvaluationDate: "2026-03-30" };
+    const updated = evaluateStreaks(threads, streaks, "2026-03-31", 2);
+
+    expect(updated.zeroLostDays).toBe(0);
+  });
+
+  it("defaults sessionLostCount to 0 when not provided", () => {
+    const threads = [{ ...createThread("t1", "S", "s"), riskTier: "safe" as const }];
+    const streaks = { ...createStreakState(), zeroLostDays: 4, lastEvaluationDate: "2026-03-30" };
+    // No sessionLostCount argument - defaults to 0
+    const updated = evaluateStreaks(threads, streaks, "2026-03-31");
+
+    expect(updated.zeroLostDays).toBe(5);
   });
 });

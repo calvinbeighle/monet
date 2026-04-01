@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   computeTargetZone,
+  computeTargetPosition,
   driftTick,
   placeNewThread,
   onUserReply,
@@ -16,6 +17,7 @@ import {
 import { createZoneLayout, getZoneCenter } from "./zone-layout";
 import { createThread } from "../../lib/types";
 import type { ContactEnrichment } from "../../lib/types";
+import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
 
 function makeContact(overrides: Partial<ContactEnrichment> = {}): ContactEnrichment {
   return {
@@ -467,6 +469,67 @@ describe("driftTick - auto-lifecycle transitions", () => {
     expect(entry).toBeDefined();
     expect(entry?.from).toBe("at-risk");
     expect(entry?.to).toBe("lost");
+  });
+
+  it("transitions approaching-archive -> handled when position converges (Spec 01/09)", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.lastUserReplyTimestamp = now;
+
+    const archived = onArchive(thread, zones);
+    archived.lastUserReplyTimestamp = now;
+
+    // Compute urgency/value as driftTick will, then compute the stable target
+    // so position == target and driftMagnitude < 1 triggers the snap + transition
+    archived.urgencyScore = computeUrgencyScore(archived, now);
+    archived.valueScore = computeValueScore(archived);
+    const stableTarget = computeTargetPosition(archived, zones, "base-handled");
+    archived.position = { ...stableTarget };
+    archived.targetPosition = { ...stableTarget };
+
+    const [updated] = driftTick([archived], zones, now);
+
+    expect(updated.lifecycleState).toBe("handled");
+  });
+
+  it("records stateHistory entry with trigger archive-drift-complete (Spec 01/09)", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.lastUserReplyTimestamp = now;
+
+    const archived = onArchive(thread, zones);
+    archived.lastUserReplyTimestamp = now;
+    archived.urgencyScore = computeUrgencyScore(archived, now);
+    archived.valueScore = computeValueScore(archived);
+    const stableTarget = computeTargetPosition(archived, zones, "base-handled");
+    archived.position = { ...stableTarget };
+    archived.targetPosition = { ...stableTarget };
+
+    const [updated] = driftTick([archived], zones, now);
+
+    const entry = updated.stateHistory.find((h) => h.trigger === "archive-drift-complete");
+    expect(entry).toBeDefined();
+    expect(entry?.from).toBe("approaching-archive");
+    expect(entry?.to).toBe("handled");
+  });
+
+  it("does not transition approaching-archive on first tick while far from target", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    const archived = onArchive(thread, zones);
+    // Position far away from base-handled zone
+    archived.position = { x: 0, y: 0 };
+    archived.lastUserReplyTimestamp = now;
+
+    const [updated] = driftTick([archived], zones, now);
+
+    expect(updated.lifecycleState).toBe("approaching-archive");
   });
 
   it("does NOT update riskTier for handled threads", () => {

@@ -87,9 +87,10 @@ const STATUS_STYLE: Record<AgentStatus, string> = {
 
 interface AgentDockProps {
   isCompact?: boolean;
+  onHistoryClick?: () => void;
 }
 
-export function AgentDock({ isCompact = false }: AgentDockProps) {
+export function AgentDock({ isCompact = false, onHistoryClick }: AgentDockProps) {
   const agents = useAgentStore((s) => s.agents);
   const dragState = useDeploymentStore((s) => s.dragState);
   const startDrag = useDeploymentStore((s) => s.startDrag);
@@ -217,6 +218,18 @@ export function AgentDock({ isCompact = false }: AgentDockProps) {
           </div>
         );
       })}
+
+      {/* Deployment history trigger per Spec 12 Section 9 */}
+      {onHistoryClick && (
+        <button
+          className="ml-auto shrink-0 rounded border border-gray-700 bg-[#14142a] px-2 py-1 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors"
+          onClick={onHistoryClick}
+          data-testid="dock-history-trigger"
+          title="View deployment history"
+        >
+          history
+        </button>
+      )}
 
       {/* Drag ghost indicator - follows cursor when dragging */}
       {dragState && (
