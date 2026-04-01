@@ -3,10 +3,13 @@
 Why these tests matter: The email agent is the primary demo flow (SCOPE.md Feature 2).
 Every tool call goes through Nango's proxy endpoint. These tests verify correct URL
 construction, header format, and payload structure for the Gmail API via Nango proxy.
+The draft_reply and send_email tools construct RFC 2822 MIME messages with base64url
+encoding - these tests verify the MIME structure is correct for the Gmail API.
 """
 
+import base64
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 from agent.agents.email import EmailAgent
 from agent.models import UIPattern
@@ -88,6 +91,7 @@ class TestEmailAgent:
 
     @patch("agent.nango.httpx.request")
     def test_execute_send_email(self, mock_request):
+        """send_email constructs a base64url-encoded RFC 2822 MIME message."""
         mock_response = MagicMock()
         mock_response.text = json.dumps({"status": "sent", "id": "msg2"})
         mock_response.raise_for_status = MagicMock()
@@ -102,29 +106,71 @@ class TestEmailAgent:
             },
         )
         assert "sent" in result
+        # No reply_to_message_id, so only one call (the send)
+        mock_request.assert_called_once()
         call_kwargs = mock_request.call_args[1]
         assert call_kwargs["method"] == "POST"
         assert "/proxy/gmail/v1/users/me/messages/send" in call_kwargs["url"]
-        # connectionId should NOT be in the body - it's in headers now
         body = call_kwargs["json"]
-        assert "connectionId" not in body
-        assert body["to"] == "test@example.com"
+        # Must have base64url-encoded raw MIME, not plain text fields
+        assert "raw" in body
+        assert "to" not in body  # to is inside the MIME, not a top-level field
+        # Decode and verify MIME content
+        decoded = base64.urlsafe_b64decode(body["raw"]).decode("utf-8")
+        assert "To: test@example.com" in decoded
+        assert "Subject: Test" in decoded
+        assert "Hello" in decoded
 
     @patch("agent.nango.httpx.request")
     def test_execute_draft_reply(self, mock_request):
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"draft_id": "d1", "status": "created"})
-        mock_response.raise_for_status = MagicMock()
-        mock_request.return_value = mock_response
+        """draft_reply reads original message for threading, then creates MIME draft."""
+        # First call: GET original message (for thread ID, sender, subject)
+        orig_response = MagicMock()
+        orig_response.status_code = 200
+        orig_response.json.return_value = {
+            "threadId": "thread_abc",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "sender@example.com"},
+                    {"name": "Subject", "value": "Original Subject"},
+                    {"name": "Message-Id", "value": "<orig123@mail.example.com>"},
+                ],
+            },
+        }
+        orig_response.raise_for_status = MagicMock()
+
+        # Second call: POST draft creation
+        draft_response = MagicMock()
+        draft_response.text = json.dumps(
+            {"id": "d1", "message": {"threadId": "thread_abc"}}
+        )
+        draft_response.raise_for_status = MagicMock()
+
+        mock_request.side_effect = [orig_response, draft_response]
 
         result = self.agent.execute_tool(
             "draft_reply",
             {"message_id": "msg_123", "body": "Thanks for your email."},
         )
-        assert "draft_id" in result
-        mock_request.assert_called_once()
-        call_kwargs = mock_request.call_args[1]
-        assert "/proxy/gmail/v1/users/me/drafts" in call_kwargs["url"]
+        assert "d1" in result
+        assert mock_request.call_count == 2
+
+        # Verify first call reads original message
+        first_call = mock_request.call_args_list[0][1]
+        assert "/proxy/gmail/v1/users/me/messages/msg_123" in first_call["url"]
+        assert first_call["method"] == "GET"
+
+        # Verify second call creates draft with proper MIME
+        second_call = mock_request.call_args_list[1][1]
+        assert "/proxy/gmail/v1/users/me/drafts" in second_call["url"]
+        body = second_call["json"]
+        assert body["message"]["threadId"] == "thread_abc"
+        # Decode and verify MIME content
+        decoded = base64.urlsafe_b64decode(body["message"]["raw"]).decode("utf-8")
+        assert "To: sender@example.com" in decoded
+        assert "Subject: Re: Original Subject" in decoded
+        assert "In-Reply-To: <orig123@mail.example.com>" in decoded
+        assert "Thanks for your email." in decoded
 
     @patch("agent.nango.httpx.request")
     def test_execute_archive_email(self, mock_request):
@@ -173,11 +219,27 @@ class TestEmailAgent:
 
     @patch("agent.nango.httpx.request")
     def test_execute_send_email_with_reply(self, mock_request):
-        """send_email with reply_to_message_id includes replyToMessageId in payload."""
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"status": "sent"})
-        mock_response.raise_for_status = MagicMock()
-        mock_request.return_value = mock_response
+        """send_email with reply_to_message_id reads original for threading headers."""
+        # First call: GET original message for threading
+        orig_response = MagicMock()
+        orig_response.status_code = 200
+        orig_response.json.return_value = {
+            "threadId": "thread_xyz",
+            "payload": {
+                "headers": [
+                    {"name": "Message-Id", "value": "<orig789@mail.example.com>"},
+                    {"name": "Subject", "value": "Thread"},
+                ],
+            },
+        }
+        orig_response.raise_for_status = MagicMock()
+
+        # Second call: POST send
+        send_response = MagicMock()
+        send_response.text = json.dumps({"status": "sent"})
+        send_response.raise_for_status = MagicMock()
+
+        mock_request.side_effect = [orig_response, send_response]
 
         self.agent.execute_tool(
             "send_email",
@@ -188,8 +250,15 @@ class TestEmailAgent:
                 "reply_to_message_id": "orig_msg_1",
             },
         )
-        body = mock_request.call_args[1]["json"]
-        assert body["replyToMessageId"] == "orig_msg_1"
+        assert mock_request.call_count == 2
+        # Verify send call has threadId and MIME with In-Reply-To
+        send_call = mock_request.call_args_list[1][1]
+        body = send_call["json"]
+        assert body["threadId"] == "thread_xyz"
+        decoded = base64.urlsafe_b64decode(body["raw"]).decode("utf-8")
+        assert "In-Reply-To: <orig789@mail.example.com>" in decoded
+        assert "References: <orig789@mail.example.com>" in decoded
+        assert "Reply content" in decoded
 
     @patch("agent.nango.httpx.request")
     def test_execute_list_inbox_unread_only(self, mock_request):

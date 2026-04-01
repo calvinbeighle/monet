@@ -405,7 +405,24 @@ class CodeAgent(BaseAgent):
         return resp.text
 
     def _tool_create_branch(self, params: dict) -> str:
+        """Create a branch by resolving the source ref to a SHA first.
+
+        The GitHub API requires a full 40-char commit SHA for creating refs,
+        not a branch name. This method first resolves the source branch to
+        its HEAD SHA, then creates the new ref.
+        """
         repo = params["repo"]
+        from_ref = params.get("from_ref", "main")
+
+        # Resolve the source branch name to its commit SHA
+        ref_resp = nango_proxy_request(
+            method="GET",
+            path=f"repos/{repo}/git/ref/heads/{from_ref}",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+        )
+        ref_resp.raise_for_status()
+        sha = ref_resp.json()["object"]["sha"]
 
         resp = nango_proxy_request(
             method="POST",
@@ -414,7 +431,7 @@ class CodeAgent(BaseAgent):
             connection_id=_CONNECTION_ID,
             json_body={
                 "ref": f"refs/heads/{params['branch']}",
-                "sha": params.get("from_ref", "main"),
+                "sha": sha,
             },
         )
         resp.raise_for_status()

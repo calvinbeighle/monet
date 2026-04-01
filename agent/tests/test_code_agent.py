@@ -154,15 +154,31 @@ class TestCodeAgent:
 
     @patch("agent.nango.httpx.request")
     def test_execute_create_branch(self, mock_request):
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"ref": "refs/heads/feature-x"})
-        mock_response.raise_for_status = MagicMock()
-        mock_request.return_value = mock_response
+        """create_branch resolves source ref to SHA before creating the new ref."""
+        # First call: GET ref to resolve SHA
+        ref_response = MagicMock()
+        ref_response.json.return_value = {"object": {"sha": "abc123def456"}}
+        ref_response.raise_for_status = MagicMock()
+
+        # Second call: POST create ref
+        create_response = MagicMock()
+        create_response.text = json.dumps({"ref": "refs/heads/feature-x"})
+        create_response.raise_for_status = MagicMock()
+
+        mock_request.side_effect = [ref_response, create_response]
 
         result = self.agent.execute_tool(
             "create_branch", {"repo": "owner/repo", "branch": "feature-x"}
         )
         assert "feature-x" in result
+        assert mock_request.call_count == 2
+        # Verify first call resolves the ref
+        first_call = mock_request.call_args_list[0][1]
+        assert "/proxy/repos/owner/repo/git/ref/heads/main" in first_call["url"]
+        # Verify second call uses the resolved SHA
+        second_call = mock_request.call_args_list[1][1]
+        assert second_call["json"]["sha"] == "abc123def456"
+        assert second_call["json"]["ref"] == "refs/heads/feature-x"
 
     @patch("agent.nango.httpx.request")
     def test_execute_write_file(self, mock_request):

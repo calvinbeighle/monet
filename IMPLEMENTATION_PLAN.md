@@ -453,6 +453,15 @@ Debian VM boots directly into Monet.
 - **Test count:** 887 total (736 Python + 151 Flutter), all passing.
 - **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. More integrations (Slack, Calendar, Notion, Linear) not implemented.
 
+### Implementation Notes (2026-03-31) - Batch 27
+
+- **Gmail draft_reply fixed (critical bug):** `_tool_draft_reply` in `agent/agents/email.py` was sending `"raw": ""` (empty string) to the Gmail Drafts API, which expects a base64url-encoded RFC 2822 MIME message. Now reads the original message first to get threadId, sender (From), subject, and Message-Id header, then constructs a proper MIME message with correct To, Subject (with Re: prefix), In-Reply-To, and References headers. The message is base64url-encoded and sent as `message.raw` with the correct `threadId`.
+- **Gmail send_email fixed (critical bug):** `_tool_send_email` was sending custom fields (`to`, `subject`, `body`, `replyToMessageId`) that the Gmail API does not accept at the top level. Now constructs a proper RFC 2822 MIME message with base64url encoding. For replies (when `reply_to_message_id` is provided), reads the original message to get threading headers (Message-Id, threadId) and sets In-Reply-To + References for proper Gmail thread grouping.
+- **GitHub create_branch fixed (critical bug):** `_tool_create_branch` in `agent/agents/code.py` was passing a branch name string (e.g., "main") where the GitHub API requires a 40-character commit SHA. Now resolves the source branch to its HEAD SHA via `GET /repos/{repo}/git/ref/heads/{from_ref}` before creating the new ref.
+- **Why these matter:** All three bugs would have caused 100% failure rate when connecting to real Gmail/GitHub APIs during the demo. Tests passed because mocks didn't enforce API contract fidelity. Tests updated to verify correct MIME structure, base64url encoding, and SHA resolution.
+- **Test count:** 887 total (736 Python + 151 Flutter), all passing.
+- **Remaining gaps:** VM testing needed for Tasks 19, 21, 22 boot flow. More integrations (Slack, Calendar, Notion, Linear) not implemented.
+
 ---
 
 ## Architecture Notes

@@ -8,9 +8,11 @@ Gmail API paths are relative to https://www.googleapis.com (the base_url
 configured for the google-mail provider in Nango).
 """
 
+import base64
 import json
 import logging
 import os
+from email.mime.text import MIMEText
 
 from agent.agents.base import BaseAgent
 from agent.models import UIPattern
@@ -228,7 +230,46 @@ class EmailAgent(BaseAgent):
         return resp.text
 
     def _tool_draft_reply(self, params: dict) -> str:
-        """Create a draft reply via Nango Gmail proxy."""
+        """Create a draft reply via Nango Gmail proxy.
+
+        Reads the original message to get thread ID, sender, and subject,
+        then constructs a proper RFC 2822 MIME message and base64url-encodes
+        it for the Gmail API.
+        """
+        message_id = params["message_id"]
+        body = params["body"]
+
+        # Read original message to get threadId, sender, and subject
+        orig_resp = nango_proxy_request(
+            method="GET",
+            path=f"gmail/v1/users/me/messages/{message_id}",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            params={"format": "metadata", "metadataHeaders": "From,Subject,Message-Id"},
+        )
+        orig_resp.raise_for_status()
+        orig = orig_resp.json()
+
+        thread_id = orig.get("threadId", "")
+        headers_list = orig.get("payload", {}).get("headers", [])
+        headers_map = {h["name"].lower(): h["value"] for h in headers_list}
+
+        reply_to = headers_map.get("from", "")
+        subject = headers_map.get("subject", "")
+        orig_message_id = headers_map.get("message-id", "")
+        if subject and not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+
+        # Build RFC 2822 MIME message
+        mime_msg = MIMEText(body)
+        mime_msg["To"] = reply_to
+        mime_msg["Subject"] = subject
+        if orig_message_id:
+            mime_msg["In-Reply-To"] = orig_message_id
+            mime_msg["References"] = orig_message_id
+
+        raw = base64.urlsafe_b64encode(mime_msg.as_bytes()).decode("ascii")
+
         resp = nango_proxy_request(
             method="POST",
             path="gmail/v1/users/me/drafts",
@@ -236,32 +277,69 @@ class EmailAgent(BaseAgent):
             connection_id=_CONNECTION_ID,
             json_body={
                 "message": {
-                    "threadId": params["message_id"],
-                    "raw": "",  # Gmail API expects raw or payload
+                    "threadId": thread_id,
+                    "raw": raw,
                 },
-                "replyToMessageId": params["message_id"],
-                "body": params["body"],
             },
         )
         resp.raise_for_status()
         return resp.text
 
     def _tool_send_email(self, params: dict) -> str:
-        """Send an email via Nango Gmail proxy."""
-        payload: dict = {
-            "to": params["to"],
-            "subject": params["subject"],
-            "body": params["body"],
-        }
-        if params.get("reply_to_message_id"):
-            payload["replyToMessageId"] = params["reply_to_message_id"]
+        """Send an email via Nango Gmail proxy.
+
+        Constructs a proper RFC 2822 MIME message with base64url encoding.
+        For replies, reads the original message to get threading headers.
+        """
+        to = params["to"]
+        subject = params["subject"]
+        body = params["body"]
+        reply_to_id = params.get("reply_to_message_id")
+
+        thread_id = None
+        orig_message_id_header = None
+
+        if reply_to_id:
+            # Read original message for threading headers
+            orig_resp = nango_proxy_request(
+                method="GET",
+                path=f"gmail/v1/users/me/messages/{reply_to_id}",
+                provider_config_key=_PROVIDER_CONFIG_KEY,
+                connection_id=_CONNECTION_ID,
+                params={"format": "metadata", "metadataHeaders": "Message-Id,Subject"},
+            )
+            if orig_resp.status_code == 200:
+                orig = orig_resp.json()
+                thread_id = orig.get("threadId")
+                headers_list = orig.get("payload", {}).get("headers", [])
+                for h in headers_list:
+                    if h["name"].lower() == "message-id":
+                        orig_message_id_header = h["value"]
+                    if h["name"].lower() == "subject":
+                        orig_subject = h["value"]
+                        if not subject.lower().startswith("re:"):
+                            subject = f"Re: {orig_subject}" if orig_subject else subject
+
+        # Build RFC 2822 MIME message
+        mime_msg = MIMEText(body)
+        mime_msg["To"] = to
+        mime_msg["Subject"] = subject
+        if orig_message_id_header:
+            mime_msg["In-Reply-To"] = orig_message_id_header
+            mime_msg["References"] = orig_message_id_header
+
+        raw = base64.urlsafe_b64encode(mime_msg.as_bytes()).decode("ascii")
+
+        json_body: dict = {"raw": raw}
+        if thread_id:
+            json_body["threadId"] = thread_id
 
         resp = nango_proxy_request(
             method="POST",
             path="gmail/v1/users/me/messages/send",
             provider_config_key=_PROVIDER_CONFIG_KEY,
             connection_id=_CONNECTION_ID,
-            json_body=payload,
+            json_body=json_body,
         )
         resp.raise_for_status()
         return resp.text
