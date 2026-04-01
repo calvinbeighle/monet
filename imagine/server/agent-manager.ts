@@ -1,8 +1,8 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { v4 as uuid } from "uuid";
 import { EventEmitter } from "events";
+import { mkdirSync } from "fs";
 import { generateVideo, generateImage } from "./image-generator";
-// prediction-engine.ts exists but is not used here - it will be used for card reordering
 import type { AgentSuggestion } from "./prediction-engine";
 
 const USE_IMAGINE = process.env.USE_IMAGINE === "true";
@@ -79,7 +79,12 @@ function nextStockVideo(): string {
 export class AgentManager extends EventEmitter {
   private agents = new Map<
     string,
-    { card: AgentCard; abort: AbortController | null; sessionId: string | null }
+    {
+      card: AgentCard;
+      abort: AbortController | null;
+      sessionId: string | null;
+      sandbox: string;
+    }
   >();
 
   private static IDLE_SUBJECTS = [
@@ -126,8 +131,12 @@ export class AgentManager extends EventEmitter {
   }
 
   createAgent(): AgentCard {
+    const id = uuid();
+    const sandbox = `/tmp/imagine-sandbox/${id.slice(0, 8)}`;
+    mkdirSync(sandbox, { recursive: true });
+
     const card: AgentCard = {
-      id: uuid(),
+      id,
       status: "idle",
       instruction: null,
       summary: null,
@@ -139,7 +148,7 @@ export class AgentManager extends EventEmitter {
     if (!USE_IMAGINE) {
       card.videoUrl = nextStockVideo();
     }
-    this.agents.set(card.id, { card, abort: null, sessionId: null });
+    this.agents.set(card.id, { card, abort: null, sessionId: null, sandbox });
     this.emit("update", card);
 
     if (USE_IMAGINE) {
@@ -203,9 +212,10 @@ export class AgentManager extends EventEmitter {
       const stream = query({
         prompt: instruction,
         options: {
-          cwd: "/tmp",
+          cwd: agent.sandbox,
           permissionMode: "bypassPermissions",
           abortController: abort,
+          systemPrompt: `You are a sandboxed coding agent. Your working directory is ${agent.sandbox}. Create all files here. Do NOT read, write, or modify files outside this directory. Do NOT access ~/*, /Users/*, or any other project directories. If the user asks you to work on an existing project, build a fresh version in your sandbox instead.`,
           allowedTools: [
             "Read",
             "Write",
