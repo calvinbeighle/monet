@@ -104,6 +104,14 @@ export class MapRenderer {
   private zoomAnimationTarget: { x: number; y: number; zoom: number } | null = null;
   private zoomAnimationSpeed = 0.08; // fraction per frame
 
+  // Smoothed urgency for fade-out per Spec 02 (lerps toward actual urgency)
+  private smoothedUrgency: Map<string, number> = new Map();
+  private static URGENCY_LERP_SPEED = 2.0; // units per second
+
+  // Zoom density blend factor for smooth transitions per Spec 02
+  private zoomBlend = 0; // 0 = fully aggregate, 1 = fully individual
+  private lastDeltaSec = 0.016; // frame delta for urgency smoothing
+
   async init(options: MapRendererOptions): Promise<void> {
     this.app = new Application();
     await this.app.init({
@@ -150,6 +158,7 @@ export class MapRenderer {
     this.zoneLabels.clear();
     this.threadGraphics.clear();
     this.threadLabels.clear();
+    this.smoothedUrgency.clear();
     this.clusterGraphics.clear();
     this.clusterLabels.clear();
     this.graphicsPool.length = 0;
@@ -334,18 +343,23 @@ export class MapRenderer {
       // Archived thread minimum opacity
       const alpha = thread.visualState === "archived" ? 0.15 : ageAlpha;
 
-      // Urgency pulse per Spec 02
+      // Smoothed urgency for fade-out per Spec 02
+      const prevSmoothed = this.smoothedUrgency.get(thread.id) ?? thread.urgencyScore;
+      const diff = thread.urgencyScore - prevSmoothed;
+      const maxStep = MapRenderer.URGENCY_LERP_SPEED * (this.lastDeltaSec || 0.016);
+      const smoothed = prevSmoothed + Math.sign(diff) * Math.min(maxStep, Math.abs(diff));
+      this.smoothedUrgency.set(thread.id, smoothed);
+
+      // Urgency pulse per Spec 02 (uses smoothed value for gradual fade-out)
       const pulseRate =
-        URGENCY_PULSE_BASE_RATE +
-        thread.urgencyScore * (URGENCY_PULSE_MAX_RATE - URGENCY_PULSE_BASE_RATE);
-      const pulse =
-        1.0 + Math.sin(this.pulseTime * pulseRate * Math.PI * 2) * 0.15 * thread.urgencyScore;
+        URGENCY_PULSE_BASE_RATE + smoothed * (URGENCY_PULSE_MAX_RATE - URGENCY_PULSE_BASE_RATE);
+      const pulse = 1.0 + Math.sin(this.pulseTime * pulseRate * Math.PI * 2) * 0.15 * smoothed;
 
       // Draw the thread entity
       const r = radius * pulse;
 
-      // Glow for high urgency
-      if (thread.urgencyScore > 0.5) {
+      // Glow for high urgency (uses smoothed value for fade-out)
+      if (smoothed > 0.5) {
         g.circle(thread.position.x, thread.position.y, r * 1.5);
         g.fill({ color: color as ColorSource, alpha: alpha * 0.2 });
       }
@@ -529,40 +543,44 @@ export class MapRenderer {
       }
       g.clear();
 
-      if (zoomLevel === "strategic" || zoomLevel === "tactical") {
-        // Aggregate representation: single circle at centroid with member count
+      // Zoom density blend: aggregate fades out as zoomBlend increases, individual fades in
+      const aggAlpha = 1.0 - this.zoomBlend; // 1 at low zoom, 0 at high zoom
+      const indAlpha = this.zoomBlend; // 0 at low zoom, 1 at high zoom
+
+      // Aggregate representation (fades out as zoom increases)
+      if (aggAlpha > 0.01) {
         const r = 12 + cluster.memberThreadIds.length * 3;
         const color = this.getUrgencyColor(maxUrgency);
 
         // Glow
         g.circle(cluster.centroid.x, cluster.centroid.y, r * 1.4);
-        g.fill({ color: color as ColorSource, alpha: 0.15 });
+        g.fill({ color: color as ColorSource, alpha: 0.15 * aggAlpha });
         // Main circle
         g.circle(cluster.centroid.x, cluster.centroid.y, r);
-        g.fill({ color: CLUSTER_AGGREGATE_COLOR as ColorSource, alpha: 0.6 });
+        g.fill({ color: CLUSTER_AGGREGATE_COLOR as ColorSource, alpha: 0.6 * aggAlpha });
         // Urgency ring
         g.circle(cluster.centroid.x, cluster.centroid.y, r);
-        g.stroke({ color: color as ColorSource, width: 2, alpha: 0.5 });
+        g.stroke({ color: color as ColorSource, width: 2, alpha: 0.5 * aggAlpha });
 
         // Agent drag target validation visuals per Spec 06 Section 3
         if (this.agentDragState.active) {
           const isHovered = this.agentDragState.hoverClusterId === cluster.id;
           if (this.agentDragState.alreadyDeployedClusterIds.has(cluster.id)) {
             g.circle(cluster.centroid.x, cluster.centroid.y, r + 4);
-            g.stroke({ color: 0xddaa22 as ColorSource, width: 2, alpha: 0.6 });
+            g.stroke({ color: 0xddaa22 as ColorSource, width: 2, alpha: 0.6 * aggAlpha });
           } else if (this.agentDragState.validClusterIds.has(cluster.id)) {
             const borderWidth = isHovered ? 4 : 3;
             g.circle(cluster.centroid.x, cluster.centroid.y, r + 4);
-            g.stroke({ color: 0x44cc44 as ColorSource, width: borderWidth, alpha: 0.7 });
+            g.stroke({ color: 0x44cc44 as ColorSource, width: borderWidth, alpha: 0.7 * aggAlpha });
           } else if (this.agentDragState.invalidClusterIds.has(cluster.id)) {
             g.circle(cluster.centroid.x, cluster.centroid.y, r + 4);
-            g.stroke({ color: 0xcc4444 as ColorSource, width: 2, alpha: 0.4 });
+            g.stroke({ color: 0xcc4444 as ColorSource, width: 2, alpha: 0.4 * aggAlpha });
           }
         }
 
         // In-progress deployment indicator per Spec 06 Section 4
         if (this.inProgressClusterIds.has(cluster.id)) {
-          const pulseAlpha = 0.3 + 0.3 * Math.sin(this.pulseTime * 3.0);
+          const pulseAlpha = (0.3 + 0.3 * Math.sin(this.pulseTime * 3.0)) * aggAlpha;
           g.circle(cluster.centroid.x, cluster.centroid.y, r + 8);
           g.stroke({ color: 0xffd700 as ColorSource, width: 3, alpha: pulseAlpha });
         }
@@ -581,18 +599,27 @@ export class MapRenderer {
           cluster.centroid.x - label.width / 2,
           cluster.centroid.y - label.height / 2,
         );
-        label.alpha = 0.9;
-        label.visible = true;
-
-        // Hide individual member thread graphics at low zoom
-        for (const tid of cluster.memberThreadIds) {
-          const tg = this.threadGraphics.get(tid);
-          if (tg) tg.visible = false;
-          const tl = this.threadLabels.get(tid);
-          if (tl) tl.visible = false;
-        }
+        label.alpha = 0.9 * aggAlpha;
+        label.visible = aggAlpha > 0.01;
       } else {
-        // Operational/detail: draw boundary around members
+        // Fully individual - hide aggregate label
+        const label = this.clusterLabels.get(cluster.id);
+        if (label) label.visible = false;
+      }
+
+      // Fade member thread graphics based on blend
+      for (const tid of cluster.memberThreadIds) {
+        const tg = this.threadGraphics.get(tid);
+        if (tg) {
+          tg.visible = indAlpha > 0.01;
+          tg.alpha = indAlpha;
+        }
+        const tl = this.threadLabels.get(tid);
+        if (tl && indAlpha <= 0.01) tl.visible = false;
+      }
+
+      // Boundary representation (fades in as zoom increases)
+      if (indAlpha > 0.01) {
         const minX = Math.min(...memberPositions.map((p) => p.x)) - CLUSTER_PADDING;
         const minY = Math.min(...memberPositions.map((p) => p.y)) - CLUSTER_PADDING;
         const maxX = Math.max(...memberPositions.map((p) => p.x)) + CLUSTER_PADDING;
@@ -604,13 +631,13 @@ export class MapRenderer {
         g.roundRect(minX, minY, w, h, cornerRadius);
         g.fill({
           color: CLUSTER_BOUNDARY_COLOR as ColorSource,
-          alpha: CLUSTER_BOUNDARY_ALPHA * 0.3,
+          alpha: CLUSTER_BOUNDARY_ALPHA * 0.3 * indAlpha,
         });
         g.roundRect(minX, minY, w, h, cornerRadius);
         g.stroke({
           color: CLUSTER_BOUNDARY_COLOR as ColorSource,
           width: 1.5,
-          alpha: CLUSTER_BOUNDARY_ALPHA,
+          alpha: CLUSTER_BOUNDARY_ALPHA * indAlpha,
         });
 
         // Agent drag target validation visuals per Spec 06 Section 3
@@ -618,42 +645,38 @@ export class MapRenderer {
           const isHovered = this.agentDragState.hoverClusterId === cluster.id;
           if (this.agentDragState.alreadyDeployedClusterIds.has(cluster.id)) {
             g.roundRect(minX - 2, minY - 2, w + 4, h + 4, cornerRadius);
-            g.stroke({ color: 0xddaa22 as ColorSource, width: 2, alpha: 0.6 });
+            g.stroke({ color: 0xddaa22 as ColorSource, width: 2, alpha: 0.6 * indAlpha });
           } else if (this.agentDragState.validClusterIds.has(cluster.id)) {
             const borderWidth = isHovered ? 4 : 3;
             g.roundRect(minX - 2, minY - 2, w + 4, h + 4, cornerRadius);
-            g.stroke({ color: 0x44cc44 as ColorSource, width: borderWidth, alpha: 0.7 });
+            g.stroke({ color: 0x44cc44 as ColorSource, width: borderWidth, alpha: 0.7 * indAlpha });
           } else if (this.agentDragState.invalidClusterIds.has(cluster.id)) {
             g.roundRect(minX - 2, minY - 2, w + 4, h + 4, cornerRadius);
-            g.stroke({ color: 0xcc4444 as ColorSource, width: 2, alpha: 0.4 });
+            g.stroke({ color: 0xcc4444 as ColorSource, width: 2, alpha: 0.4 * indAlpha });
           }
         }
 
         // In-progress deployment indicator per Spec 06 Section 4
         if (this.inProgressClusterIds.has(cluster.id)) {
-          const pulseAlpha = 0.3 + 0.3 * Math.sin(this.pulseTime * 3.0);
+          const pulseAlpha = (0.3 + 0.3 * Math.sin(this.pulseTime * 3.0)) * indAlpha;
           g.roundRect(minX - 4, minY - 4, w + 8, h + 8, cornerRadius);
           g.stroke({ color: 0xffd700 as ColorSource, width: 3, alpha: pulseAlpha });
         }
 
         // Cluster label above boundary
-        let label = this.clusterLabels.get(cluster.id);
-        if (!label) {
-          label = this.acquireText(this.layers.foreground);
-          label.style.fontSize = 11;
-          label.style.fill = 0xaaaacc;
-          label.style.align = "center";
-          this.clusterLabels.set(cluster.id, label);
-        }
-        label.text = cluster.label;
-        label.position.set((minX + maxX) / 2 - label.width / 2, minY - 16);
-        label.alpha = 0.6;
-        label.visible = true;
-
-        // Ensure member graphics are visible at this zoom level
-        for (const tid of cluster.memberThreadIds) {
-          const tg = this.threadGraphics.get(tid);
-          if (tg) tg.visible = true;
+        if (zoomLevel === "operational" || zoomLevel === "detail") {
+          let label = this.clusterLabels.get(cluster.id);
+          if (!label) {
+            label = this.acquireText(this.layers.foreground);
+            label.style.fontSize = 11;
+            label.style.fill = 0xaaaacc;
+            label.style.align = "center";
+            this.clusterLabels.set(cluster.id, label);
+          }
+          label.text = cluster.label;
+          label.position.set((minX + maxX) / 2 - label.width / 2, minY - 16);
+          label.alpha = 0.6 * indAlpha;
+          label.visible = true;
         }
       }
     }
@@ -747,7 +770,18 @@ export class MapRenderer {
   }
 
   private onTick(deltaMS: number): void {
-    this.pulseTime += deltaMS / 1000;
+    const deltaSec = deltaMS / 1000;
+    this.lastDeltaSec = deltaSec;
+    this.pulseTime += deltaSec;
+
+    // Update zoom density blend factor per Spec 02
+    // Blend between aggregate (0) and individual (1) near the tactical/operational threshold (0.6)
+    const blendTarget =
+      this.cameraZoom >= 0.6 ? 1.0 : this.cameraZoom < 0.25 ? 0.0 : (this.cameraZoom - 0.25) / 0.35;
+    const blendSpeed = 3.0 * deltaSec; // ~330ms full transition
+    this.zoomBlend +=
+      Math.sign(blendTarget - this.zoomBlend) *
+      Math.min(blendSpeed, Math.abs(blendTarget - this.zoomBlend));
 
     // Smooth camera animation per Spec 08
     if (this.zoomAnimationTarget) {
@@ -777,6 +811,14 @@ export class MapRenderer {
 
   getApp(): Application | null {
     return this.app;
+  }
+
+  getZoomBlend(): number {
+    return this.zoomBlend;
+  }
+
+  getSmoothedUrgency(threadId: string): number | undefined {
+    return this.smoothedUrgency.get(threadId);
   }
 
   getCameraState() {

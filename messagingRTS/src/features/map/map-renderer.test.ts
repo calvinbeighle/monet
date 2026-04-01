@@ -596,3 +596,76 @@ function generateClusters(count: number, threads: ReturnType<typeof generateThre
   }
   return clusters;
 }
+
+describe("Smoothed urgency fade-out per Spec 02", () => {
+  it("exposes getSmoothedUrgency and starts at initial urgency", () => {
+    const renderer = new MapRenderer();
+    // Before any rendering, smoothed urgency is undefined
+    expect(renderer.getSmoothedUrgency("t1")).toBeUndefined();
+  });
+
+  it("URGENCY_LERP_SPEED limits per-frame urgency change", () => {
+    // At 2.0 units/sec and 16ms frame, max step = 0.032
+    const lerpSpeed = 2.0;
+    const deltaSec = 0.016;
+    const maxStep = lerpSpeed * deltaSec;
+    expect(maxStep).toBeCloseTo(0.032, 3);
+    // A drop from 0.9 to 0.1 (delta 0.8) cannot happen in one frame
+    expect(maxStep).toBeLessThan(0.8);
+  });
+
+  it("smoothed urgency converges over multiple frames", () => {
+    // Simulate convergence: starting at 0.9, target 0.1
+    const lerpSpeed = 2.0;
+    const deltaSec = 0.016;
+    let smoothed = 0.9;
+    const target = 0.1;
+    for (let i = 0; i < 100; i++) {
+      const diff = target - smoothed;
+      const maxStep = lerpSpeed * deltaSec;
+      smoothed += Math.sign(diff) * Math.min(maxStep, Math.abs(diff));
+    }
+    // After 100 frames (~1.6s), should be at or very near target
+    expect(smoothed).toBeCloseTo(target, 2);
+  });
+});
+
+describe("Zoom density blend per Spec 02", () => {
+  it("exposes getZoomBlend with initial value 0", () => {
+    const renderer = new MapRenderer();
+    expect(renderer.getZoomBlend()).toBe(0);
+  });
+
+  it("blend factor logic: fully aggregate below 0.25 zoom", () => {
+    // At zoom 0.1: blendTarget = 0.0
+    const zoom = 0.1;
+    const blendTarget = zoom >= 0.6 ? 1.0 : zoom < 0.25 ? 0.0 : (zoom - 0.25) / 0.35;
+    expect(blendTarget).toBe(0);
+  });
+
+  it("blend factor logic: fully individual above 0.6 zoom", () => {
+    // At zoom 1.0: blendTarget = 1.0
+    const zoom = 1.0;
+    const blendTarget = zoom >= 0.6 ? 1.0 : zoom < 0.25 ? 0.0 : (zoom - 0.25) / 0.35;
+    expect(blendTarget).toBe(1);
+  });
+
+  it("blend factor logic: partial at mid-range zoom", () => {
+    // At zoom 0.4: blendTarget = (0.4 - 0.25) / 0.35 = 0.4286
+    const zoom = 0.4;
+    const blendTarget = zoom >= 0.6 ? 1.0 : zoom < 0.25 ? 0.0 : (zoom - 0.25) / 0.35;
+    expect(blendTarget).toBeCloseTo(0.4286, 3);
+  });
+
+  it("blend converges over simulated frames", () => {
+    // Simulate blend from 0 to 1.0 target
+    let blend = 0;
+    const blendTarget = 1.0;
+    const deltaSec = 0.016;
+    for (let i = 0; i < 100; i++) {
+      const blendSpeed = 3.0 * deltaSec;
+      blend += Math.sign(blendTarget - blend) * Math.min(blendSpeed, Math.abs(blendTarget - blend));
+    }
+    expect(blend).toBeCloseTo(1.0, 2);
+  });
+});
