@@ -2,7 +2,7 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 858 tests passing. Tags through v0.7.6.
+**Current state**: 876 tests passing. Tags through v0.7.8.
 
 **Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
@@ -318,7 +318,7 @@ These must be resolved before implementation begins:
 ## Cross-Cutting Concerns (address during relevant phases)
 
 - [x] **Rate limiting**: Gmail API quota tracking, prioritize user actions over background sync (Phase 1)
-- **Error handling**: every Gmail failure surfaced to user, no silent drops (Phase 1)
+- [x] **Error handling**: every Gmail failure surfaced to user, no silent drops (Phase 1)
 - **Accessibility**: keyboard navigation throughout, focus management, ARIA labels (Phase 2)
 - **Performance**: PixiJS object pooling for 500+ entities, IndexedDB batch writes (Phase 2)
 - **Responsive layout**: panels collapse at narrow viewports (Phase 2)
@@ -525,3 +525,15 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Status bar enhanced: Added filter trigger button (shows "Filtered" in blue when active), made alert badge clickable.
 - App.tsx wired: Filter panel and alert list render as positioned popovers below status bar, toggled by new state variables. Mutually exclusive (opening one closes the other).
 - Test count: 858 total (32 new: 7 drift-engine lifecycle, 8 filter-panel, 13 alert-list, 1 thread-fetcher concurrency, 3 agent-store recall), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Spec Compliance Fixes (2026-04-01)
+
+- Streak timezone fix (Spec 07): evaluateStreaks now uses local date (getFullYear/getMonth/getDate) instead of UTC (toISOString) for midnight day boundary calculation. Users in non-UTC timezones now get correct streak evaluation.
+- Trust display in detail panel (Spec 07): New ParticipantTrust component shows trust tier (color-coded), score, and 3+ consecutive streak indicator per participant. Reads trustRecords from app store.
+- Zone alert visual state (Spec 04): renderZones now checks zone.alertState. Active alerts show red border (width 3, alpha 0.8), "! " label prefix, and increased label alpha (0.7 vs 0.4).
+- Cluster layer ordering (Spec 02): Cluster graphics and labels now render on foreground layer (co-planar with thread entities) instead of mid layer, per Spec 02 Section 5.
+- Connection line rendering (Spec 02 Section 3): New renderConnections() method draws faint edges between threads sharing participants. At low zoom, edges attach to cluster centroids. Participant index limits to 8 threads per participant to avoid O(n^2). Wired into map-viewport render loop.
+- Session idle auto-trigger (Spec 07): 5-minute idle timer resets on mousedown/keydown/scroll/touchstart. Auto-opens session summary when no modal is active.
+- Daily quota exhaustion notification (Spec 01): gmail-client now surfaces a critical notification to the user when rate limiter enters daily-exhausted read-only mode.
+- Alert-list test type fix: Local MapAlert type replaced with imported type from game-mechanics.ts; message field added to makeAlert helper.
+- Test count: 876 total (18 new: 1 game-loop timezone, 8 map-renderer, 3 detail-panel trust, 2 gmail-client quota, 4 misc), all passing. Typecheck and lint clean.
