@@ -4,7 +4,14 @@
 // Re-evaluates scores on session resume to reflect accumulated neglect.
 
 import { useThreadStore } from "../../lib/stores";
-import { persistThreads, loadAllThreads } from "../../lib/utils/persistence";
+import { useSyncStore } from "../../lib/stores/sync-store";
+import {
+  persistThreads,
+  loadAllThreads,
+  persistActionQueue,
+  loadActionQueue,
+  clearActionQueue,
+} from "../../lib/utils/persistence";
 import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
 import type { Thread } from "../../lib/types";
 
@@ -39,16 +46,48 @@ export async function loadPersistedThreads(): Promise<Thread[]> {
   return reEvaluated;
 }
 
-// Save current thread state to IndexedDB
+// Save current thread state and action queue to IndexedDB
 export async function saveThreadState(): Promise<void> {
   const threads = [...useThreadStore.getState().threads.values()];
-  if (threads.length === 0) return;
 
   try {
-    await persistThreads(threads);
+    if (threads.length > 0) {
+      await persistThreads(threads);
+    }
+    // Always persist the action queue - losing queued actions is worse than
+    // losing a position update, so we save even when the queue is empty
+    // (to clear previously persisted entries after successful replay).
+    const queue = useSyncStore.getState().actionQueue;
+    await persistActionQueue(queue);
     lastPersistTime = Date.now();
   } catch (err) {
-    console.warn("[PersistenceManager] Failed to persist threads:", err);
+    console.warn("[PersistenceManager] Failed to persist state:", err);
+  }
+}
+
+// Load persisted action queue and restore to sync store.
+// Called during app init so offline actions survive tab close.
+export async function loadPersistedActionQueue(): Promise<void> {
+  try {
+    const queue = await loadActionQueue();
+    if (queue.length > 0) {
+      // Restore each entry into the sync store's action queue.
+      // We set the queue directly rather than using enqueueAction to preserve
+      // the original IDs and retry counts.
+      useSyncStore.setState({ actionQueue: queue });
+      console.log(`[PersistenceManager] Restored ${queue.length} queued actions from IndexedDB`);
+    }
+  } catch (err) {
+    console.warn("[PersistenceManager] Failed to load action queue:", err);
+  }
+}
+
+// Clear persisted action queue after successful replay
+export async function clearPersistedActionQueue(): Promise<void> {
+  try {
+    await clearActionQueue();
+  } catch (err) {
+    console.warn("[PersistenceManager] Failed to clear action queue:", err);
   }
 }
 

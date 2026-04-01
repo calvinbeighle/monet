@@ -17,6 +17,7 @@ import { DeploymentConfirmation } from "./components/deployment-confirmation";
 import { ResultsOverlay } from "./components/results-overlay";
 import {
   loadPersistedThreads,
+  loadPersistedActionQueue,
   startPeriodicPersist,
   stopPeriodicPersist,
   flushPersist,
@@ -96,7 +97,7 @@ export function App() {
         return;
       }
 
-      // Step 2: Load persisted threads for immediate display
+      // Step 2: Load persisted threads and action queue for immediate display
       try {
         const persisted = await loadPersistedThreads();
         if (cancelled) return;
@@ -105,9 +106,12 @@ export function App() {
           useThreadStore.getState().setThreads(persisted);
         }
 
+        // Restore offline action queue from IndexedDB (Spec 10 Section 8)
+        await loadPersistedActionQueue();
+
         startPeriodicPersist();
       } catch (err) {
-        console.warn("[App] Failed to load persisted threads:", err);
+        console.warn("[App] Failed to load persisted state:", err);
       }
 
       if (cancelled) return;

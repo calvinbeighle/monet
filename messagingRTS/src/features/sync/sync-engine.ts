@@ -11,9 +11,11 @@ import {
   createDraft,
   updateDraft,
   deleteDraft,
+  modifyThreadLabels,
 } from "../auth/gmail-client";
 import type { GmailHistoryResponse, SendReplyPayload, DraftPayload } from "../auth/gmail-client";
 import { performInitialLoad, convertGmailThread } from "./thread-fetcher";
+import { clearPersistedActionQueue } from "./persistence-manager";
 import { useThreadStore } from "../../lib/stores";
 import { useSyncStore } from "../../lib/stores/sync-store";
 import { useAppStore } from "../../lib/stores";
@@ -29,6 +31,7 @@ let _archiveThread = archiveThread;
 let _createDraft = createDraft;
 let _updateDraft = updateDraft;
 let _deleteDraft = deleteDraft;
+let _modifyThreadLabels = modifyThreadLabels;
 
 export function _setEngineFetchFns(fns: {
   fetchHistoryChanges?: typeof fetchHistoryChanges;
@@ -39,6 +42,7 @@ export function _setEngineFetchFns(fns: {
   createDraft?: typeof createDraft;
   updateDraft?: typeof updateDraft;
   deleteDraft?: typeof deleteDraft;
+  modifyThreadLabels?: typeof modifyThreadLabels;
 }): void {
   if (fns.fetchHistoryChanges) _fetchHistoryChanges = fns.fetchHistoryChanges;
   if (fns.fetchThreadDetail) _fetchThreadDetail = fns.fetchThreadDetail;
@@ -48,6 +52,7 @@ export function _setEngineFetchFns(fns: {
   if (fns.createDraft) _createDraft = fns.createDraft;
   if (fns.updateDraft) _updateDraft = fns.updateDraft;
   if (fns.deleteDraft) _deleteDraft = fns.deleteDraft;
+  if (fns.modifyThreadLabels) _modifyThreadLabels = fns.modifyThreadLabels;
 }
 
 export function _resetEngineFetchFns(): void {
@@ -59,6 +64,7 @@ export function _resetEngineFetchFns(): void {
   _createDraft = createDraft;
   _updateDraft = updateDraft;
   _deleteDraft = deleteDraft;
+  _modifyThreadLabels = modifyThreadLabels;
 }
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -112,6 +118,8 @@ export async function startInitialLoad(): Promise<void> {
 
 export async function performIncrementalSync(): Promise<void> {
   const syncState = useSyncStore.getState();
+  const wasOffline =
+    syncState.connectivityStatus === "offline" || syncState.connectivityStatus === "error";
 
   if (!syncState.lastHistoryId) {
     // No history ID - need initial load first
@@ -129,6 +137,25 @@ export async function performIncrementalSync(): Promise<void> {
     }
 
     useSyncStore.getState().recordSyncSuccess();
+
+    // Per Spec 10 Section 8: when connectivity is restored, replay queued actions
+    // in the order they were initiated before resuming normal sync.
+    if (wasOffline) {
+      const pendingCount = useSyncStore.getState().getPendingActions().length;
+      if (pendingCount > 0) {
+        console.log(`[SyncEngine] Connectivity restored, replaying ${pendingCount} queued actions`);
+        await replayActionQueue();
+      }
+      // Clear persisted queue after successful replay
+      await clearPersistedActionQueue();
+
+      // Restore shell state if it was degraded due to offline
+      const shellState = useAppStore.getState().shellState;
+      if (shellState === "degraded") {
+        const threadCount = useThreadStore.getState().getThreadCount();
+        useAppStore.getState().setShellState(threadCount > 0 ? "active" : "empty");
+      }
+    }
   } catch (err) {
     if (isHistoryExpiredError(err)) {
       // Per Spec 10: history ID expired - fall back to full re-fetch (backfill)
@@ -237,7 +264,10 @@ function deduplicateEvents(events: ThreadChangeEvent[]): ThreadChangeEvent[] {
   return [...byThread.values()];
 }
 
-// Process change events by re-fetching affected threads
+// Process change events by re-fetching affected threads.
+// Includes conflict detection per Spec 10 Section 6: when an inbound change
+// affects a thread that has a pending optimistic update, apply last-write-wins
+// and notify the user.
 async function processChangeEvents(events: ThreadChangeEvent[]): Promise<void> {
   const threadStore = useThreadStore.getState();
   const now = Date.now();
@@ -250,6 +280,48 @@ async function processChangeEvents(events: ThreadChangeEvent[]): Promise<void> {
       const existingThread = threadStore.getThread(event.threadId);
 
       if (existingThread) {
+        // Conflict detection per Spec 10 Section 6:
+        // Check if there are pending/in-flight actions for this thread
+        const pendingActions = useSyncStore
+          .getState()
+          .actionQueue.filter(
+            (a) =>
+              a.threadId === event.threadId && (a.status === "pending" || a.status === "in-flight"),
+          );
+
+        if (pendingActions.length > 0) {
+          // Last-write-wins: compare inbound change timestamp vs user action timestamp
+          const latestUserAction = Math.max(...pendingActions.map((a) => a.userInitiatedTimestamp));
+          const inboundTimestamp = event.timestamp;
+
+          if (inboundTimestamp > latestUserAction) {
+            // Inbound change wins - apply server state, notify user
+            console.log(
+              `[SyncEngine] Conflict on thread ${event.threadId}: server change (${inboundTimestamp}) supersedes user action (${latestUserAction})`,
+            );
+            useAppStore.getState().addNotification({
+              message: `A change to "${thread.subject}" was made elsewhere and superseded your pending action.`,
+              severity: "info",
+            });
+            // Remove the conflicting pending actions since server state wins
+            for (const action of pendingActions) {
+              useSyncStore.getState().removeAction(action.id);
+            }
+          } else {
+            // User action wins - preserve local optimistic state, skip server merge for
+            // the conflicting fields. Still update non-conflicting Gmail data.
+            console.log(
+              `[SyncEngine] Conflict on thread ${event.threadId}: user action (${latestUserAction}) takes precedence over server change (${inboundTimestamp})`,
+            );
+            useAppStore.getState().addNotification({
+              message: `Your pending action on "${thread.subject}" was preserved over a conflicting change.`,
+              severity: "info",
+            });
+            // Skip the merge for this thread - user's optimistic state is authoritative
+            continue;
+          }
+        }
+
         // Merge: preserve computed position/scores/zone from existing, update Gmail data
         const merged = {
           ...existingThread,
@@ -337,18 +409,35 @@ export async function replayActionQueue(): Promise<void> {
   const pendingActions = syncStore.getPendingActions();
 
   for (const action of pendingActions) {
+    // Per Spec 10 Section 8: if a queued action can no longer be applied
+    // (e.g., thread deleted from Gmail), discard and notify the user.
+    if (action.type !== "draft-save" && action.type !== "draft-discard") {
+      const thread = useThreadStore.getState().getThread(action.threadId);
+      if (!thread) {
+        console.warn(
+          `[SyncEngine] Discarding queued ${action.type} - thread ${action.threadId} no longer exists`,
+        );
+        useAppStore.getState().addNotification({
+          message: `Queued ${action.type} was discarded because the thread no longer exists.`,
+          severity: "warning",
+        });
+        useSyncStore.getState().removeAction(action.id);
+        continue;
+      }
+    }
+
     syncStore.updateActionStatus(action.id, "in-flight");
 
     try {
       await executeAction(action);
-      useSyncStore.getState().updateActionStatus(action.id, "succeeded");
+      // Clean up succeeded entries immediately per Spec 10
+      useSyncStore.getState().removeAction(action.id);
     } catch (err) {
       const retryable = isRetryableError(err);
       if (retryable && action.retryCount < 3) {
         useSyncStore.getState().updateActionStatus(action.id, "pending");
         useSyncStore.getState().incrementRetryCount(action.id);
       } else {
-        useSyncStore.getState().updateActionStatus(action.id, "failed");
         // Per Spec 10: every failure surfaced to user, no silent drops
         useAppStore.getState().addNotification({
           message: `Failed to ${action.type} thread. The action was discarded.`,
@@ -383,6 +472,14 @@ async function executeAction(action: ActionQueueEntry): Promise<void> {
     case "draft-discard": {
       const { draftId } = action.payload as { draftId: string };
       await _deleteDraft(draftId);
+      break;
+    }
+    case "label-change": {
+      const { addLabelIds, removeLabelIds } = action.payload as {
+        addLabelIds: string[];
+        removeLabelIds: string[];
+      };
+      await _modifyThreadLabels(action.threadId, addLabelIds ?? [], removeLabelIds ?? []);
       break;
     }
     default:

@@ -1,13 +1,15 @@
-// IndexedDB persistence layer per Spec 09
+// IndexedDB persistence layer per Spec 09 and Spec 10
 // Uses idb for ergonomic IndexedDB access
 // Stores threads, positions, scores for offline cache and session persistence
+// Stores action queue entries for offline operation survival across tab close
 
 import { openDB, type IDBPDatabase } from "idb";
-import type { Thread } from "../types";
+import type { Thread, ActionQueueEntry } from "../types";
 
 const DB_NAME = "messaging-rts";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const THREADS_STORE = "threads";
+const ACTION_QUEUE_STORE = "action-queue";
 
 interface MessagingRTSDB {
   threads: {
@@ -19,6 +21,10 @@ interface MessagingRTSDB {
       "by-last-modified": number;
     };
   };
+  "action-queue": {
+    key: string;
+    value: ActionQueueEntry;
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<MessagingRTSDB>> | null = null;
@@ -26,11 +32,16 @@ let dbPromise: Promise<IDBPDatabase<MessagingRTSDB>> | null = null;
 export function getDB(): Promise<IDBPDatabase<MessagingRTSDB>> {
   if (!dbPromise) {
     dbPromise = openDB<MessagingRTSDB>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        const store = db.createObjectStore(THREADS_STORE, { keyPath: "id" });
-        store.createIndex("by-zone", "zone");
-        store.createIndex("by-lifecycle", "lifecycleState");
-        store.createIndex("by-last-modified", "lastModified");
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const store = db.createObjectStore(THREADS_STORE, { keyPath: "id" });
+          store.createIndex("by-zone", "zone");
+          store.createIndex("by-lifecycle", "lifecycleState");
+          store.createIndex("by-last-modified", "lastModified");
+        }
+        if (oldVersion < 2) {
+          db.createObjectStore(ACTION_QUEUE_STORE, { keyPath: "id" });
+        }
       },
     });
   }
@@ -106,6 +117,30 @@ export function mergeThreadData(persisted: Thread, fresh: Partial<Thread>): Thre
     // (position, scores, zone, lifecycle, etc. are NOT overwritten)
     lastModified: Date.now(),
   };
+}
+
+// --- Action Queue Persistence (Spec 10 Section 8) ---
+// Actions queued while offline must survive tab close so they can be replayed on reconnect.
+
+export async function persistActionQueue(entries: ActionQueueEntry[]): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(ACTION_QUEUE_STORE, "readwrite");
+  // Clear existing and write fresh - queue is small and order matters
+  await tx.store.clear();
+  for (const entry of entries) {
+    tx.store.put(entry);
+  }
+  await tx.done;
+}
+
+export async function loadActionQueue(): Promise<ActionQueueEntry[]> {
+  const db = await getDB();
+  return db.getAll(ACTION_QUEUE_STORE);
+}
+
+export async function clearActionQueue(): Promise<void> {
+  const db = await getDB();
+  await db.clear(ACTION_QUEUE_STORE);
 }
 
 // Close the database connection (useful for testing)

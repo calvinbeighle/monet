@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 598 tests passing. Tags through v0.6.5. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 604 tests passing. Tags through v0.6.8. Build, typecheck, lint all clean.
 
-**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (partial), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 2.1 Application Shell, 2.2 Map Rendering,
+**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (partial), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.3 Agent Deployment UI (drag-to-deploy, confirmation, recall, quick-deploy).
 
-**Next priorities**: 1.7 Offline Queue & Conflict Resolution, 4.2 Agent AI Backend.
+**Next priorities**: 4.2 Agent AI Backend, then Performance (500+ entity benchmark).
 
 ---
 
@@ -97,13 +97,13 @@ These must be resolved before implementation begins:
 
 ### 1.7 Offline Queue & Conflict Resolution
 
-- [ ] Action queue for offline operations (reply, archive, label change)
-- [ ] Queue entry states: pending -> in-flight -> succeeded / failed
-- [ ] Ordered replay on reconnect
-- [ ] Discard + notify when queued action is no longer valid
-- [ ] Last-write-wins conflict resolution with user notification
-- [ ] **Spec**: 10-real-time-sync (Offline Handling, Conflict Resolution)
-- [ ] **Tests**: Queue ordering, replay on reconnect, conflict detection, discard notification
+- [x] Action queue for offline operations (reply, archive, label change)
+- [x] Queue entry states: pending -> in-flight -> succeeded / failed
+- [x] Ordered replay on reconnect
+- [x] Discard + notify when queued action is no longer valid
+- [x] Last-write-wins conflict resolution with user notification
+- [x] **Spec**: 10-real-time-sync (Offline Handling, Conflict Resolution)
+- [x] **Tests**: Queue ordering, replay on reconnect, conflict detection, discard notification
 
 ---
 
@@ -443,3 +443,12 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Sync engine enhanced: executeAction now handles draft-save (createDraft/updateDraft) and draft-discard (deleteDraft) action types for offline queue replay. Previously these fell through to console.warn.
 - Detail panel (src/components/detail-panel.tsx): Reply composer placeholder replaced with functional ReplyComposer component. Textarea with send/save-draft/discard buttons. Recipients auto-populated from thread participants. Archive button in header (visible when thread has INBOX label). Draft state indicator shows current draft lifecycle state.
 - Test count: 598 total (28 new outbound action tests), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Offline Queue & Conflict Resolution (2026-03-31)
+
+- Offline queue (Spec 10 Section 8): Action queue now persisted to IndexedDB via new `action-queue` object store (DB version bumped to 2). Queue entries survive tab close and are restored on startup via `loadPersistedActionQueue()` in the App.tsx init flow. Periodic persist (5s) writes queue alongside threads.
+- Reconnect trigger: `performIncrementalSync()` detects offline->connected transition and automatically calls `replayActionQueue()` before resuming normal polling. Clears persisted queue after successful replay. Restores shell state from degraded.
+- Conflict resolution (Spec 10 Section 6): `processChangeEvents()` detects pending/in-flight actions for incoming thread changes. Applies last-write-wins by comparing timestamps. If server wins, pending actions are removed and user is notified. If user wins, server merge is skipped for that thread and user is notified. Every conflict is logged.
+- Queue cleanup: Succeeded entries are removed immediately after replay (not accumulated). Actions targeting deleted threads are discarded with user notification before attempting execution.
+- Label-change action: `executeAction()` now handles `label-change` type via new `modifyThreadLabels()` gmail-client function that supports arbitrary add/remove label combinations.
+- Test count: 604 total (6 new: 2 reconnect trigger, 2 conflict resolution, 1 thread-deleted discard, 1 label-change replay), all passing. Typecheck and lint clean.

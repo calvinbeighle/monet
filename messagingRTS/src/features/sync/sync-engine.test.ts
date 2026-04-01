@@ -308,6 +308,11 @@ describe("SyncEngine", () => {
 
       _setEngineFetchFns({ sendReply: mockSendReply, archiveThread: mockArchive });
 
+      // Threads must exist in store for replay to proceed (thread-existence check)
+      const { createThread } = await import("../../lib/types");
+      useThreadStore.getState().setThread(createThread("t1", "Thread 1", "snippet"));
+      useThreadStore.getState().setThread(createThread("t2", "Thread 2", "snippet"));
+
       // Enqueue two actions
       useSyncStore.getState().enqueueAction({
         type: "reply",
@@ -334,9 +339,9 @@ describe("SyncEngine", () => {
       expect(mockSendReply).toHaveBeenCalled();
       expect(mockArchive).toHaveBeenCalledWith("t2");
 
-      // Successful actions should be marked succeeded
+      // Succeeded actions are removed from queue (not just marked succeeded)
       const queue = useSyncStore.getState().actionQueue;
-      expect(queue.every((a) => a.status === "succeeded")).toBe(true);
+      expect(queue).toHaveLength(0);
     });
 
     it("retries retryable failures and removes permanently failed actions", async () => {
@@ -345,6 +350,10 @@ describe("SyncEngine", () => {
         .mockRejectedValue(new Error("Gmail API error: 400 Bad Request"));
 
       _setEngineFetchFns({ sendReply: mockSendReply });
+
+      // Thread must exist for replay to proceed
+      const { createThread } = await import("../../lib/types");
+      useThreadStore.getState().setThread(createThread("t1", "Thread 1", "snippet"));
 
       useSyncStore.getState().enqueueAction({
         type: "reply",
@@ -365,6 +374,247 @@ describe("SyncEngine", () => {
       // Non-retryable error -> action removed + user notified
       expect(useSyncStore.getState().actionQueue).toHaveLength(0);
       expect(useAppStore.getState().notifications.length).toBeGreaterThan(0);
+    });
+
+    it("discards queued actions when thread no longer exists", async () => {
+      const mockSendReply = vi.fn().mockResolvedValue({ id: "msg-sent" });
+      _setEngineFetchFns({ sendReply: mockSendReply });
+
+      // No threads in store - the queued actions should be discarded
+      useSyncStore.getState().enqueueAction({
+        type: "reply",
+        threadId: "deleted-thread",
+        payload: {
+          threadId: "deleted-thread",
+          to: ["a@b.com"],
+          subject: "Re: Test",
+          body: "hi",
+          inReplyTo: "msg-1",
+          references: [],
+        },
+        userInitiatedTimestamp: 1000,
+      });
+
+      await replayActionQueue();
+
+      // Action should not have been executed
+      expect(mockSendReply).not.toHaveBeenCalled();
+      // Action should be removed from queue
+      expect(useSyncStore.getState().actionQueue).toHaveLength(0);
+      // User should be notified
+      const notifications = useAppStore.getState().notifications;
+      expect(notifications.some((n) => n.message.includes("no longer exists"))).toBe(true);
+    });
+
+    it("replays label-change actions via modifyThreadLabels", async () => {
+      const mockModifyLabels = vi.fn().mockResolvedValue(undefined);
+      _setEngineFetchFns({ modifyThreadLabels: mockModifyLabels });
+
+      const { createThread } = await import("../../lib/types");
+      useThreadStore.getState().setThread(createThread("t1", "Thread 1", "snippet"));
+
+      useSyncStore.getState().enqueueAction({
+        type: "label-change",
+        threadId: "t1",
+        payload: { addLabelIds: ["STARRED"], removeLabelIds: ["SPAM"] },
+        userInitiatedTimestamp: 1000,
+      });
+
+      await replayActionQueue();
+
+      expect(mockModifyLabels).toHaveBeenCalledWith("t1", ["STARRED"], ["SPAM"]);
+      expect(useSyncStore.getState().actionQueue).toHaveLength(0);
+    });
+  });
+
+  describe("reconnect trigger", () => {
+    it("replays queued actions when transitioning from offline to connected", async () => {
+      const mockSendReply = vi.fn().mockResolvedValue({ id: "msg-sent" });
+      const historyResponse: GmailHistoryResponse = {
+        history: [],
+        historyId: "200",
+      };
+      const mockFetchHistory = vi.fn().mockResolvedValue(historyResponse);
+
+      _setEngineFetchFns({
+        fetchHistoryChanges: mockFetchHistory,
+        sendReply: mockSendReply,
+      });
+
+      // Set up: was offline with a pending action and valid history ID
+      useSyncStore.setState({
+        lastHistoryId: "100",
+        connectivityStatus: "offline",
+        syncMode: "incremental",
+      });
+
+      // Thread must exist for replay
+      const { createThread } = await import("../../lib/types");
+      useThreadStore.getState().setThread(createThread("t1", "Thread 1", "snippet"));
+
+      useSyncStore.getState().enqueueAction({
+        type: "reply",
+        threadId: "t1",
+        payload: {
+          threadId: "t1",
+          to: ["a@b.com"],
+          subject: "Re: Test",
+          body: "hi",
+          inReplyTo: "msg-1",
+          references: [],
+        },
+        userInitiatedTimestamp: 1000,
+      });
+
+      // Perform incremental sync (simulates reconnection succeeding)
+      await performIncrementalSync();
+
+      // Action should have been replayed
+      expect(mockSendReply).toHaveBeenCalled();
+      expect(useSyncStore.getState().actionQueue).toHaveLength(0);
+      expect(useSyncStore.getState().connectivityStatus).toBe("connected");
+    });
+
+    it("does not replay queue when already connected (no transition)", async () => {
+      const mockSendReply = vi.fn().mockResolvedValue({ id: "msg-sent" });
+      const historyResponse: GmailHistoryResponse = {
+        history: [],
+        historyId: "200",
+      };
+      const mockFetchHistory = vi.fn().mockResolvedValue(historyResponse);
+
+      _setEngineFetchFns({
+        fetchHistoryChanges: mockFetchHistory,
+        sendReply: mockSendReply,
+      });
+
+      // Already connected with a pending action
+      useSyncStore.setState({
+        lastHistoryId: "100",
+        connectivityStatus: "connected",
+        syncMode: "incremental",
+      });
+
+      useSyncStore.getState().enqueueAction({
+        type: "reply",
+        threadId: "t1",
+        payload: {
+          threadId: "t1",
+          to: ["a@b.com"],
+          subject: "Re: Test",
+          body: "hi",
+          inReplyTo: "msg-1",
+          references: [],
+        },
+        userInitiatedTimestamp: 1000,
+      });
+
+      await performIncrementalSync();
+
+      // Should NOT have replayed - was already connected
+      expect(mockSendReply).not.toHaveBeenCalled();
+      expect(useSyncStore.getState().actionQueue).toHaveLength(1);
+    });
+  });
+
+  describe("conflict resolution", () => {
+    it("applies server change and notifies when inbound is newer than pending action", async () => {
+      const now = Date.now();
+      const mockFetchHistory = vi.fn().mockResolvedValue({
+        history: [
+          {
+            id: "200",
+            messagesAdded: [{ message: { id: "msg-new", threadId: "t1", labelIds: ["INBOX"] } }],
+          },
+        ],
+        historyId: "200",
+      } as GmailHistoryResponse);
+      const mockFetchDetail = vi.fn().mockResolvedValue(makeThreadDetail("t1", "200"));
+
+      _setEngineFetchFns({
+        fetchHistoryChanges: mockFetchHistory,
+        fetchThreadDetail: mockFetchDetail,
+      });
+
+      // Set up existing thread and a pending action with an older timestamp
+      const { createThread } = await import("../../lib/types");
+      const thread = createThread("t1", "Old Subject", "snippet");
+      useThreadStore.getState().setThread(thread);
+
+      useSyncStore.setState({
+        lastHistoryId: "100",
+        connectivityStatus: "connected",
+        syncMode: "incremental",
+      });
+
+      // Pending action with timestamp older than the inbound event
+      useSyncStore.getState().enqueueAction({
+        type: "archive",
+        threadId: "t1",
+        payload: null,
+        userInitiatedTimestamp: now - 10000, // 10 seconds ago
+      });
+
+      await performIncrementalSync();
+
+      // Server change wins - pending action should be removed
+      expect(useSyncStore.getState().actionQueue).toHaveLength(0);
+      // User should be notified about the conflict
+      const notifications = useAppStore.getState().notifications;
+      expect(notifications.some((n) => n.message.includes("superseded"))).toBe(true);
+      // Thread should be updated with server data
+      const updated = useThreadStore.getState().getThread("t1");
+      expect(updated).toBeDefined();
+    });
+
+    it("preserves user action when user timestamp is newer than inbound change", async () => {
+      const now = Date.now();
+      const mockFetchHistory = vi.fn().mockResolvedValue({
+        history: [
+          {
+            id: "200",
+            messagesAdded: [{ message: { id: "msg-new", threadId: "t1", labelIds: ["INBOX"] } }],
+          },
+        ],
+        historyId: "200",
+      } as GmailHistoryResponse);
+      const mockFetchDetail = vi.fn().mockResolvedValue(makeThreadDetail("t1", "200"));
+
+      _setEngineFetchFns({
+        fetchHistoryChanges: mockFetchHistory,
+        fetchThreadDetail: mockFetchDetail,
+      });
+
+      // Set up existing thread
+      const { createThread } = await import("../../lib/types");
+      const thread = createThread("t1", "User Modified Subject", "snippet");
+      thread.visualState = "archived"; // user's optimistic state
+      useThreadStore.getState().setThread(thread);
+
+      useSyncStore.setState({
+        lastHistoryId: "100",
+        connectivityStatus: "connected",
+        syncMode: "incremental",
+      });
+
+      // Pending action with timestamp newer than the inbound event
+      useSyncStore.getState().enqueueAction({
+        type: "archive",
+        threadId: "t1",
+        payload: null,
+        userInitiatedTimestamp: now + 10000, // future - definitely newer
+      });
+
+      await performIncrementalSync();
+
+      // User action wins - pending action should remain
+      expect(useSyncStore.getState().actionQueue).toHaveLength(1);
+      // User should be notified
+      const notifications = useAppStore.getState().notifications;
+      expect(notifications.some((n) => n.message.includes("preserved"))).toBe(true);
+      // Thread should NOT be overwritten (user's optimistic state preserved)
+      const updated = useThreadStore.getState().getThread("t1");
+      expect(updated?.visualState).toBe("archived");
     });
   });
 

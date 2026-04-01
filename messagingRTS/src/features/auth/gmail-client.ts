@@ -288,6 +288,20 @@ export async function archiveThread(threadId: string): Promise<void> {
   });
 }
 
+export async function modifyThreadLabels(
+  threadId: string,
+  addLabelIds: string[],
+  removeLabelIds: string[],
+): Promise<void> {
+  const body: Record<string, string[]> = {};
+  if (addLabelIds.length > 0) body.addLabelIds = addLabelIds;
+  if (removeLabelIds.length > 0) body.removeLabelIds = removeLabelIds;
+  await gmailFetch(`/threads/${encodeURIComponent(threadId)}/modify`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 // --- Helpers for thread data extraction ---
 
 export function extractHeader(message: GmailMessage, headerName: string): string | undefined {
