@@ -2,6 +2,83 @@ import { useState, useRef, useEffect } from "react";
 import type { CardData } from "../lib/sse-client";
 import { useFeedStore } from "../stores/feed-store";
 
+function formatOutput(raw: string) {
+  const cleaned = raw
+    // Remove separator lines
+    .replace(/---\s*New instruction:.*?---/g, "\n")
+    // Remove empty tool calls like [Bash: ] or [Bash: null...]
+    .replace(/\n?\[(\w+):\s*(null[^]*?)?\]\n?/g, (_, tool, arg) => {
+      const a = (arg || "").trim();
+      if (!a || a === "null" || a.startsWith("null")) return "\n";
+      return `\n[${tool}: ${a}]\n`;
+    })
+    // Add newlines after sentences followed by capital letters
+    .replace(/([.!?])(?=\s*[A-Z])/g, "$1\n")
+    // Collapse multiple newlines
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return cleaned.split("\n").map((line, i) => {
+    // Tool call lines - show as subtle indicator
+    const toolMatch = line.match(/^\[(\w+):\s*(.*)\]$/);
+    if (toolMatch) {
+      const [, tool, arg] = toolMatch;
+      if (!arg || arg === "null") return null;
+      return (
+        <div
+          key={i}
+          className="text-white/25 text-[11px] my-1 flex items-center gap-1.5"
+        >
+          <span className="inline-block w-1 h-1 rounded-full bg-white/20" />
+          <span>{tool.toLowerCase()}</span>
+          <span className="text-white/15">{arg}</span>
+        </div>
+      );
+    }
+
+    // Empty lines
+    if (!line.trim()) return <div key={i} className="h-2" />;
+
+    // Render markdown bold and bullet points
+    const parts = line.split(/(\*\*.*?\*\*)/g);
+    const rendered = parts.map((part, j) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={j} className="text-white font-semibold">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return <span key={j}>{part}</span>;
+    });
+
+    // Bullet points
+    if (line.startsWith("- ")) {
+      return (
+        <div key={i} className="pl-3 text-white/70 my-0.5">
+          <span className="text-white/30 mr-1.5">-</span>
+          {parts.map((part, j) => {
+            if (part.startsWith("**") && part.endsWith("**")) {
+              return (
+                <strong key={j} className="text-white/90 font-medium">
+                  {part.slice(2, -2)}
+                </strong>
+              );
+            }
+            return <span key={j}>{part.replace(/^- /, "")}</span>;
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div key={i} className="text-white/80 my-0.5">
+        {rendered}
+      </div>
+    );
+  });
+}
+
 const IDLE_COLORS = [
   "from-violet-950 via-indigo-900 to-slate-950",
   "from-emerald-950 via-teal-900 to-slate-950",
@@ -58,7 +135,10 @@ export function Card({ card, index }: { card: CardData; index: number }) {
       {/* === TikTok-style layout === */}
 
       {/* Right side action column */}
-      <div className="absolute right-4 bottom-32 flex flex-col items-center gap-6 z-20">
+      <div
+        className="absolute right-4 flex flex-col items-center gap-6 z-20"
+        style={{ bottom: 100 }}
+      >
         {/* Status indicator */}
         <div className="flex flex-col items-center gap-1">
           {card.status === "idle" && (
@@ -132,94 +212,105 @@ export function Card({ card, index }: { card: CardData; index: number }) {
         </div>
       </div>
 
-      {/* Left side content */}
-      <div
-        className="absolute z-10"
-        style={{ bottom: 130, left: 32, right: 80 }}
-      >
-        <p className="text-white font-bold text-[16px] mb-1">
-          @agent-{card.id.slice(0, 6)}
-        </p>
-
-        {card.instruction && (
-          <p className="text-white text-[15px] leading-snug mb-2">
-            {card.instruction}
-          </p>
-        )}
-
-        {card.status === "done" && card.summary && (
-          <p className="text-white/70 text-[13px] leading-relaxed line-clamp-3">
-            {card.summary}
-          </p>
-        )}
-
-        {card.status === "error" && card.summary && (
-          <p className="text-red-300 text-[13px]">{card.summary}</p>
-        )}
-
-        {card.status === "idle" && !card.instruction && (
-          <p className="text-white/40 text-[15px]">
-            Waiting for instructions...
-          </p>
-        )}
-      </div>
-
-      {/* Compact output text at top */}
-      {card.status === "working" && card.rawOutput && (
-        <div
-          ref={outputRef}
-          className="absolute z-10 overflow-hidden scrollbar-hide"
-          style={{ top: 16, left: 16, right: 80, maxHeight: 60 }}
-        >
-          <p className="text-white/80 text-[12px] leading-snug line-clamp-3 font-mono">
-            {card.rawOutput.slice(-200)}
-          </p>
-        </div>
-      )}
-
-      {/* Bottom input bar */}
-      <form
-        onSubmit={handleSubmit}
-        className="absolute z-20"
-        style={{ bottom: 40, left: 32, right: 32 }}
-      >
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Add an instruction..."
+      {/* Live output at top */}
+      {(card.status === "working" || card.status === "done") &&
+        card.rawOutput && (
+          <div
+            ref={outputRef}
+            className="absolute z-10 overflow-y-auto scrollbar-hide"
             style={{
-              flex: 1,
-              minWidth: 0,
-              background: "rgba(255,255,255,0.12)",
-              border: "1px solid rgba(255,255,255,0.2)",
-              borderRadius: 9999,
-              padding: "16px 24px",
-              color: "#fff",
-              fontSize: 16,
-              outline: "none",
-              backdropFilter: "blur(12px)",
-            }}
-          />
-          <button
-            type="submit"
-            style={{
-              background: "#fff",
-              color: "#000",
-              borderRadius: 9999,
-              padding: "16px 32px",
-              fontSize: 16,
-              fontWeight: 600,
-              border: "none",
-              cursor: "pointer",
-              flexShrink: 0,
+              top: 16,
+              left: 24,
+              right: 80,
+              bottom: 160,
             }}
           >
-            Send
-          </button>
+            <div
+              className="text-[13px]"
+              style={{
+                lineHeight: 1.7,
+                fontFamily:
+                  "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+              }}
+            >
+              {formatOutput(card.rawOutput)}
+            </div>
+          </div>
+        )}
+
+      {/* Bottom section - text + input in a single flex column */}
+      <div
+        className="absolute z-20"
+        style={{
+          bottom: 32,
+          left: 24,
+          right: 24,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        {/* Text info */}
+        <div style={{ paddingRight: 56, paddingLeft: 22 }}>
+          <p className="text-white font-bold text-[16px] mb-1">
+            @agent-{card.id.slice(0, 6)}
+          </p>
+          {card.instruction && (
+            <p className="text-white text-[14px] leading-snug">
+              {card.instruction}
+            </p>
+          )}
+          {/* Summary shown at top, not here */}
+          {card.status === "error" && card.summary && (
+            <p className="text-red-300 text-[13px]">{card.summary}</p>
+          )}
+          {card.status === "idle" && !card.instruction && (
+            <p className="text-white/40 text-[14px]">
+              Waiting for instructions...
+            </p>
+          )}
         </div>
-      </form>
+
+        {/* Input bar */}
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Add an instruction..."
+              style={{
+                flex: 1,
+                minWidth: 0,
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: 9999,
+                padding: "14px 22px",
+                color: "#fff",
+                fontSize: 15,
+                outline: "none",
+                backdropFilter: "blur(12px)",
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                background: "#fff",
+                color: "#000",
+                borderRadius: 9999,
+                padding: "14px 28px",
+                fontSize: 15,
+                fontWeight: 600,
+                border: "none",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              Send
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

@@ -1,13 +1,18 @@
-import { execSync } from "child_process";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 
-// Load API key once at startup
-const cachedApiKey = execSync(
-  "op item get 'xAI Imagine API Key' --fields credential --reveal",
-  { encoding: "utf-8" },
-).trim();
+// Load .env file
+try {
+  const envPath = resolve(import.meta.dirname || __dirname, ".env");
+  const envFile = readFileSync(envPath, "utf-8");
+  for (const line of envFile.split("\n")) {
+    const [key, ...rest] = line.split("=");
+    if (key && rest.length) process.env[key.trim()] = rest.join("=").trim();
+  }
+} catch {}
 
 function getApiKey(): string {
-  return cachedApiKey;
+  return process.env.XAI_API_KEY || "";
 }
 
 export async function generateVideo(prompt: string): Promise<string> {

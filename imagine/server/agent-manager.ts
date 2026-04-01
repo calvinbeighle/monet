@@ -3,6 +3,8 @@ import { v4 as uuid } from "uuid";
 import { EventEmitter } from "events";
 import { generateVideo, generateImage } from "./image-generator";
 
+const USE_IMAGINE = process.env.USE_IMAGINE === "true";
+
 export interface AgentCard {
   id: string;
   status: "idle" | "working" | "done" | "error";
@@ -13,26 +15,113 @@ export interface AgentCard {
   rawOutput: string;
 }
 
+// Verified working stock videos + dynamic fetch from Pexels
+const STOCK_VIDEOS: string[] = [
+  "https://videos.pexels.com/video-files/3571264/3571264-uhd_2560_1440_30fps.mp4",
+  "https://videos.pexels.com/video-files/1918465/1918465-uhd_2560_1440_24fps.mp4",
+  "https://videos.pexels.com/video-files/2098989/2098989-uhd_2560_1440_30fps.mp4",
+  "https://videos.pexels.com/video-files/2519660/2519660-uhd_2560_1440_24fps.mp4",
+  "https://videos.pexels.com/video-files/4763824/4763824-uhd_2560_1440_24fps.mp4",
+  "https://videos.pexels.com/video-files/2257010/2257010-uhd_2560_1440_24fps.mp4",
+];
+
+// Fetch more videos from Pexels API at startup
+const PEXELS_KEY = process.env.PEXELS_API_KEY || "";
+const PEXELS_QUERIES = [
+  "nature landscape",
+  "ocean waves",
+  "mountains clouds",
+  "forest rain",
+  "sunset sky",
+  "abstract light",
+];
+
+async function loadPexelsVideos() {
+  if (!PEXELS_KEY) return;
+  for (const q of PEXELS_QUERIES) {
+    try {
+      const res = await fetch(
+        `https://api.pexels.com/videos/search?query=${encodeURIComponent(q)}&per_page=5&size=medium`,
+        {
+          headers: { Authorization: PEXELS_KEY },
+        },
+      );
+      const data = await res.json();
+      for (const v of data.videos || []) {
+        for (const f of v.video_files || []) {
+          if (f.quality === "hd" && f.width >= 1280) {
+            STOCK_VIDEOS.push(f.link);
+            break;
+          }
+        }
+      }
+    } catch {}
+  }
+  // Shuffle
+  for (let i = STOCK_VIDEOS.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [STOCK_VIDEOS[i], STOCK_VIDEOS[j]] = [STOCK_VIDEOS[j], STOCK_VIDEOS[i]];
+  }
+  console.log(`Loaded ${STOCK_VIDEOS.length} stock videos`);
+}
+
+loadPexelsVideos();
+
+let stockIndex = 0;
+function nextStockVideo(): string {
+  const url = STOCK_VIDEOS[stockIndex % STOCK_VIDEOS.length];
+  stockIndex++;
+  return url;
+}
+
 export class AgentManager extends EventEmitter {
   private agents = new Map<
     string,
-    { card: AgentCard; abort: AbortController | null }
+    { card: AgentCard; abort: AbortController | null; sessionId: string | null }
   >();
 
-  private static IDLE_PROMPTS = [
-    "Claude Monet style water lilies floating on a pond reflecting a sky full of glowing neural networks",
-    "Claude Monet impressionist painting of a misty sunrise over a field of wildflowers with soft brushstrokes",
-    "Monet style painting of a Japanese bridge over a lily pond with dappled light filtering through willows",
-    "Impressionist oil painting in the style of Monet depicting haystacks at golden hour with purple shadows",
-    "Monet style cathedral facade dissolving into light and color at different times of day",
-    "Claude Monet water garden with irises and wisteria reflected in still water soft pastels",
-    "Monet impressionist seascape with sailboats on choppy water under dramatic clouds",
-    "Monet style poppy field with figures walking through red flowers under a hazy blue sky",
-    "Impressionist painting of a Parisian boulevard with trees and dappled sunlight in Monet style",
-    "Monet style painting of a rowboat on a calm river surrounded by overhanging trees and reflections",
-    "Claude Monet style garden path with roses and climbing flowers in soft morning light",
-    "Monet impressionist sunset over the Thames with Parliament silhouetted in golden haze",
+  private static IDLE_SUBJECTS = [
+    "water lilies on a still pond",
+    "a Japanese bridge over a lily pond",
+    "haystacks at golden hour",
+    "a cathedral facade in morning light",
+    "sailboats on choppy seas",
+    "a poppy field with figures walking",
+    "a Parisian boulevard with dappled sunlight",
+    "a rowboat on a calm river",
+    "a garden path with climbing roses",
+    "sunset over the Thames",
+    "irises and wisteria in a garden",
+    "snow falling on a village",
+    "a train station with steam and light",
+    "cliffs at the seaside with crashing waves",
+    "a wheat field blowing in the wind",
+    "cherry blossoms over a stream",
+    "fog lifting over a harbor",
+    "autumn leaves floating on water",
+    "a greenhouse full of tropical plants",
+    "gondolas in Venice at dusk",
+    "a windmill in a tulip field",
+    "rain on a cobblestone street",
+    "fireflies in a summer meadow",
+    "northern lights over a frozen lake",
+    "a lighthouse beam cutting through mist",
   ];
+
+  private static IDLE_STYLES = [
+    "in the impressionist style of Claude Monet with soft brushstrokes and dappled light",
+    "painted in thick impasto oil like a Monet masterpiece with vibrant colors",
+    "as a dreamy Monet waterscape with reflections dissolving into color",
+    "in Monet's late style with abstract color fields and luminous atmosphere",
+  ];
+
+  private static randomIdle(): string {
+    const subject =
+      this.IDLE_SUBJECTS[Math.floor(Math.random() * this.IDLE_SUBJECTS.length)];
+    const style =
+      this.IDLE_STYLES[Math.floor(Math.random() * this.IDLE_STYLES.length)];
+    return `${subject} ${style}`;
+  }
 
   createAgent(): AgentCard {
     const card: AgentCard = {
@@ -44,28 +133,31 @@ export class AgentManager extends EventEmitter {
       videoUrl: null,
       rawOutput: "",
     };
-    this.agents.set(card.id, { card, abort: null });
+    this.agents.set(card.id, { card, abort: null, sessionId: null });
     this.emit("update", card);
 
-    // Generate a random idle video
-    const prompt =
-      AgentManager.IDLE_PROMPTS[
-        Math.floor(Math.random() * AgentManager.IDLE_PROMPTS.length)
-      ];
-    generateVideo(prompt)
-      .then((url) => {
-        card.videoUrl = url;
-        this.emit("update", card);
-      })
-      .catch((err) => {
-        console.error("Idle video gen failed, falling back to image:", err);
-        generateImage(prompt)
-          .then((url) => {
-            card.imageUrl = url;
-            this.emit("update", card);
-          })
-          .catch(() => {});
-      });
+    if (USE_IMAGINE) {
+      // Generate a random idle video via xAI
+      const prompt = AgentManager.randomIdle();
+      generateVideo(prompt)
+        .then((url) => {
+          card.videoUrl = url;
+          this.emit("update", card);
+        })
+        .catch((err) => {
+          console.error("Idle video gen failed, falling back to image:", err);
+          generateImage(prompt)
+            .then((url) => {
+              card.imageUrl = url;
+              this.emit("update", card);
+            })
+            .catch(() => {});
+        });
+    } else {
+      // Use stock video
+      card.videoUrl = nextStockVideo();
+      this.emit("update", card);
+    }
 
     return card;
   }
@@ -84,17 +176,23 @@ export class AgentManager extends EventEmitter {
 
     agent.card.instruction = instruction;
     agent.card.status = "working";
-    agent.card.rawOutput = "";
+    // Append a separator for follow-up messages instead of clearing
+    if (agent.card.rawOutput) {
+      agent.card.rawOutput +=
+        "\n\n--- New instruction: " + instruction + " ---\n\n";
+    }
     agent.card.summary = null;
     this.emit("update", agent.card);
 
-    // Generate video immediately from the instruction
-    generateVideo(`Artistic impressionist visualization of: ${instruction}`)
-      .then((url) => {
-        agent.card.videoUrl = url;
-        this.emit("update", agent.card);
-      })
-      .catch((err) => console.error("Initial video gen failed:", err));
+    if (USE_IMAGINE) {
+      // Generate video immediately from the instruction
+      generateVideo(`Artistic impressionist visualization of: ${instruction}`)
+        .then((url) => {
+          agent.card.videoUrl = url;
+          this.emit("update", agent.card);
+        })
+        .catch((err) => console.error("Initial video gen failed:", err));
+    }
 
     // Use Claude Agent SDK
     const abort = new AbortController();
@@ -106,7 +204,6 @@ export class AgentManager extends EventEmitter {
         options: {
           cwd: "/tmp",
           permissionMode: "bypassPermissions",
-          persistSession: false,
           abortController: abort,
         },
       });
@@ -115,14 +212,27 @@ export class AgentManager extends EventEmitter {
         if (message.type === "assistant" && message.message?.content) {
           for (const block of message.message.content) {
             if ("text" in block && block.text) {
+              if (
+                agent.card.rawOutput &&
+                !agent.card.rawOutput.endsWith("\n")
+              ) {
+                agent.card.rawOutput += "\n";
+              }
               agent.card.rawOutput += block.text;
+              this.emit("update", agent.card);
+            } else if ("type" in block && block.type === "tool_use") {
+              const tool = (block as any).name || "tool";
+              const input = (block as any).input || {};
+              const file =
+                input.file_path || input.command || input.pattern || "";
+              const short =
+                typeof file === "string" ? file.split("/").pop() : "";
+              agent.card.rawOutput += `\n[${tool}: ${short}]`;
               this.emit("update", agent.card);
             }
           }
-        } else if (message.type === "result") {
-          agent.card.rawOutput +=
-            typeof message.result === "string" ? message.result : "";
         }
+        // Skip result type - it duplicates assistant text
       }
 
       // Done
@@ -133,16 +243,18 @@ export class AgentManager extends EventEmitter {
       this.emit("update", agent.card);
       this.emit("agent-done", agent.card);
 
-      // Generate result video
-      generateVideo(
-        `Artistic impressionist visualization of: ${instruction}. Result: ${agent.card.summary?.slice(0, 100)}`,
-      )
-        .then((url) => {
-          agent.card.videoUrl = url;
-          this.emit("update", agent.card);
-        })
-        .catch((err) => console.error("Result video gen failed:", err));
+      if (USE_IMAGINE) {
+        generateVideo(
+          `Artistic impressionist visualization of: ${instruction}. Result: ${agent.card.summary?.slice(0, 100)}`,
+        )
+          .then((url) => {
+            agent.card.videoUrl = url;
+            this.emit("update", agent.card);
+          })
+          .catch((err) => console.error("Result video gen failed:", err));
+      }
     } catch (err: any) {
+      console.error("Agent error:", err);
       agent.card.status = "error";
       agent.card.summary = err.message || "Agent failed";
       this.emit("update", agent.card);
