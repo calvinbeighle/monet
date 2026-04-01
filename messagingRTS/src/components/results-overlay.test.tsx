@@ -283,3 +283,56 @@ describe("ResultsOverlay - Drafter tone variants (Spec 07)", () => {
     expect(screen.queryByTestId("tone-variant-tabs")).not.toBeInTheDocument();
   });
 });
+
+describe("ResultsOverlay - Failed thread identification (Spec 05)", () => {
+  beforeEach(resetStores);
+
+  it("shows failed thread markers when failedThreadIds is provided", () => {
+    setupCompletedAgent();
+    render(<ResultsOverlay agentRole="closer" failedThreadIds={["t3", "t4"]} />);
+
+    expect(screen.getByTestId("failed-threads-section")).toBeInTheDocument();
+    expect(screen.getByTestId("failed-thread-t3")).toBeInTheDocument();
+    expect(screen.getByTestId("failed-thread-t4")).toBeInTheDocument();
+  });
+
+  it("shows 'Failed to process' text on failed thread markers", () => {
+    setupCompletedAgent();
+    render(<ResultsOverlay agentRole="closer" failedThreadIds={["t3"]} />);
+
+    expect(screen.getByTestId("failed-thread-t3")).toHaveTextContent("Failed to process");
+  });
+
+  it("shows 'Failed' badge on failed thread markers", () => {
+    setupCompletedAgent();
+    render(<ResultsOverlay agentRole="closer" failedThreadIds={["t3"]} />);
+
+    const failedMarker = screen.getByTestId("failed-thread-t3");
+    expect(failedMarker).toHaveTextContent("Failed");
+  });
+
+  it("does not show failed section when failedThreadIds is empty", () => {
+    setupCompletedAgent();
+    render(<ResultsOverlay agentRole="closer" failedThreadIds={[]} />);
+
+    expect(screen.queryByTestId("failed-threads-section")).not.toBeInTheDocument();
+  });
+
+  it("does not show failed section when failedThreadIds is not provided", () => {
+    setupCompletedAgent();
+    render(<ResultsOverlay agentRole="closer" />);
+
+    expect(screen.queryByTestId("failed-threads-section")).not.toBeInTheDocument();
+  });
+
+  it("shows both failed markers and successful proposals", () => {
+    setupCompletedAgent();
+    render(<ResultsOverlay agentRole="closer" failedThreadIds={["t3"]} />);
+
+    // Failed section present
+    expect(screen.getByTestId("failed-thread-t3")).toBeInTheDocument();
+    // Successful proposals still shown
+    expect(screen.getByText("Hi, following up on our conversation.")).toBeInTheDocument();
+    expect(screen.getByText("Mark as resolved.")).toBeInTheDocument();
+  });
+});

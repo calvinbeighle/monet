@@ -139,13 +139,23 @@ function ToneVariantGroup({
   );
 }
 
-export function ResultsOverlay({ agentRole }: { agentRole: AgentRole }) {
+export function ResultsOverlay({
+  agentRole,
+  failedThreadIds = [],
+}: {
+  agentRole: AgentRole;
+  failedThreadIds?: string[];
+}) {
   const agent = useAgentStore((s) => s.agents.get(agentRole));
   const beginCooldown = useAgentStore((s) => s.beginCooldown);
   const resolveDeployment = useDeploymentStore((s) => s.resolveDeployment);
   const getCompletedDeployment = useDeploymentStore((s) => s.getCompletedDeploymentForRole);
 
-  if (!agent || agent.status !== "completed" || agent.proposals.length === 0) {
+  if (
+    !agent ||
+    agent.status !== "completed" ||
+    (agent.proposals.length === 0 && failedThreadIds.length === 0)
+  ) {
     return null;
   }
 
@@ -186,6 +196,26 @@ export function ResultsOverlay({ agentRole }: { agentRole: AgentRole }) {
 
         {/* Proposals list - grouped by thread for Drafter tone variants per Spec 07 */}
         <div className="flex-1 overflow-y-auto p-4" data-testid="results-proposals-list">
+          {/* Failed thread markers per Spec 05 */}
+          {failedThreadIds.length > 0 && (
+            <div className="mb-3" data-testid="failed-threads-section">
+              {failedThreadIds.map((threadId) => (
+                <div
+                  key={`failed-${threadId}`}
+                  className="border border-red-700/50 rounded p-3 mb-2 bg-red-900/20"
+                  data-testid={`failed-thread-${threadId}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs px-2 py-0.5 rounded bg-red-900/40 text-red-400">
+                      Failed
+                    </span>
+                    <span className="text-xs text-gray-400">Thread: {threadId}</span>
+                  </div>
+                  <p className="text-xs text-red-400/70 mt-1">Failed to process</p>
+                </div>
+              ))}
+            </div>
+          )}
           {agentRole === "drafter"
             ? (() => {
                 const groups = groupProposalsByThread(agent.proposals);

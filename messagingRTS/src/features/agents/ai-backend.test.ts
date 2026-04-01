@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { processAgentWork, getAnthropicApiKey } from "./ai-backend";
+import { processAgentWork, processAgentWorkBatched, getAnthropicApiKey } from "./ai-backend";
 import {
   initClaudeClient,
   resetClaudeClient,
@@ -267,6 +267,117 @@ describe("ai-backend", () => {
     it("returns undefined when env var is not set", () => {
       const key = getAnthropicApiKey();
       expect(key === undefined || typeof key === "string").toBe(true);
+    });
+  });
+
+  describe("processAgentWork - failedThreadIds tracking (Spec 05)", () => {
+    it("reports succeededThreadIds and failedThreadIds for simulated proposals", async () => {
+      const result = await processAgentWork("closer", ["t1", "t2"], []);
+      expect(result.succeededThreadIds).toBeDefined();
+      expect(result.failedThreadIds).toBeDefined();
+      // Closer generates one proposal per thread, so all should succeed
+      expect(result.succeededThreadIds).toContain("t1");
+      expect(result.succeededThreadIds).toContain("t2");
+      expect(result.failedThreadIds).toHaveLength(0);
+    });
+
+    it("reports failedThreadIds when AI returns no proposals for some threads", async () => {
+      initClaudeClient({ apiKey: "test-key", maxRetries: 0 });
+      const t1 = makeThread("t1", "Thread 1");
+      const t2 = makeThread("t2", "Thread 2");
+
+      _setCreateMessageFn(async () =>
+        makeMockResponse([
+          {
+            name: "submit_proposal",
+            input: { thread_id: "t1", output_type: "reply-draft", content: "Draft" },
+          },
+          // No proposal for t2 - it should be marked as failed
+        ]),
+      );
+
+      const result = await processAgentWork("closer", ["t1", "t2"], [t1, t2]);
+      expect(result.succeededThreadIds).toContain("t1");
+      expect(result.failedThreadIds).toContain("t2");
+      expect(result.errors.some((e) => e.includes("1 thread(s) received no proposals"))).toBe(true);
+    });
+
+    it("reports all threads as failed when no threads resolve", async () => {
+      initClaudeClient({ apiKey: "test-key", maxRetries: 0 });
+      const result = await processAgentWork("closer", ["t1", "t2"], []);
+      expect(result.failedThreadIds).toContain("t1");
+      expect(result.failedThreadIds).toContain("t2");
+      expect(result.succeededThreadIds).toHaveLength(0);
+    });
+  });
+
+  describe("processAgentWorkBatched - batch queue (Spec 05)", () => {
+    it("processes all threads in a single batch when within capacity", async () => {
+      const result = await processAgentWorkBatched("closer", ["t1", "t2"], []);
+      // closer capacity is 5, so 2 threads = 1 batch
+      expect(result.proposals.length).toBe(2);
+      expect(result.source).toBe("simulated");
+    });
+
+    it("processes threads in multiple batches when exceeding capacity", async () => {
+      // scheduler capacity is 4
+      const ids = ["t1", "t2", "t3", "t4", "t5", "t6"];
+      const result = await processAgentWorkBatched("scheduler", ids, []);
+
+      // Should process 4 in first batch, 2 in second batch
+      const uniqueThreads = new Set(result.proposals.map((p) => p.threadId));
+      expect(uniqueThreads.size).toBe(6);
+    });
+
+    it("accumulates errors across batches", async () => {
+      initClaudeClient({ apiKey: "test-key", maxRetries: 0 });
+
+      _setCreateMessageFn(async () => {
+        throw new Error("API failure");
+      });
+
+      // scheduler capacity is 4, sending 6 threads = 2 batches
+      const threads = Array.from({ length: 6 }, (_, i) => makeThread(`t${i}`, `Thread ${i}`));
+      const ids = threads.map((t) => t.id);
+      const result = await processAgentWorkBatched("scheduler", ids, threads);
+
+      // Both batches should fall back to simulation
+      expect(result.source).toBe("simulated");
+      // Errors from both batches
+      expect(result.errors.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("accumulates token usage across batches", async () => {
+      initClaudeClient({ apiKey: "test-key", maxRetries: 0 });
+
+      _setCreateMessageFn(async () =>
+        makeMockResponse([
+          {
+            name: "submit_proposal",
+            input: { thread_id: "t0", output_type: "reply-draft", content: "Draft" },
+          },
+        ]),
+      );
+
+      // Use closer (capacity 5) with 6 threads for 2 batches
+      const threads = Array.from({ length: 6 }, (_, i) => makeThread(`t${i}`, `Thread ${i}`));
+      const ids = threads.map((t) => t.id);
+      const result = await processAgentWorkBatched("closer", ids, threads);
+
+      // Token usage should be accumulated from both batches
+      if (result.tokenUsage) {
+        expect(result.tokenUsage.inputTokens).toBe(200); // 100 * 2 batches
+        expect(result.tokenUsage.outputTokens).toBe(100); // 50 * 2 batches
+      }
+    });
+
+    it("tracks failedThreadIds across batches", async () => {
+      // Using simulated proposals - all threads get proposals
+      const ids = ["t1", "t2", "t3", "t4", "t5", "t6"];
+      const result = await processAgentWorkBatched("scheduler", ids, []);
+
+      expect(result.failedThreadIds).toHaveLength(0);
+      expect(result.succeededThreadIds.length).toBe(6);
     });
   });
 });

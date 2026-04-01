@@ -19,6 +19,59 @@ const COLLISION_MIN_DISTANCE = 40; // minimum pixel separation between threads
 const COLLISION_PUSH_STRENGTH = 0.3;
 const NEGLECT_DRIFT_RATE = 0.02; // pixels per ms of neglect per tick
 
+// Organic drift constants per Spec 02
+const WOBBLE_AMPLITUDE = 3; // pixels, small organic feel
+const WOBBLE_SPEED = 0.001; // radians per ms
+
+// Cluster migration animation per Spec 02
+const CLUSTER_MIGRATION_DURATION = 500; // ms
+
+// Per-thread hash for unique wobble phase offset
+function threadHash(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+// Cluster migration target tracking
+export interface ClusterMigrationTarget {
+  target: { x: number; y: number };
+  startPosition: { x: number; y: number };
+  startTime: number;
+  duration: number;
+}
+
+// Module-level map for cluster migration animations
+const clusterMigrations = new Map<string, ClusterMigrationTarget>();
+
+export function setClusterMigration(
+  threadId: string,
+  target: { x: number; y: number },
+  startPosition: { x: number; y: number },
+  now: number = Date.now(),
+): void {
+  clusterMigrations.set(threadId, {
+    target,
+    startPosition,
+    startTime: now,
+    duration: CLUSTER_MIGRATION_DURATION,
+  });
+}
+
+export function getClusterMigration(threadId: string): ClusterMigrationTarget | undefined {
+  return clusterMigrations.get(threadId);
+}
+
+export function clearClusterMigration(threadId: string): void {
+  clusterMigrations.delete(threadId);
+}
+
+export function clearAllClusterMigrations(): void {
+  clusterMigrations.clear();
+}
+
 // Determine target zone based on scores and state
 export function computeTargetZone(thread: Thread): ZoneId {
   // User override takes precedence
@@ -161,18 +214,60 @@ export function driftTick(
       }
     }
 
-    // 5. Smooth movement: actual position approaches target by fixed fraction
+    // 5. Cluster migration animation: override position if migration is active
+    const migration = clusterMigrations.get(t.id);
+    if (migration) {
+      const elapsed = now - migration.startTime;
+      if (elapsed >= migration.duration) {
+        // Migration complete - snap to target and clear
+        t.position = { ...migration.target };
+        t.targetPosition = { ...migration.target };
+        clusterMigrations.delete(t.id);
+        t.driftVelocity = { dx: 0, dy: 0 };
+        t.zone = getZoneAtPosition(zones, t.position.x, t.position.y);
+        t.lastModified = now;
+        updated.push(t);
+        continue;
+      } else {
+        // Lerp from start to target over duration
+        const progress = elapsed / migration.duration;
+        // Ease-out cubic for smooth deceleration
+        const eased = 1 - Math.pow(1 - progress, 3);
+        t.position = {
+          x: migration.startPosition.x + (migration.target.x - migration.startPosition.x) * eased,
+          y: migration.startPosition.y + (migration.target.y - migration.startPosition.y) * eased,
+        };
+        t.driftVelocity = {
+          dx: (migration.target.x - migration.startPosition.x) * DRIFT_FRACTION,
+          dy: (migration.target.y - migration.startPosition.y) * DRIFT_FRACTION,
+        };
+        // Update zone based on actual position
+        t.zone = getZoneAtPosition(zones, t.position.x, t.position.y);
+        t.lastModified = now;
+        updated.push(t);
+        continue;
+      }
+    }
+
+    // 6. Smooth movement: actual position approaches target by fixed fraction
     const dx = t.targetPosition.x - t.position.x;
     const dy = t.targetPosition.y - t.position.y;
+
+    // 6b. Organic wobble per Spec 02: sine-wave perpendicular noise per thread
+    const hash = threadHash(t.id);
+    const wobblePhase = (hash + now * WOBBLE_SPEED) % (2 * Math.PI);
+    const wobbleX = Math.sin(wobblePhase) * WOBBLE_AMPLITUDE * DRIFT_FRACTION;
+    const wobbleY = Math.cos(wobblePhase * 1.3) * WOBBLE_AMPLITUDE * DRIFT_FRACTION;
+
     t.position = {
-      x: t.position.x + dx * DRIFT_FRACTION,
-      y: t.position.y + dy * DRIFT_FRACTION,
+      x: t.position.x + dx * DRIFT_FRACTION + wobbleX,
+      y: t.position.y + dy * DRIFT_FRACTION + wobbleY,
     };
 
     // Update drift velocity for rendering
     t.driftVelocity = {
-      dx: dx * DRIFT_FRACTION,
-      dy: dy * DRIFT_FRACTION,
+      dx: dx * DRIFT_FRACTION + wobbleX,
+      dy: dy * DRIFT_FRACTION + wobbleY,
     };
 
     // Update zone based on actual position
@@ -211,9 +306,56 @@ function applyCollisionAvoidance(threads: Thread[]): void {
 }
 
 // Place a new thread on the map per Spec 03 initial placement rules
-export function placeNewThread(thread: Thread, zones: Map<ZoneId, Zone>): Thread {
+// Per Spec 03: if thread has affinity with existing clustered threads,
+// bias initial position toward that cluster's centroid
+export function placeNewThread(
+  thread: Thread,
+  zones: Map<ZoneId, Zone>,
+  existingThreads?: Thread[],
+  clusters?: Array<{ memberThreadIds: string[]; centroid: { x: number; y: number } }>,
+): Thread {
   const targetZone = computeTargetZone(thread);
-  const position = getRandomPositionInZone(zones, targetZone);
+  let position = getRandomPositionInZone(zones, targetZone);
+
+  // Cluster-biased placement per Spec 03
+  if (existingThreads && clusters && clusters.length > 0 && thread.participants.length > 0) {
+    const newEmails = new Set(thread.participants.map((p) => p.email));
+    let bestCluster: { centroid: { x: number; y: number } } | null = null;
+    let bestOverlap = 0;
+
+    for (const cluster of clusters) {
+      // Compute participant overlap with cluster members
+      let overlapCount = 0;
+      let memberCount = 0;
+      for (const memberId of cluster.memberThreadIds) {
+        const member = existingThreads.find((t) => t.id === memberId);
+        if (!member) continue;
+        memberCount++;
+        for (const p of member.participants) {
+          if (newEmails.has(p.email)) {
+            overlapCount++;
+            break; // count each member once
+          }
+        }
+      }
+
+      // Require at least half the members share a participant
+      if (memberCount > 0 && overlapCount / memberCount >= 0.5 && overlapCount > bestOverlap) {
+        bestOverlap = overlapCount;
+        bestCluster = cluster;
+      }
+    }
+
+    if (bestCluster) {
+      // Offset position toward cluster centroid with some randomness
+      const jitterX = (Math.random() - 0.5) * 60;
+      const jitterY = (Math.random() - 0.5) * 60;
+      position = {
+        x: bestCluster.centroid.x + jitterX,
+        y: bestCluster.centroid.y + jitterY,
+      };
+    }
+  }
 
   return {
     ...thread,

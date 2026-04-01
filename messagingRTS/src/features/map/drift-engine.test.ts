@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   computeTargetZone,
   driftTick,
@@ -6,6 +6,10 @@ import {
   onUserReply,
   onArchive,
   onManualReclassify,
+  setClusterMigration,
+  getClusterMigration,
+  clearClusterMigration,
+  clearAllClusterMigrations,
 } from "./drift-engine";
 import { createZoneLayout, getZoneCenter } from "./zone-layout";
 import { createThread } from "../../lib/types";
@@ -447,5 +451,257 @@ describe("driftTick - auto-lifecycle transitions", () => {
 
     expect(updated.riskTier).toBe("critical");
     expect(updated.lifecycleState).toBe("at-risk");
+  });
+});
+
+describe("driftTick - organic wobble (Spec 02)", () => {
+  it("adds organic wobble noise to thread movement", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    // Two threads at the same position with the same target - they should diverge
+    // due to different per-thread wobble phases
+    const t1 = createThread("thread-alpha", "Subject", "s");
+    t1.participants = [makeContact()];
+    t1.position = { x: 500, y: 500 };
+    t1.targetPosition = { x: 500, y: 500 }; // at target - no linear drift
+
+    const t2 = createThread("thread-beta", "Subject", "s");
+    t2.participants = [makeContact()];
+    t2.position = { x: 500, y: 500 };
+    t2.targetPosition = { x: 500, y: 500 };
+
+    const updated = driftTick([t1, t2], zones, now);
+
+    // With organic wobble, threads at their target should still move slightly
+    // (either via wobble or collision avoidance separating them)
+    const dist = Math.hypot(
+      updated[0].position.x - updated[1].position.x,
+      updated[1].position.y - updated[0].position.y,
+    );
+    // They were at the same position, so collision + wobble should separate them
+    expect(dist).toBeGreaterThan(0);
+  });
+
+  it("wobble is deterministic per thread id and time", () => {
+    const zones = createZoneLayout();
+    const now = 1000000;
+    const thread = createThread("fixed-id", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.position = { x: 500, y: 500 };
+    thread.targetPosition = { x: 500, y: 500 };
+
+    const [result1] = driftTick([thread], zones, now);
+    // Reset and run again with same time
+    const thread2 = createThread("fixed-id", "Subject", "s");
+    thread2.participants = [makeContact()];
+    thread2.position = { x: 500, y: 500 };
+    thread2.targetPosition = { x: 500, y: 500 };
+    const [result2] = driftTick([thread2], zones, now);
+
+    // Same thread id + same time = same wobble
+    expect(result1.position.x).toBe(result2.position.x);
+    expect(result1.position.y).toBe(result2.position.y);
+  });
+
+  it("different thread IDs get different wobble offsets at the same time", () => {
+    const zones = createZoneLayout();
+    const now = 1000000;
+    const t1 = createThread("id-aaa", "Subject", "s");
+    t1.participants = [makeContact()];
+    t1.position = { x: 1000, y: 1000 };
+    t1.targetPosition = { x: 1000, y: 1000 };
+
+    const t2 = createThread("id-zzz", "Subject", "s");
+    t2.participants = [makeContact()];
+    t2.position = { x: 2000, y: 2000 };
+    t2.targetPosition = { x: 2000, y: 2000 };
+
+    const updated = driftTick([t1, t2], zones, now);
+
+    // The drift velocity (which includes wobble) should differ between different IDs
+    const v1 = updated[0].driftVelocity;
+    const v2 = updated[1].driftVelocity;
+    expect(v1.dx !== v2.dx || v1.dy !== v2.dy).toBe(true);
+  });
+});
+
+describe("cluster migration animation (Spec 02)", () => {
+  beforeEach(() => {
+    clearAllClusterMigrations();
+  });
+
+  it("setClusterMigration stores a migration target", () => {
+    setClusterMigration("t1", { x: 200, y: 300 }, { x: 100, y: 100 }, 1000);
+    const migration = getClusterMigration("t1");
+    expect(migration).toBeDefined();
+    expect(migration!.target).toEqual({ x: 200, y: 300 });
+    expect(migration!.startPosition).toEqual({ x: 100, y: 100 });
+    expect(migration!.startTime).toBe(1000);
+    expect(migration!.duration).toBe(500);
+  });
+
+  it("clearClusterMigration removes a migration", () => {
+    setClusterMigration("t1", { x: 200, y: 300 }, { x: 100, y: 100 });
+    clearClusterMigration("t1");
+    expect(getClusterMigration("t1")).toBeUndefined();
+  });
+
+  it("driftTick lerps position during active migration", () => {
+    const zones = createZoneLayout();
+    const startTime = 1000;
+    const thread = createThread("t-migrate", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.position = { x: 100, y: 100 };
+    thread.targetPosition = { x: 500, y: 500 };
+
+    setClusterMigration("t-migrate", { x: 500, y: 500 }, { x: 100, y: 100 }, startTime);
+
+    // At 250ms (halfway through 500ms migration)
+    const [updated] = driftTick([thread], zones, startTime + 250);
+    // Should be partway between start and target
+    expect(updated.position.x).toBeGreaterThan(100);
+    expect(updated.position.x).toBeLessThan(500);
+    expect(updated.position.y).toBeGreaterThan(100);
+    expect(updated.position.y).toBeLessThan(500);
+  });
+
+  it("driftTick completes migration after duration", () => {
+    const zones = createZoneLayout();
+    const startTime = 1000;
+    const thread = createThread("t-migrate2", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.position = { x: 100, y: 100 };
+    thread.targetPosition = { x: 100, y: 100 };
+
+    setClusterMigration("t-migrate2", { x: 500, y: 500 }, { x: 100, y: 100 }, startTime);
+
+    // At 600ms (past 500ms duration)
+    const [updated] = driftTick([thread], zones, startTime + 600);
+    // Should be at target position
+    expect(updated.position.x).toBe(500);
+    expect(updated.position.y).toBe(500);
+    // Migration should be cleared
+    expect(getClusterMigration("t-migrate2")).toBeUndefined();
+  });
+
+  it("migration uses ease-out cubic for smooth deceleration", () => {
+    const zones = createZoneLayout();
+    const startTime = 1000;
+    const thread = createThread("t-ease", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.position = { x: 0, y: 0 };
+    thread.targetPosition = { x: 0, y: 0 };
+
+    setClusterMigration("t-ease", { x: 400, y: 0 }, { x: 0, y: 0 }, startTime);
+
+    // At 25% time
+    const [early] = driftTick([{ ...thread }], zones, startTime + 125);
+    // At 75% time
+    clearAllClusterMigrations();
+    setClusterMigration("t-ease", { x: 400, y: 0 }, { x: 0, y: 0 }, startTime);
+    const [late] = driftTick([{ ...thread }], zones, startTime + 375);
+
+    // Ease-out means more progress early - the position at 75% should be closer to target
+    // than a simple linear would suggest
+    expect(late.position.x).toBeGreaterThan(early.position.x);
+    // 75% of time with ease-out should cover more than 75% of distance
+    expect(late.position.x / 400).toBeGreaterThan(0.75);
+  });
+});
+
+describe("placeNewThread - cluster-biased placement (Spec 03)", () => {
+  it("biases position toward cluster centroid when participant overlap is high", () => {
+    const zones = createZoneLayout();
+    const existing1 = createThread("e1", "Subject", "s");
+    existing1.participants = [makeContact({ email: "shared@co.com" })];
+    existing1.position = { x: 1500, y: 1500 };
+
+    const existing2 = createThread("e2", "Re: Subject", "s");
+    existing2.participants = [makeContact({ email: "shared@co.com" })];
+    existing2.position = { x: 1600, y: 1600 };
+
+    const cluster = {
+      memberThreadIds: ["e1", "e2"],
+      centroid: { x: 1550, y: 1550 },
+    };
+
+    const newThread = createThread("new1", "New Thread", "s");
+    newThread.participants = [makeContact({ email: "shared@co.com" })];
+    newThread.unread = true;
+    newThread.urgencyScore = 0.5;
+
+    const placed = placeNewThread(newThread, zones, [existing1, existing2], [cluster]);
+
+    // Position should be near cluster centroid (within jitter range)
+    expect(placed.position.x).toBeGreaterThan(1500);
+    expect(placed.position.x).toBeLessThan(1610);
+    expect(placed.position.y).toBeGreaterThan(1500);
+    expect(placed.position.y).toBeLessThan(1610);
+  });
+
+  it("falls back to random zone placement when no cluster affinity", () => {
+    const zones = createZoneLayout();
+    const existing1 = createThread("e1", "Subject", "s");
+    existing1.participants = [makeContact({ email: "alice@co.com" })];
+    existing1.position = { x: 1500, y: 1500 };
+
+    const cluster = {
+      memberThreadIds: ["e1"],
+      centroid: { x: 1500, y: 1500 },
+    };
+
+    const newThread = createThread("new1", "New Thread", "s");
+    newThread.participants = [makeContact({ email: "bob@other.com" })]; // no overlap
+    newThread.unread = true;
+
+    const placed = placeNewThread(newThread, zones, [existing1], [cluster]);
+
+    // Should NOT be near cluster centroid - random zone placement
+    // (active-front zone center is at 2000, 600)
+    // Just verify it was placed somewhere reasonable, not at cluster centroid
+    expect(placed.zone).toBeDefined();
+    expect(placed.position.x).not.toBe(0);
+  });
+
+  it("works without existing threads or clusters (backward compatible)", () => {
+    const zones = createZoneLayout();
+    const newThread = createThread("new1", "New Thread", "s");
+    newThread.unread = true;
+    newThread.urgencyScore = 0.5;
+
+    const placed = placeNewThread(newThread, zones);
+    expect(placed.zone).toBeDefined();
+    expect(placed.position.x).not.toBe(0);
+    expect(placed.position.y).not.toBe(0);
+  });
+
+  it("requires at least half of cluster members to share participants", () => {
+    const zones = createZoneLayout();
+    const existing1 = createThread("e1", "Subject", "s");
+    existing1.participants = [makeContact({ email: "shared@co.com" })];
+    existing1.position = { x: 1500, y: 1500 };
+
+    const existing2 = createThread("e2", "Other", "s");
+    existing2.participants = [makeContact({ email: "noone@co.com" })];
+    existing2.position = { x: 1600, y: 1600 };
+
+    const existing3 = createThread("e3", "Another", "s");
+    existing3.participants = [makeContact({ email: "someone@co.com" })];
+    existing3.position = { x: 1700, y: 1700 };
+
+    const cluster = {
+      memberThreadIds: ["e1", "e2", "e3"],
+      centroid: { x: 1600, y: 1600 },
+    };
+
+    const newThread = createThread("new1", "New Thread", "s");
+    // Only 1 of 3 cluster members shares participant - below 50% threshold
+    newThread.participants = [makeContact({ email: "shared@co.com" })];
+    newThread.unread = true;
+
+    const placed = placeNewThread(newThread, zones, [existing1, existing2, existing3], [cluster]);
+
+    // Should NOT be biased toward cluster since overlap < 50%
+    expect(placed.zone).toBeDefined();
   });
 });

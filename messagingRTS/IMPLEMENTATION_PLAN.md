@@ -2,20 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 1008 tests passing. Tags through v0.8.2.
+**Current state**: 1040 tests passing. Tags through v0.8.3.
 
-**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
-2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
-2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (complete), 5.1-5.8 Spec Compliance (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1 Quota-Disabled UI, 6.2 Agent Travel Arc Animation, 6.3 Deployment History Filtering, 6.4 In-Progress Cluster Indicator, 6.5 Draft Reactive Store.
+**Implemented**: All 12 specs fully implemented. 1.1-1.7 Foundation (Gmail auth, thread model, fetching, sync, outbound actions, offline queue), 2.1-2.6 Core Map (shell, rendering, navigation, zones, drift, clustering), 3.1-3.5 Game Mechanics (risk scoring, trust, opportunities, front health, alerts), 4.1-4.3 Agent System (units, AI backend, deployment UI), 5.1-5.8 Spec Compliance Round 1 (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1-6.5 Spec Compliance Round 2 (quota UI, travel arc, history filters, cluster indicator, draft store), 7.1-7.6 Spec Compliance Round 3 (organic drift, cluster migration, cluster-biased placement, failed thread identification, batch queue, zone quick-nav).
 
-**Next priorities**: Remaining spec gaps (organic drift, cluster migration animation, cluster-biased placement, failed thread identification, batch thread queue), performance profiling, integration testing.
+**Next priorities**: Performance profiling, integration testing, end-to-end testing.
 
-**Remaining spec gaps (medium priority)**:
-
-- Spec 02: Organic drift animation (currently linear); cluster member migration animation (500ms)
-- Spec 03: Initial thread placement not biased toward cluster members; drift tick doesn't nudge toward cluster members
-- Spec 05: Failed threads not identified per-thread in proposal review; batch thread queue within single deployment
-- Spec 08: Persistent zone quick-nav label panel
+**All known spec gaps resolved.** No remaining medium-priority items.
 
 ---
 
@@ -591,3 +584,13 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - In-progress cluster indicator (Spec 06): map-renderer tracks inProgressClusterIds set. renderClusters draws pulsing gold ring on clusters with active deployments at both zoom levels.
 - Draft reactive store (Spec 01): New useDraftStore Zustand store mirrors draft lifecycle state reactively. outbound-actions.ts syncs all draft mutations to the store. detail-panel reads draft state reactively instead of from module-level Map.
 - Test count: 1008 total (65 new: 15 quota UI, 16 travel arc, 10 history filters, 6 cluster indicator, 18 draft store), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Final Spec Compliance (2026-04-01)
+
+- Organic drift animation (Spec 02): driftTick now adds per-thread hash-seeded sine-wave wobble perpendicular to drift direction. Each thread gets unique phase offset via threadHash(id). Wobble amplitude 3px scaled by DRIFT_FRACTION for subtle organic movement.
+- Cluster member migration animation (Spec 02): Module-level clusterMigrations Map tracks ClusterMigrationTarget entries with start/target positions and 500ms duration. driftTick uses ease-out cubic interpolation (1-(1-t)^3) for smooth deceleration. Exports setClusterMigration/clearClusterMigration for external use.
+- Cluster-biased initial placement (Spec 03): placeNewThread extended with optional existingThreads and clusters parameters. When new thread's participants overlap >= 50% with a cluster's members, initial position biased toward cluster centroid with +/-30px jitter.
+- Failed thread identification (Spec 05): ai-backend.ts AIBackendResult now includes failedThreadIds/succeededThreadIds. results-overlay.tsx shows red-tinted markers with "Failed" badge for unprocessed threads.
+- Batch thread queue (Spec 05): processAgentWorkBatched splits thread IDs into capacity-sized chunks, processes sequentially, accumulates proposals/errors/stats across batches.
+- Zone quick-nav label panel (Spec 08): New zone-quick-nav.tsx component renders compact overlay with 6 zone labels and keyboard shortcut indicators. Integrated into map-viewport.
+- Test count: 1040 total (32 new), all passing. Typecheck and lint clean.

@@ -16,6 +16,9 @@ export interface AIBackendResult {
   source: "ai" | "simulated";
   errors: string[];
   tokenUsage?: { inputTokens: number; outputTokens: number };
+  // Per Spec 05: track which threads failed to process for results overlay display
+  failedThreadIds: string[];
+  succeededThreadIds: string[];
 }
 
 // Process threads for a given agent role using Claude API
@@ -31,10 +34,13 @@ export async function processAgentWork(
   // Fall back to simulation if Claude API not configured
   if (!isClaudeClientConfigured()) {
     const simulated = generateSimulatedProposals(role, assignedIds);
+    const succeededIds = [...new Set(simulated.map((p) => p.threadId))];
     return {
       proposals: simulated,
       source: "simulated",
       errors: [],
+      failedThreadIds: assignedIds.filter((id) => !succeededIds.includes(id)),
+      succeededThreadIds: succeededIds,
     };
   }
 
@@ -45,7 +51,13 @@ export async function processAgentWork(
     .filter((t): t is Thread => t !== undefined);
 
   if (assignedThreads.length === 0) {
-    return { proposals: [], source: "ai", errors: ["No valid threads found for assigned IDs"] };
+    return {
+      proposals: [],
+      source: "ai",
+      errors: ["No valid threads found for assigned IDs"],
+      failedThreadIds: assignedIds,
+      succeededThreadIds: [],
+    };
   }
 
   try {
@@ -77,11 +89,20 @@ export async function processAgentWork(
       errors.push(`${dropped.length} proposal(s) dropped: referenced invalid thread IDs`);
     }
 
+    // Determine which threads got proposals and which did not
+    const succeededIds = [...new Set(valid.map((p) => p.threadId))];
+    const failedIds = assignedIds.filter((id) => !succeededIds.includes(id));
+    if (failedIds.length > 0) {
+      errors.push(`${failedIds.length} thread(s) received no proposals: ${failedIds.join(", ")}`);
+    }
+
     return {
       proposals: valid,
       source: "ai",
       errors,
       tokenUsage: response.usage,
+      failedThreadIds: failedIds,
+      succeededThreadIds: succeededIds,
     };
   } catch (error: unknown) {
     // On API failure, fall back to simulated proposals
@@ -95,12 +116,67 @@ export async function processAgentWork(
     console.error(`[AI Backend] ${role} failed, falling back to simulation:`, errorMessage);
 
     const simulated = generateSimulatedProposals(role, assignedIds);
+    const succeededIds = [...new Set(simulated.map((p) => p.threadId))];
     return {
       proposals: simulated,
       source: "simulated",
       errors: [errorMessage],
+      failedThreadIds: assignedIds.filter((id) => !succeededIds.includes(id)),
+      succeededThreadIds: succeededIds,
     };
   }
+}
+
+// Batch queue: processes threads in capacity-sized batches per Spec 05
+// When threadCount > capacity, first batch runs, then remaining are queued automatically.
+export async function processAgentWorkBatched(
+  role: AgentRole,
+  threadIds: string[],
+  threads: Thread[],
+): Promise<AIBackendResult> {
+  const def = AGENT_DEFINITIONS[role];
+  const capacity = def.capacity;
+
+  if (threadIds.length <= capacity) {
+    return processAgentWork(role, threadIds, threads);
+  }
+
+  // Process in batches
+  const allProposals: ParsedProposal[] = [];
+  const allErrors: string[] = [];
+  const allFailedIds: string[] = [];
+  const allSucceededIds: string[] = [];
+  let source: "ai" | "simulated" = "ai";
+  let totalTokenUsage: { inputTokens: number; outputTokens: number } | undefined;
+
+  for (let offset = 0; offset < threadIds.length; offset += capacity) {
+    const batchIds = threadIds.slice(offset, offset + capacity);
+    const result = await processAgentWork(role, batchIds, threads);
+
+    allProposals.push(...result.proposals);
+    allErrors.push(...result.errors);
+    allFailedIds.push(...result.failedThreadIds);
+    allSucceededIds.push(...result.succeededThreadIds);
+
+    if (result.source === "simulated") source = "simulated";
+    if (result.tokenUsage) {
+      if (!totalTokenUsage) {
+        totalTokenUsage = { ...result.tokenUsage };
+      } else {
+        totalTokenUsage.inputTokens += result.tokenUsage.inputTokens;
+        totalTokenUsage.outputTokens += result.tokenUsage.outputTokens;
+      }
+    }
+  }
+
+  return {
+    proposals: allProposals,
+    source,
+    errors: allErrors,
+    tokenUsage: totalTokenUsage,
+    failedThreadIds: allFailedIds,
+    succeededThreadIds: allSucceededIds,
+  };
 }
 
 // Initialize the AI backend from environment config
