@@ -24,6 +24,7 @@ export interface DeploymentRecord {
   completedAt: number | null;
   approvedCount: number;
   rejectedCount: number;
+  outcomeSummary: string | null;
 }
 
 const DISPLAYABLE_STATUSES: DeploymentRecord["status"][] = [
@@ -70,6 +71,7 @@ export function DeploymentHistoryPanel() {
         completedAt: d.completedAt,
         approvedCount: agent?.approvedCount ?? 0,
         rejectedCount: agent?.rejectedCount ?? 0,
+        outcomeSummary: d.outcomeSummary,
       };
     });
 
@@ -191,6 +193,14 @@ export function DeploymentHistoryPanel() {
                     {dep.approvedCount > 0 && ` | ${dep.approvedCount} approved`}
                     {dep.rejectedCount > 0 && ` | ${dep.rejectedCount} rejected`}
                   </div>
+                  {dep.outcomeSummary && (
+                    <div
+                      className="mt-1 text-xs text-gray-400"
+                      data-testid={`deployment-${dep.id}-outcome`}
+                    >
+                      {dep.outcomeSummary}
+                    </div>
+                  )}
                   <div className="mt-1 text-xs text-gray-600">
                     {new Date(dep.startedAt).toLocaleTimeString()}
                   </div>

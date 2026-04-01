@@ -2,9 +2,9 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 1142 tests passing. Tags through v0.9.2.
+**Current state**: 1146 tests passing. Tags through v0.9.2.
 
-**Implemented**: All 12 specs fully implemented. 1.1-1.7 Foundation (Gmail auth, thread model, fetching, sync, outbound actions, offline queue), 2.1-2.6 Core Map (shell, rendering, navigation, zones, drift, clustering), 3.1-3.5 Game Mechanics (risk scoring, trust, opportunities, front health, alerts), 4.1-4.3 Agent System (units, AI backend, deployment UI), 5.1-5.8 Spec Compliance Round 1 (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1-6.5 Spec Compliance Round 2 (quota UI, travel arc, history filters, cluster indicator, draft store), 7.1-7.6 Spec Compliance Round 3 (organic drift, cluster migration, cluster-biased placement, failed thread identification, batch queue, zone quick-nav), 8.1-8.7 Spec Compliance Round 4 (clustering affinity nudge, collision avoidance on target positions, wobble stability, onLabel/onMarkRead handlers, reauth banner, read-state-change sync, failedThreadIds full propagation), 9.1-9.3 Spec Compliance Round 5 (topicTags on Thread model with topic-biased placement, drifting-lost and approaching-archive lifecycle states, extractKeywords reuse from clustering), 10.1-10.3 Spec Compliance Round 6 (arrow key New->Active transition, search close focus zone restoration, three-step Escape with composerActive state), 11.1-11.3 Spec Compliance Round 7 (draft deletion on send, deployment progress/outcomeSummary fields, trust tier-crossing and 3-consecutive visual indicators), 12.1-12.4 Spec Compliance Round 8 (pinch-to-zoom gesture, snap-back animation on cancelled drag, agent hover tooltip with elapsed time, lastPositioningTick written after drift tick), 13.1-13.2 Spec Compliance Round 9 (smoothed urgency pulse fade-out with lerp, zoom density blend transitions with smooth crossfade), 14.1-14.6 Spec Compliance Round 10 (zoom min/max boundary flash, label truncation at tactical zoom, soft boundary membership indicator, context menu cluster filter, contact enrichment from message history, new thread evaluation timing already correct).
+**Implemented**: All 12 specs fully implemented. 1.1-1.7 Foundation (Gmail auth, thread model, fetching, sync, outbound actions, offline queue), 2.1-2.6 Core Map (shell, rendering, navigation, zones, drift, clustering), 3.1-3.5 Game Mechanics (risk scoring, trust, opportunities, front health, alerts), 4.1-4.3 Agent System (units, AI backend, deployment UI), 5.1-5.8 Spec Compliance Round 1 (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1-6.5 Spec Compliance Round 2 (quota UI, travel arc, history filters, cluster indicator, draft store), 7.1-7.6 Spec Compliance Round 3 (organic drift, cluster migration, cluster-biased placement, failed thread identification, batch queue, zone quick-nav), 8.1-8.7 Spec Compliance Round 4 (clustering affinity nudge, collision avoidance on target positions, wobble stability, onLabel/onMarkRead handlers, reauth banner, read-state-change sync, failedThreadIds full propagation), 9.1-9.3 Spec Compliance Round 5 (topicTags on Thread model with topic-biased placement, drifting-lost and approaching-archive lifecycle states, extractKeywords reuse from clustering), 10.1-10.3 Spec Compliance Round 6 (arrow key New->Active transition, search close focus zone restoration, three-step Escape with composerActive state), 11.1-11.3 Spec Compliance Round 7 (draft deletion on send, deployment progress/outcomeSummary fields, trust tier-crossing and 3-consecutive visual indicators), 12.1-12.4 Spec Compliance Round 8 (pinch-to-zoom gesture, snap-back animation on cancelled drag, agent hover tooltip with elapsed time, lastPositioningTick written after drift tick), 13.1-13.2 Spec Compliance Round 9 (smoothed urgency pulse fade-out with lerp, zoom density blend transitions with smooth crossfade), 14.1-14.6 Spec Compliance Round 10 (zoom min/max boundary flash, label truncation at tactical zoom, soft boundary membership indicator, context menu cluster filter, contact enrichment from message history, new thread evaluation timing already correct), 15.1-15.4 Spec Compliance Round 11 (quotaExhausted wiring, archived pulse suppression, cluster migration animation, cluster label at aggregate zoom, zone alert wiring, smooth zone boundaries, agent-completed alert, session counter reset, zoom anchor math fix, strategic cluster click, cooldown timer in agent dock, outcomeSummary rendering in deployment history).
 
 **Next priorities**: Remaining spec compliance gaps (see below), performance profiling, integration testing.
 
@@ -16,11 +16,20 @@ Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
 **Medium**:
 
-(none remaining)
+- Spec 03: Deadline detection not implemented in urgency scoring (NLP extraction needed)
+- Spec 03: Body content not scanned for value keywords (only subject scanned)
+- Spec 03: High-value/low-urgency threads not stabilized in Opportunities zone
+- Spec 07: Opportunity window start not stored on thread record (custom windows incorrect)
+- Spec 07: Front health risk load not weighted by thread type
 
 **Low**:
 
-(none remaining)
+- Spec 02: No label collision detection for thread entities
+- Spec 02: Drift settlement timing not enforced (no 1-second guarantee)
+- Spec 04: Forced reclassification override not implemented (userOverrideZone permanent)
+- Spec 07: Trust decay floor clock resets on tier transitions (established<->high-trust)
+- Spec 08: Detail zoom level lacks reduced-opacity surrounding context
+- Spec 08: Minimap does not render cluster aggregate positions
 
 ---
 
@@ -621,3 +630,13 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Trust decay active flag (Spec 07 Section 5): `TrustRecord` now includes `decayActive: boolean` per spec data contracts. Set to true by `evaluateDecay` when decay is active, cleared to false by `onTimeReply` and when within threshold.
 - 60-second thread type fallback (Spec 07 Section 1): Game loop tick now checks threads in "new" lifecycle state older than 60 seconds and defaults their threadType to "existing-relationship" if the agent layer hasn't assigned a type.
 - Test count: 1062 total (22 new: 4 trust-system, 3 session-summary, 3 status-bar, 4 game-loop, 5 zone-quick-nav, 3 status-bar basic), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Spec Compliance Round 11 (2026-04-01)
+
+- Deep audit of all 12 specs using parallel agents identified and resolved critical/high gaps
+- Spec 01: rateLimiter.isExhausted now propagated to useAppStore.quotaExhausted (set on exhaustion, cleared when day rolls after successful API call)
+- Spec 02: Archived threads no longer pulse (isArchived guard on pulse computation), cluster labels shown at aggregate zoom, setClusterMigration wired on cluster membership changes
+- Spec 04: evaluateZoneAlerts wired into drift tick (was dead code), zone boundary transitions smoothed via lerp
+- Spec 07: createAgentCompletedAlert fired on deployment completion, session stats reset on summary modal dismissal
+- Spec 08: Zoom anchor math fixed (screen-to-map coordinate conversion), strategic cluster dot click hit-tests clusters
+- Test count: 1146 total (4 new tests), all passing

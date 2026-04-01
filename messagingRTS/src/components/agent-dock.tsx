@@ -3,10 +3,33 @@
 // Supports drag-to-deploy: drag an idle agent from the dock to deploy on the map.
 // Scrolls horizontally if entries overflow. Always visible when authenticated.
 
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import { AGENT_DEFINITIONS, type AgentRole, type AgentStatus } from "../lib/types";
 import { useAgentStore } from "../lib/stores/agent-store";
 import { useDeploymentStore } from "../lib/stores/deployment-store";
+
+// Live cooldown countdown per Spec 06 Section 1
+function CooldownTimer({ role }: { role: AgentRole }) {
+  const getCooldownMs = useAgentStore((s) => s.getCooldownMs);
+  const [remaining, setRemaining] = useState(() => getCooldownMs(role));
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const ms = getCooldownMs(role);
+      setRemaining(ms);
+    }, 500);
+    return () => clearInterval(id);
+  }, [role, getCooldownMs]);
+
+  if (remaining <= 0) return null;
+  const secs = Math.ceil(remaining / 1000);
+  const display = secs >= 60 ? `${Math.ceil(secs / 60)}m` : `${secs}s`;
+  return (
+    <span className="text-[10px] text-gray-500" data-testid={`cooldown-timer-${role}`}>
+      {display}
+    </span>
+  );
+}
 
 function RecallButton({ role }: { role: AgentRole }) {
   const recall = useAgentStore((s) => s.recall);
@@ -153,6 +176,7 @@ export function AgentDock({ isCompact = false }: AgentDockProps) {
                   {agent.threadIds.length}
                 </span>
               )}
+              {status === "cooldown" && <CooldownTimer role={role} />}
               {(status === "deployed" || status === "working") && <RecallButton role={role} />}
             </div>
           );
@@ -188,6 +212,7 @@ export function AgentDock({ isCompact = false }: AgentDockProps) {
                 {agent.threadIds.length}
               </span>
             )}
+            {status === "cooldown" && <CooldownTimer role={role} />}
             {(status === "deployed" || status === "working") && <RecallButton role={role} />}
           </div>
         );
