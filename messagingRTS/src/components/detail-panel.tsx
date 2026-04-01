@@ -221,13 +221,26 @@ function ParticipantTrust({ thread }: { thread: Thread }) {
         {participants.map((p) => {
           const record = trustRecords[p.email];
           if (!record) return null;
+          // Tier-crossing visual per Spec 07: highlight when tier recently changed
+          const tierRecentlyCrossed =
+            record.tierEntryDate > 0 && Date.now() - record.tierEntryDate < 5000;
           return (
             <div key={p.email} className="flex items-center justify-between text-xs">
               <span className="text-gray-400 truncate max-w-[140px]">
                 {p.displayName || p.email}
               </span>
-              <span className={TRUST_COLORS[record.tier]}>
-                {record.tier} ({record.score}){record.consecutiveStreak >= 3 && " *"}
+              <span
+                className={`${TRUST_COLORS[record.tier]}${tierRecentlyCrossed ? " animate-pulse ring-1 ring-current rounded px-1" : ""}`}
+                data-testid={tierRecentlyCrossed ? "tier-crossing" : undefined}
+              >
+                {record.tier} ({record.score})
+                {record.consecutiveStreak >= 3 && (
+                  <span
+                    className="ml-1 inline-block h-2 w-2 rounded-full bg-yellow-400"
+                    title="3+ on-time replies"
+                    data-testid="consecutive-streak-indicator"
+                  />
+                )}
               </span>
             </div>
           );

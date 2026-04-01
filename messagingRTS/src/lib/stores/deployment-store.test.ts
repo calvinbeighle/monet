@@ -453,4 +453,71 @@ describe("DeploymentStore", () => {
       expect(conf.batchTargets![2].threadIds.length).toBe(2);
     });
   });
+
+  describe("Progress and outcome per Spec 06", () => {
+    it("initializes progress to 0 and outcomeSummary to null on confirm", () => {
+      const store = useDeploymentStore.getState();
+      store.showConfirmation({
+        agentRole: "closer",
+        clusterId: "c1",
+        threadIds: ["t1"],
+        description: "Test",
+      });
+      const record = store.confirmDeployment()!;
+      expect(record.progress).toBe(0);
+      expect(record.outcomeSummary).toBeNull();
+    });
+
+    it("updateProgress clamps between 0 and 1", () => {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "closer",
+        clusterId: "c1",
+        threadIds: ["t1"],
+        description: "Test",
+      });
+      const record = useDeploymentStore.getState().confirmDeployment()!;
+
+      useDeploymentStore.getState().updateProgress(record.id, 0.5);
+      expect(useDeploymentStore.getState().deployments[0].progress).toBe(0.5);
+
+      useDeploymentStore.getState().updateProgress(record.id, 1.5);
+      expect(useDeploymentStore.getState().deployments[0].progress).toBe(1);
+
+      useDeploymentStore.getState().updateProgress(record.id, -0.1);
+      expect(useDeploymentStore.getState().deployments[0].progress).toBe(0);
+    });
+
+    it("completeDeployment sets progress to 1 and stores outcome summary", () => {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "closer",
+        clusterId: "c1",
+        threadIds: ["t1"],
+        description: "Test",
+      });
+      const record = useDeploymentStore.getState().confirmDeployment()!;
+      useDeploymentStore.getState().startTravel(record.id);
+      useDeploymentStore.getState().startWork(record.id);
+      useDeploymentStore.getState().completeDeployment(record.id, "Drafted 3 replies, 1 follow-up");
+
+      const updated = useDeploymentStore.getState().deployments[0];
+      expect(updated.progress).toBe(1);
+      expect(updated.outcomeSummary).toBe("Drafted 3 replies, 1 follow-up");
+    });
+
+    it("failDeployment stores outcome summary", () => {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "closer",
+        clusterId: "c1",
+        threadIds: ["t1"],
+        description: "Test",
+      });
+      const record = useDeploymentStore.getState().confirmDeployment()!;
+      useDeploymentStore.getState().startTravel(record.id);
+      useDeploymentStore.getState().startWork(record.id);
+      useDeploymentStore.getState().failDeployment(record.id, "API rate limit exceeded");
+
+      const updated = useDeploymentStore.getState().deployments[0];
+      expect(updated.outcomeSummary).toBe("API rate limit exceeded");
+    });
+  });
 });

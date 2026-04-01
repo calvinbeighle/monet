@@ -59,6 +59,8 @@ function seedDeployments() {
         completedAt: Date.now(),
         recalledAt: null,
         batchId: null,
+        progress: 0,
+        outcomeSummary: null,
       },
       {
         id: "d2",
@@ -70,6 +72,8 @@ function seedDeployments() {
         completedAt: null,
         recalledAt: null,
         batchId: null,
+        progress: 0,
+        outcomeSummary: null,
       },
     ],
   });

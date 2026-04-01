@@ -195,7 +195,17 @@ export async function sendReplyAction(
       });
     }
 
-    // Clear draft on successful send per Spec 01: Sending -> None
+    // Delete Gmail draft on successful send per Spec 01: Sending -> None
+    if (draftRecord?.gmailDraftId) {
+      try {
+        await _deleteDraft(draftRecord.gmailDraftId);
+      } catch (err) {
+        console.warn(
+          `[outbound-actions] Failed to delete Gmail draft ${draftRecord.gmailDraftId}:`,
+          err,
+        );
+      }
+    }
     clearDraftRecord(threadId);
 
     // Update trust scores for all participants per Spec 07

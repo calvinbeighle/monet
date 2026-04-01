@@ -269,6 +269,35 @@ describe("OutboundActions", () => {
 
       expect(getDraftState("t1")).toBe("none");
     });
+
+    it("deletes Gmail draft on successful send per Spec 01", async () => {
+      const thread = makeThread("t1");
+      useThreadStore.getState().setThread(thread);
+
+      // Save draft first to get a gmailDraftId
+      beginDraft("t1", "Draft content");
+      mockCreateDraft.mockResolvedValue({ id: "gmail-draft-123" });
+      await saveDraftAction("t1", {
+        threadId: "t1",
+        to: ["alice@example.com"],
+        subject: "Re: Subject t1",
+        body: "Draft content",
+        inReplyTo: "msg-t1-1",
+        references: ["msg-t1-1"],
+      });
+
+      // Now send - should delete the Gmail draft
+      await sendReplyAction("t1", {
+        threadId: "t1",
+        to: ["alice@example.com"],
+        subject: "Re: Subject t1",
+        body: "Final reply",
+        inReplyTo: "msg-t1-1",
+        references: ["msg-t1-1"],
+      });
+
+      expect(mockDeleteDraft).toHaveBeenCalledWith("gmail-draft-123");
+    });
   });
 
   // --- Draft Tests (Spec 01 Section 5) ---

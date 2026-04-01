@@ -270,7 +270,42 @@ describe("DetailPanel", () => {
     const trustSection = screen.getByTestId("participant-trust");
     expect(trustSection.textContent).toContain("high-trust");
     expect(trustSection.textContent).toContain("90");
-    // consecutiveStreak >= 3 shows streak indicator
-    expect(trustSection.textContent).toContain("*");
+    // consecutiveStreak >= 3 shows visible dot indicator per Spec 07
+    expect(screen.getByTestId("consecutive-streak-indicator")).toBeInTheDocument();
+  });
+
+  it("shows tier-crossing visual when tier recently changed", () => {
+    const thread = {
+      ...createThread("t1", "Subject", "snippet"),
+      participants: [
+        {
+          displayName: "Alice",
+          email: "alice@example.com",
+          organization: null,
+          vipFlag: false,
+          relationshipScore: 50,
+          responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+        },
+      ],
+    };
+    useThreadStore.setState({ threads: new Map([["t1", thread]]) });
+    useAppStore.setState({
+      selectedThreadId: "t1",
+      trustRecords: {
+        "alice@example.com": {
+          contactEmail: "alice@example.com",
+          score: 55,
+          tier: "established",
+          consecutiveStreak: 1,
+          tierEntryDate: Date.now() - 1000, // crossed tier 1 second ago
+          lastReplyTimestamp: Date.now(),
+          lastDecayCheck: Date.now(),
+          decayActive: false,
+        },
+      },
+    });
+
+    render(<DetailPanel />);
+    expect(screen.getByTestId("tier-crossing")).toBeInTheDocument();
   });
 });

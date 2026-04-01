@@ -49,6 +49,8 @@ function seedMultipleDeployments() {
         completedAt: Date.now(),
         recalledAt: null,
         batchId: null,
+        progress: 0,
+        outcomeSummary: null,
       },
       {
         id: "d2",
@@ -60,6 +62,8 @@ function seedMultipleDeployments() {
         completedAt: null,
         recalledAt: null,
         batchId: null,
+        progress: 0,
+        outcomeSummary: null,
       },
       {
         id: "d3",
@@ -71,6 +75,8 @@ function seedMultipleDeployments() {
         completedAt: Date.now() - 10000,
         recalledAt: null,
         batchId: null,
+        progress: 0,
+        outcomeSummary: null,
       },
     ],
   });

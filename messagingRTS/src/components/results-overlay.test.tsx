@@ -53,6 +53,8 @@ function setupCompletedAgent() {
         completedAt: Date.now(),
         recalledAt: null,
         batchId: null,
+        progress: 0,
+        outcomeSummary: null,
       },
     ],
   });
@@ -221,6 +223,8 @@ describe("ResultsOverlay - Drafter tone variants (Spec 07)", () => {
           completedAt: Date.now(),
           recalledAt: null,
           batchId: null,
+          progress: 0,
+          outcomeSummary: null,
         },
       ],
     });

@@ -25,6 +25,10 @@ export interface DeploymentRecord {
   recalledAt: number | null;
   // Batch deployment: links records from the same batch operation
   batchId: string | null;
+  // Progress as fraction of work units completed per Spec 06
+  progress: number;
+  // Outcome summary when status is completed or failed per Spec 06
+  outcomeSummary: string | null;
 }
 
 export interface DragState {
@@ -97,9 +101,10 @@ interface DeploymentStore {
   // Deployment lifecycle
   startTravel: (deploymentId: string) => void;
   startWork: (deploymentId: string) => void;
-  completeDeployment: (deploymentId: string) => void;
+  updateProgress: (deploymentId: string, progress: number) => void;
+  completeDeployment: (deploymentId: string, outcomeSummary?: string) => void;
   recallDeployment: (deploymentId: string) => void;
-  failDeployment: (deploymentId: string) => void;
+  failDeployment: (deploymentId: string, outcomeSummary?: string) => void;
 
   // Resolution
   resolveDeployment: (deploymentId: string) => void;
@@ -193,6 +198,8 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
       completedAt: null,
       recalledAt: null,
       batchId: null,
+      progress: 0,
+      outcomeSummary: null,
     };
 
     set((state) => ({
@@ -223,6 +230,8 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
       completedAt: null,
       recalledAt: null,
       batchId: bId,
+      progress: 0,
+      outcomeSummary: null,
     }));
 
     set((state) => ({
@@ -249,10 +258,25 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
       ),
     })),
 
-  completeDeployment: (deploymentId) =>
+  updateProgress: (deploymentId, progress) =>
     set((state) => ({
       deployments: state.deployments.map((d) =>
-        d.id === deploymentId ? { ...d, status: "completed" as const, completedAt: Date.now() } : d,
+        d.id === deploymentId ? { ...d, progress: Math.max(0, Math.min(1, progress)) } : d,
+      ),
+    })),
+
+  completeDeployment: (deploymentId, outcomeSummary) =>
+    set((state) => ({
+      deployments: state.deployments.map((d) =>
+        d.id === deploymentId
+          ? {
+              ...d,
+              status: "completed" as const,
+              completedAt: Date.now(),
+              progress: 1,
+              outcomeSummary: outcomeSummary ?? null,
+            }
+          : d,
       ),
       activeDeploymentId:
         state.activeDeploymentId === deploymentId ? null : state.activeDeploymentId,
@@ -267,10 +291,17 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
         state.activeDeploymentId === deploymentId ? null : state.activeDeploymentId,
     })),
 
-  failDeployment: (deploymentId) =>
+  failDeployment: (deploymentId, outcomeSummary) =>
     set((state) => ({
       deployments: state.deployments.map((d) =>
-        d.id === deploymentId ? { ...d, status: "failed" as const, completedAt: Date.now() } : d,
+        d.id === deploymentId
+          ? {
+              ...d,
+              status: "failed" as const,
+              completedAt: Date.now(),
+              outcomeSummary: outcomeSummary ?? null,
+            }
+          : d,
       ),
       activeDeploymentId:
         state.activeDeploymentId === deploymentId ? null : state.activeDeploymentId,
