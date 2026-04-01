@@ -22,6 +22,8 @@ import { useThreadStore } from "../../lib/stores";
 import { useSyncStore } from "../../lib/stores/sync-store";
 import { useAppStore } from "../../lib/stores";
 import type { Thread, ThreadMessage } from "../../lib/types";
+import { updateTrustOnReply } from "../game-mechanics/game-loop";
+import { captureOpportunity } from "../game-mechanics/opportunity-system";
 
 // --- Draft State Machine per Spec 01 ---
 // None -> Unsaved: user begins typing
@@ -188,6 +190,38 @@ export async function sendReplyAction(
 
     // Clear draft on successful send per Spec 01: Sending -> None
     clearDraftRecord(threadId);
+
+    // Update trust scores for all participants per Spec 07
+    const appState = useAppStore.getState();
+    const participantEmails = thread.participants.map((p) => p.email);
+    const updatedTrust = updateTrustOnReply(
+      appState.trustRecords,
+      participantEmails,
+      thread.threadType,
+    );
+    appState.setTrustRecords(updatedTrust);
+
+    // Capture opportunity if reply while window is open per Spec 07
+    const currentThread = useThreadStore.getState().getThread(threadId);
+    if (
+      currentThread &&
+      (currentThread.opportunityState === "ripe" || currentThread.opportunityState === "fading")
+    ) {
+      const captured = captureOpportunity(currentThread);
+      useThreadStore.getState().updateThread(threadId, {
+        opportunityState: captured.opportunityState,
+      });
+      appState.updateSessionStats({
+        opportunitiesCaptured: appState.sessionStats.opportunitiesCaptured + 1,
+      });
+    }
+
+    // Track risk mitigation: if thread was at elevated+ risk tier before reply, count as mitigated
+    if (thread.riskTier === "elevated" || thread.riskTier === "critical") {
+      appState.updateSessionStats({
+        risksMitigated: appState.sessionStats.risksMitigated + 1,
+      });
+    }
 
     return true;
   } catch {
@@ -361,6 +395,13 @@ export async function archiveThreadAction(threadId: string): Promise<boolean> {
 
   try {
     await _archiveThread(threadId);
+
+    // Increment threads handled per Spec 07 session stats
+    const appState = useAppStore.getState();
+    appState.updateSessionStats({
+      threadsHandled: appState.sessionStats.threadsHandled + 1,
+    });
+
     return true;
   } catch {
     // Rollback per Spec 01: thread remains in Inbox view, user is informed

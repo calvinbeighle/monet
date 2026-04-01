@@ -53,16 +53,19 @@ export function App() {
     return null;
   })();
 
-  // Session summary state
-  const [sessionSummary] = useState<SessionSummaryData>({
-    threadsHandled: 0,
-    opportunitiesCaptured: 0,
-    opportunitiesMissed: 0,
-    risksMitigated: 0,
-    agentsDeployed: 0,
-    netHealthChange: 0,
-    sessionDurationMs: 0,
-  });
+  // Session summary wired to live stats per Spec 07
+  const sessionStats = useAppStore((s) => s.sessionStats);
+  const frontHealthScore = useAppStore((s) => s.frontHealthScore);
+  const initialHealthScore = useAppStore((s) => s.initialHealthScore);
+  const sessionSummary: SessionSummaryData = {
+    threadsHandled: sessionStats.threadsHandled,
+    opportunitiesCaptured: sessionStats.opportunitiesCaptured,
+    opportunitiesMissed: sessionStats.opportunitiesMissed,
+    risksMitigated: sessionStats.risksMitigated,
+    agentsDeployed: sessionStats.agentsDeployed,
+    netHealthChange: frontHealthScore - initialHealthScore,
+    sessionDurationMs: Date.now() - sessionStats.sessionStart,
+  };
   const [summaryTrigger, setSummaryTrigger] = useState<HTMLElement | null>(null);
 
   const isCompact = viewportWidth > 0 && viewportWidth < RESPONSIVE_BREAKPOINT;

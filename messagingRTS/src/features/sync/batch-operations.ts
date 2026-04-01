@@ -76,9 +76,14 @@ export async function batchMarkHandled(threadIds: string[]): Promise<number> {
   }
 
   if (successCount > 0) {
-    useAppStore.getState().addNotification({
+    const appState = useAppStore.getState();
+    appState.addNotification({
       message: `Marked ${successCount} thread${successCount !== 1 ? "s" : ""} as handled.`,
       severity: "info",
+    });
+    // Track threads handled in session stats per Spec 07
+    appState.updateSessionStats({
+      threadsHandled: appState.sessionStats.threadsHandled + successCount,
     });
   }
 

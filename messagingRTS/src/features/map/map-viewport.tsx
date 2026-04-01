@@ -32,6 +32,7 @@ import {
   ZONE_SHORTCUTS,
 } from "../navigation/navigation-system";
 import { evaluateAlerts } from "../game-mechanics/map-alerts";
+import { runGameTick, isTrustDecayDue, runTrustDecay } from "../game-mechanics/game-loop";
 import { Minimap } from "../../components/minimap";
 import { SearchOverlay } from "../../components/search-overlay";
 import type { ZoneId } from "../../lib/types";
@@ -199,15 +200,53 @@ export function MapViewport() {
       updateZoneSizes(zonesRef.current, counts);
       setZonesSnapshot(new Map(zonesRef.current));
 
-      useThreadStore.getState().setThreads(updated);
+      // Run game mechanics tick per Spec 07
+      const appState = useAppStore.getState();
+      const gameResult = runGameTick(
+        updated,
+        appState.trustRecords,
+        appState.sessionStats,
+        appState.streakState,
+        now,
+      );
+
+      // Apply opportunity state updates to threads
+      useThreadStore.getState().setThreads(gameResult.updatedThreads);
+
+      // Update front health score
+      if (gameResult.frontHealthScore !== null) {
+        appState.setFrontHealth(gameResult.frontHealthScore);
+      }
+
+      // Update streaks
+      if (gameResult.streakState !== null) {
+        appState.setStreaks(gameResult.streakState);
+      }
+
+      // Update session stats (opportunity missed, lost thread counts)
+      if (gameResult.sessionStatsDelta !== null) {
+        appState.updateSessionStats(gameResult.sessionStatsDelta);
+      }
+
+      // Run trust decay (throttled internally to every 30s)
+      if (isTrustDecayDue(now)) {
+        const decayed = runTrustDecay(appState.trustRecords, gameResult.updatedThreads, now);
+        if (decayed !== appState.trustRecords) {
+          appState.setTrustRecords(decayed);
+        }
+      }
 
       // Evaluate clusters per Spec 11 - runs alongside drift tick
-      const clusterResult = evaluateClusters(updated, clustersRef.current, now);
+      const clusterResult = evaluateClusters(gameResult.updatedThreads, clustersRef.current, now);
       clustersRef.current = clusterResult.clusters;
 
       // Evaluate map alerts per Spec 07 - runs alongside drift tick
-      const appState = useAppStore.getState();
-      const newAlerts = evaluateAlerts(updated, appState.mapAlerts, now, appState.streakInboxZero);
+      const newAlerts = evaluateAlerts(
+        gameResult.updatedThreads,
+        appState.mapAlerts,
+        now,
+        appState.streakInboxZero,
+      );
       appState.setMapAlerts(newAlerts);
 
       // Tick agent cooldowns per Spec 05

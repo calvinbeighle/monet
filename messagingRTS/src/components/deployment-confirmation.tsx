@@ -8,6 +8,7 @@ import { AGENT_DEFINITIONS, type AgentRole } from "../lib/types";
 import { useDeploymentStore } from "../lib/stores/deployment-store";
 import { useAgentStore } from "../lib/stores/agent-store";
 import { useThreadStore } from "../lib/stores/thread-store";
+import { useAppStore } from "../lib/stores";
 import { processAgentWork } from "../features/agents/ai-backend";
 
 // Shared logic: after travel delay, start AI work and complete/fail deployment records
@@ -85,6 +86,12 @@ export function DeploymentConfirmation() {
       const agentStore = useAgentStore.getState();
       agentStore.deploy(records[0].agentRole, records[0].clusterId, allThreadIds);
 
+      // Track agent deployment in session stats per Spec 07
+      const appState = useAppStore.getState();
+      appState.updateSessionStats({
+        agentsDeployed: appState.sessionStats.agentsDeployed + 1,
+      });
+
       // Staggered travel: each record starts travel with 300ms offset
       const deploymentIds = records.map((r) => r.id);
       records.forEach((record, i) => {
@@ -105,6 +112,12 @@ export function DeploymentConfirmation() {
 
       const agentStore = useAgentStore.getState();
       agentStore.deploy(record.agentRole, record.clusterId, record.threadIds);
+
+      // Track agent deployment in session stats per Spec 07
+      const appState = useAppStore.getState();
+      appState.updateSessionStats({
+        agentsDeployed: appState.sessionStats.agentsDeployed + 1,
+      });
 
       startTravel(record.id);
       setTimeout(() => {

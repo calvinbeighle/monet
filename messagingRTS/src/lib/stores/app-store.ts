@@ -3,7 +3,7 @@
 
 import { create } from "zustand";
 import type { ConnectivityStatus } from "../types";
-import type { MapAlert } from "../types/game-mechanics";
+import type { MapAlert, TrustRecord, SessionStats, StreakState } from "../types/game-mechanics";
 
 // Shell lifecycle per Spec 12:
 // Initializing -> Unauthenticated / Loading -> Empty / Active / Degraded
@@ -50,6 +50,10 @@ interface AppStore {
   selectedThreadId: string | null;
   notifications: ShellNotification[];
   mapAlerts: MapAlert[];
+  trustRecords: Record<string, TrustRecord>;
+  sessionStats: SessionStats;
+  streakState: StreakState;
+  initialHealthScore: number; // captured at session start for net health change
 
   // Actions
   setShellState: (state: ShellState) => void;
@@ -57,9 +61,12 @@ interface AppStore {
   setFocusZone: (zone: FocusZone) => void;
   setSyncStatus: (status: ConnectivityStatus) => void;
   setFrontHealth: (score: number) => void;
+  setStreaks: (streakState: StreakState) => void;
   setViewportDimensions: (width: number, height: number) => void;
   setUnreadAlertCount: (count: number) => void;
   setSelectedThread: (threadId: string | null) => void;
+  setTrustRecords: (records: Record<string, TrustRecord>) => void;
+  updateSessionStats: (delta: Partial<SessionStats>) => void;
   addNotification: (
     notification: Omit<ShellNotification, "id" | "dismissed" | "createdAt">,
   ) => void;
@@ -85,14 +92,42 @@ export const useAppStore = create<AppStore>((set) => ({
   selectedThreadId: null,
   notifications: [],
   mapAlerts: [],
+  trustRecords: {},
+  sessionStats: {
+    threadsHandled: 0,
+    opportunitiesCaptured: 0,
+    opportunitiesMissed: 0,
+    risksMitigated: 0,
+    agentsDeployed: 0,
+    lostThreadCount: 0,
+    netHealthChange: 0,
+    sessionStart: Date.now(),
+  },
+  streakState: {
+    inboxZeroDays: 0,
+    zeroLostDays: 0,
+    lastEvaluationDate: "",
+  },
+  initialHealthScore: 100,
 
   setShellState: (shellState) => set({ shellState }),
   setActivePanel: (activePanel) => set({ activePanel }),
   setFocusZone: (focusZone) => set({ focusZone }),
   setSyncStatus: (syncStatus) => set({ syncStatus }),
   setFrontHealth: (frontHealthScore) => set({ frontHealthScore }),
+  setStreaks: (streakState) =>
+    set({
+      streakState,
+      streakInboxZero: streakState.inboxZeroDays,
+      streakZeroLost: streakState.zeroLostDays,
+    }),
   setViewportDimensions: (viewportWidth, viewportHeight) => set({ viewportWidth, viewportHeight }),
   setUnreadAlertCount: (unreadAlertCount) => set({ unreadAlertCount }),
+  setTrustRecords: (trustRecords) => set({ trustRecords }),
+  updateSessionStats: (delta) =>
+    set((state) => ({
+      sessionStats: { ...state.sessionStats, ...delta },
+    })),
   setSelectedThread: (threadId) =>
     set((state) => ({
       selectedThreadId: threadId,

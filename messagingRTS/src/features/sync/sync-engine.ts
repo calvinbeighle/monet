@@ -245,11 +245,24 @@ async function fetchAllHistoryChanges(startHistoryId: string): Promise<ThreadCha
   return deduplicateEvents(events);
 }
 
-function determineChangeType(labelIds: string[], _action: "added" | "deleted"): ThreadChangeType {
-  // A message added to a thread we already know about = new-message
-  // A message in a thread we don't know about = new-thread
-  // This distinction is made during processChangeEvents when we check the thread store
-  return labelIds.includes("UNREAD") ? "new-message" : "new-message";
+function determineChangeType(labelIds: string[], action: "added" | "deleted"): ThreadChangeType {
+  // Label-change events: labels are added or removed without new content
+  if (action === "deleted") {
+    return "label-change";
+  }
+
+  // UNREAD added typically means new content arrived
+  if (labelIds.includes("UNREAD")) {
+    return "new-message";
+  }
+
+  // Read state changes (UNREAD removed is handled by action=deleted above)
+  if (labelIds.length === 1 && labelIds[0] === "INBOX") {
+    return "new-message";
+  }
+
+  // Default to label-change for other label additions (STARRED, category labels, etc.)
+  return "label-change";
 }
 
 // Deduplicate events per thread - keep latest event per thread

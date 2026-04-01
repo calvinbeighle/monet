@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useAppStore } from "./app-store";
+import type { TrustRecord } from "../types/game-mechanics";
 
 describe("AppStore", () => {
   beforeEach(() => {
@@ -245,5 +246,74 @@ describe("AppStore - map alerts", () => {
     useAppStore.getState().acknowledgeMapAlert("a1");
     expect(useAppStore.getState().mapAlerts[0].acknowledged).toBe(true);
     expect(useAppStore.getState().unreadAlertCount).toBe(0);
+  });
+});
+
+describe("AppStore - trust records, session stats, streaks", () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      trustRecords: {},
+      sessionStats: {
+        threadsHandled: 0,
+        opportunitiesCaptured: 0,
+        opportunitiesMissed: 0,
+        risksMitigated: 0,
+        agentsDeployed: 0,
+        lostThreadCount: 0,
+        netHealthChange: 0,
+        sessionStart: Date.now(),
+      },
+      streakState: {
+        inboxZeroDays: 0,
+        zeroLostDays: 0,
+        lastEvaluationDate: "",
+      },
+      streakInboxZero: 0,
+      streakZeroLost: 0,
+    });
+  });
+
+  it("setTrustRecords sets and retrieves trust records", () => {
+    const record: TrustRecord = {
+      contactEmail: "alice@example.com",
+      score: 75,
+      tier: "established",
+      consecutiveStreak: 3,
+      tierEntryDate: 1000000,
+      lastReplyTimestamp: 2000000,
+      lastDecayCheck: 3000000,
+    };
+    useAppStore.getState().setTrustRecords({ "alice@example.com": record });
+    const stored = useAppStore.getState().trustRecords;
+    expect(stored["alice@example.com"]).toEqual(record);
+  });
+
+  it("updateSessionStats merges partial updates", () => {
+    useAppStore.getState().updateSessionStats({ threadsHandled: 5 });
+    expect(useAppStore.getState().sessionStats.threadsHandled).toBe(5);
+  });
+
+  it("updateSessionStats preserves other fields during partial update", () => {
+    useAppStore.getState().updateSessionStats({ opportunitiesCaptured: 2 });
+    useAppStore.getState().updateSessionStats({ threadsHandled: 7 });
+    const stats = useAppStore.getState().sessionStats;
+    expect(stats.threadsHandled).toBe(7);
+    expect(stats.opportunitiesCaptured).toBe(2);
+    expect(stats.risksMitigated).toBe(0);
+    expect(stats.agentsDeployed).toBe(0);
+  });
+
+  it("setStreaks updates streakState and syncs streakInboxZero and streakZeroLost", () => {
+    useAppStore.getState().setStreaks({
+      inboxZeroDays: 4,
+      zeroLostDays: 2,
+      lastEvaluationDate: "2026-03-31",
+    });
+    const state = useAppStore.getState();
+    expect(state.streakState.inboxZeroDays).toBe(4);
+    expect(state.streakState.zeroLostDays).toBe(2);
+    expect(state.streakState.lastEvaluationDate).toBe("2026-03-31");
+    expect(state.streakInboxZero).toBe(4);
+    expect(state.streakZeroLost).toBe(2);
   });
 });
