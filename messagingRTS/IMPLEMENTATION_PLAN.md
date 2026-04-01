@@ -2,13 +2,50 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 1040 tests passing. Tags through v0.8.3.
+**Current state**: 1062 tests passing. Tags through v0.8.5.
 
 **Implemented**: All 12 specs fully implemented. 1.1-1.7 Foundation (Gmail auth, thread model, fetching, sync, outbound actions, offline queue), 2.1-2.6 Core Map (shell, rendering, navigation, zones, drift, clustering), 3.1-3.5 Game Mechanics (risk scoring, trust, opportunities, front health, alerts), 4.1-4.3 Agent System (units, AI backend, deployment UI), 5.1-5.8 Spec Compliance Round 1 (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1-6.5 Spec Compliance Round 2 (quota UI, travel arc, history filters, cluster indicator, draft store), 7.1-7.6 Spec Compliance Round 3 (organic drift, cluster migration, cluster-biased placement, failed thread identification, batch queue, zone quick-nav).
 
-**Next priorities**: Performance profiling, integration testing, end-to-end testing.
+**Next priorities**: Remaining spec compliance gaps (see below), performance profiling, integration testing.
 
-**All known spec gaps resolved.** No remaining medium-priority items.
+### Remaining Known Spec Gaps (prioritized)
+
+**High**:
+
+- Spec 03: `topicTags` field absent from Thread model; topic-biased initial placement and clustering nudge missing
+- Spec 03: `Drifting-Lost` and `Approaching-Archive` lifecycle states absent (spec defines 6 zone states, code has 5)
+- Spec 03: Clustering affinity nudge to target positions not implemented in tick cycle
+
+**Medium**:
+
+- Spec 01: No UI for `reauthentication-required` state mid-session (401 during active use)
+- Spec 01: Sending a saved draft does not delete the Gmail draft object (orphaned drafts)
+- Spec 02: Urgency pulse fade-out not smooth on urgency drop (abrupt)
+- Spec 02: Zoom density transitions snap instead of fading between levels
+- Spec 03: Collision avoidance operates on actual position, not target position as specified
+- Spec 03: Label and mark-read user actions not implemented (no neglect reset)
+- Spec 03: Organic wobble makes positions never stable when scores are stable
+- Spec 05: failedThreadIds not propagated from ai-backend to ResultsOverlay in deployment-confirmation
+- Spec 06: No hover tooltip on deployed agent icon showing elapsed time
+- Spec 06: No snap-back animation when agent drag is cancelled
+- Spec 06: DeploymentRecord missing progress field and outcome summary
+- Spec 07: Trust tier-crossing visual not propagated to thread renderer
+- Spec 07: 3-consecutive-reply visual indicator not wired to map renderer
+- Spec 08: Composer-active Escape step not modeled (no composerActive nav state)
+- Spec 08: Pinch-to-zoom gesture not implemented
+- Spec 09: New->Active on thread open not fired for non-click paths (arrow key select)
+- Spec 10: read-state-change events not produced or handled by sync engine
+- Spec 12: Search overlay close does not restore keyboard focus to map
+
+**Low**:
+
+- Spec 02: No visual feedback at zoom min/max boundary
+- Spec 02: No label truncation at medium zoom
+- Spec 04: Soft boundary membership indicator near zone edges missing
+- Spec 06: Context menu does not filter by cluster compatibility
+- Spec 09: Contact enrichment fetch never executed (degrades to raw email)
+- Spec 10: lastPositioningTick field declared but never written
+- Spec 11: New thread evaluation timing (evaluated after position, not before, for incremental arrivals via clustering evaluation tick)
 
 ---
 
@@ -594,3 +631,18 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Batch thread queue (Spec 05): processAgentWorkBatched splits thread IDs into capacity-sized chunks, processes sequentially, accumulates proposals/errors/stats across batches.
 - Zone quick-nav label panel (Spec 08): New zone-quick-nav.tsx component renders compact overlay with 6 zone labels and keyboard shortcut indicators. Integrated into map-viewport.
 - Test count: 1040 total (32 new), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Spec Compliance Round 4 (2026-04-01)
+
+- Front health tier thresholds fixed (Spec 07): `getHealthTier` now returns "degraded" for scores >= 50 (was >= 25 incorrectly), "critical" for < 50. Matches spec's state transition table: healthy >= 75, degraded < 50.
+- Initial camera zoom fixed (Spec 08 Section 1): Camera now opens at strategic zoom level (0.15) instead of tactical (0.5). Spec requires strategic overview on first render.
+- Selection gating fixed (Spec 08 Section 8): Thread selection is now only possible at operational and detail zoom levels. At tactical zoom, clicking a thread zooms to operational instead of selecting. At strategic, clicking zooms to tactical (unchanged).
+- New->Active lifecycle transition wired (Spec 09): Clicking a thread at operational/detail zoom now fires `transitionState(id, "active", "user-opened")` when thread is in "new" state, per Spec 09 state transition rules.
+- Incremental sync thread placement (Spec 11 Section 3): New threads arriving via incremental sync now go through `placeNewThread` with cluster bias evaluation, rather than being inserted with default position. Ensures cluster-biased initial placement per spec.
+- Lost-thread tally in status bar (Spec 07 Section 9): Running lost-thread count now always visible in status bar when > 0, using red color. Previously only shown in session summary modal.
+- lostThreadCount in session summary (Spec 07 Section 13): Session summary modal now displays "Threads Lost" count alongside other session stats.
+- Escape closes detail panel from map focus (Spec 12 Section 5): Escape key now closes the detail panel when focus is in the map zone, not just when focus is in the right-panel zone. Matches spec requirement.
+- Tab zone cycling implemented (Spec 08 Section 16): Tab key in map viewport now cycles focus through the 6 zone labels in ZoneQuickNav. Shift+Tab cycles backwards. Enter on a focused zone navigates to it (zoom to fit). ZoneQuickNav component integrated into MapViewport with focusedZone highlight, aria-selected, and role="tab" attributes.
+- Trust decay active flag (Spec 07 Section 5): `TrustRecord` now includes `decayActive: boolean` per spec data contracts. Set to true by `evaluateDecay` when decay is active, cleared to false by `onTimeReply` and when within threshold.
+- 60-second thread type fallback (Spec 07 Section 1): Game loop tick now checks threads in "new" lifecycle state older than 60 seconds and defaults their threadType to "existing-relationship" if the agent layer hasn't assigned a type.
+- Test count: 1062 total (22 new: 4 trust-system, 3 session-summary, 3 status-bar, 4 game-loop, 5 zone-quick-nav, 3 status-bar basic), all passing. Typecheck and lint clean.
