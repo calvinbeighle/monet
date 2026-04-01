@@ -199,6 +199,15 @@ describe("Keyboard Navigation", () => {
     const next = findNextThreadInDirection(threads, null, "ArrowRight", "operational");
     expect(next).toBe("center"); // first in array
   });
+
+  // Per Spec 08: arrow keys with no selection at strategic/tactical zoom must be ignored
+  it("returns null with no selection at strategic zoom (Spec 08 arrow key guard)", () => {
+    expect(findNextThreadInDirection(threads, null, "ArrowRight", "strategic")).toBeNull();
+  });
+
+  it("returns null with no selection at tactical zoom (Spec 08 arrow key guard)", () => {
+    expect(findNextThreadInDirection(threads, null, "ArrowUp", "tactical")).toBeNull();
+  });
 });
 
 describe("findNearestThread", () => {

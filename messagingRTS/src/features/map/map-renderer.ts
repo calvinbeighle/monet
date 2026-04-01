@@ -327,6 +327,16 @@ export class MapRenderer {
     this.threadPositionCache = [];
 
     for (const thread of threads) {
+      // Per Spec 08: at strategic zoom, only cluster aggregate dots are visible;
+      // individual unclustered thread entities are hidden
+      if (zoomLevel === "strategic" && !thread.clusterMembership) {
+        const existingG = this.threadGraphics.get(thread.id);
+        if (existingG) existingG.visible = false;
+        const existingL = this.threadLabels.get(thread.id);
+        if (existingL) existingL.visible = false;
+        continue;
+      }
+
       // Viewport culling - skip entities outside visible area
       // When search is active, keep all threads visible for dimming effect
       if (!this.searchActive && !this.isInBounds(thread.position.x, thread.position.y, bounds)) {

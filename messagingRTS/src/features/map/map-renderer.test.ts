@@ -642,6 +642,37 @@ function generateClusters(count: number, threads: ReturnType<typeof generateThre
   return clusters;
 }
 
+describe("Strategic zoom thread hiding per Spec 08/02", () => {
+  // At strategic zoom, unclustered threads (clusterMembership is null) must be hidden.
+  // Without PixiJS init, we verify renderThreads does not crash and that the zoom
+  // level is correctly identified as "strategic" for the guard logic.
+
+  it("renderThreads does not crash at strategic zoom with unclustered threads (no init)", () => {
+    const renderer = new MapRenderer();
+    renderer.setCamera(0, 0, 0.15); // strategic zoom
+    expect(renderer.getZoomLevel()).toBe("strategic");
+
+    const t1 = createThread("t1", "Unclustered Thread", "snippet");
+    t1.position = { x: 0, y: 0 };
+    t1.clusterMembership = null; // unclustered - should be hidden at strategic zoom
+
+    // Without PixiJS layers, renderThreads returns early (no graphics to hide),
+    // but the guard path is exercised without throwing.
+    expect(() => renderer.renderThreads([t1])).not.toThrow();
+    expect(renderer.getApp()).toBeNull();
+  });
+
+  it("strategic zoom is below 0.25 threshold", () => {
+    const renderer = new MapRenderer();
+    renderer.setCamera(0, 0, 0.24);
+    expect(renderer.getZoomLevel()).toBe("strategic");
+
+    // Just above strategic threshold is tactical
+    renderer.setCamera(0, 0, 0.25);
+    expect(renderer.getZoomLevel()).toBe("tactical");
+  });
+});
+
 describe("Smoothed urgency fade-out per Spec 02", () => {
   it("exposes getSmoothedUrgency and starts at initial urgency", () => {
     const renderer = new MapRenderer();

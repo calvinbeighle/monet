@@ -28,4 +28,5 @@ export interface AffinityScore {
   sharedLabelScore: number;
   temporalProximity: number;
   composite: number;
+  meetsThreshold: boolean; // composite >= threshold AND participantOverlap > 0
 }

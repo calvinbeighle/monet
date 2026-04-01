@@ -25,13 +25,13 @@ function makeTrustRecord(score: number): TrustRecord {
 
 describe("Front health", () => {
   describe("getHealthTier", () => {
-    it("returns correct tiers", () => {
+    it("returns correct tiers per Spec 07: >=75 healthy, >=25 degraded, <25 critical", () => {
       expect(getHealthTier(100)).toBe("healthy");
       expect(getHealthTier(75)).toBe("healthy");
-      expect(getHealthTier(50)).toBe("degraded");
       expect(getHealthTier(74)).toBe("degraded");
-      expect(getHealthTier(49)).toBe("critical");
-      expect(getHealthTier(25)).toBe("critical");
+      expect(getHealthTier(50)).toBe("degraded");
+      expect(getHealthTier(25)).toBe("degraded");
+      expect(getHealthTier(24)).toBe("critical");
       expect(getHealthTier(0)).toBe("critical");
     });
   });

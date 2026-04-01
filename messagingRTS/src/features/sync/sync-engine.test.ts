@@ -123,15 +123,7 @@ describe("SyncEngine", () => {
     it("removes orphaned threads not present in Gmail after initial load (Spec 09)", async () => {
       // Pre-populate store with a thread that won't be in the Gmail result
       const orphan = { id: "orphan-1", subject: "Deleted in Gmail" };
-      useThreadStore
-        .getState()
-        .setThread(
-          orphan as unknown as Parameters<
-            typeof useThreadStore.getState
-          >["0"]["threads"] extends Map<string, infer V>
-            ? V
-            : never,
-        );
+      useThreadStore.getState().setThread(orphan as unknown as Thread);
 
       const mockPerformInitialLoad = vi
         .fn()
@@ -444,6 +436,72 @@ describe("SyncEngine", () => {
       // User should be notified
       const notifications = useAppStore.getState().notifications;
       expect(notifications.some((n) => n.message.includes("no longer exists"))).toBe(true);
+    });
+
+    // Per Spec 10: action transitions to "succeeded" before removal on success.
+    // We subscribe to store changes to capture the "succeeded" status before the action is removed.
+    it("transitions action to succeeded before removal on success (Spec 10)", async () => {
+      const mockArchive = vi.fn().mockResolvedValue(undefined);
+      _setEngineFetchFns({ archiveThread: mockArchive });
+
+      const { createThread } = await import("../../lib/types");
+      useThreadStore.getState().setThread(createThread("t1", "Thread 1", "snippet"));
+
+      useSyncStore.getState().enqueueAction({
+        type: "archive",
+        threadId: "t1",
+        payload: {},
+        userInitiatedTimestamp: 1000,
+      });
+
+      // Subscribe before replay to capture intermediate state transitions
+      const observedStatuses: string[] = [];
+      const unsubscribe = useSyncStore.subscribe((state) => {
+        for (const action of state.actionQueue) {
+          if (!observedStatuses.includes(action.status)) {
+            observedStatuses.push(action.status);
+          }
+        }
+      });
+
+      await replayActionQueue();
+      unsubscribe();
+
+      // The action must have passed through "succeeded" before being removed
+      expect(observedStatuses).toContain("succeeded");
+      expect(useSyncStore.getState().actionQueue).toHaveLength(0);
+    });
+
+    // Per Spec 10: action transitions to "failed" before removal on terminal (non-retryable) failure.
+    it("transitions action to failed before removal on terminal failure (Spec 10)", async () => {
+      const mockArchive = vi.fn().mockRejectedValue(new Error("Gmail API error: 400 Bad Request"));
+      _setEngineFetchFns({ archiveThread: mockArchive });
+
+      const { createThread } = await import("../../lib/types");
+      useThreadStore.getState().setThread(createThread("t1", "Thread 1", "snippet"));
+
+      useSyncStore.getState().enqueueAction({
+        type: "archive",
+        threadId: "t1",
+        payload: {},
+        userInitiatedTimestamp: 1000,
+      });
+
+      const observedStatuses: string[] = [];
+      const unsubscribe = useSyncStore.subscribe((state) => {
+        for (const action of state.actionQueue) {
+          if (!observedStatuses.includes(action.status)) {
+            observedStatuses.push(action.status);
+          }
+        }
+      });
+
+      await replayActionQueue();
+      unsubscribe();
+
+      // The action must have passed through "failed" before being removed
+      expect(observedStatuses).toContain("failed");
+      expect(useSyncStore.getState().actionQueue).toHaveLength(0);
     });
 
     it("replays label-change actions via modifyThreadLabels", async () => {

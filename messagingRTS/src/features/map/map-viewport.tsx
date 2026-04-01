@@ -975,7 +975,9 @@ export function MapViewport() {
         const currentId = useThreadStore.getState().selectedThreadId;
 
         // If nothing selected, select nearest to viewport center
+        // Per Spec 08: arrow keys active only at Operational or Detail zoom levels
         if (!currentId) {
+          if (cam.level !== "operational" && cam.level !== "detail") return;
           const nearest = findNearestThread(threadArray, cam.x, cam.y);
           if (nearest) {
             selectThread(nearest);

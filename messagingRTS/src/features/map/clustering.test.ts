@@ -342,6 +342,34 @@ describe("evaluateClusters", () => {
     expect(clusters[0].label).toContain("Alice");
   });
 
+  // Per Spec 11: when a cluster is rebuilt with an existing ID, its visualExtent preserves the high-water mark
+  it("preserves visualExtent high-water mark when cluster is rebuilt (Spec 11)", () => {
+    const now = Date.now();
+    const t1 = createThread("t1", "Project update", "s");
+    t1.participants = [makeContact("alice@co.com"), makeContact("bob@co.com")];
+    t1.latestMessageTimestamp = now;
+    t1.position = { x: 100, y: 100 };
+
+    const t2 = createThread("t2", "Re: Project update", "s");
+    t2.participants = [makeContact("alice@co.com"), makeContact("bob@co.com")];
+    t2.latestMessageTimestamp = now;
+    t2.position = { x: 110, y: 100 };
+
+    // First evaluation: forms cluster
+    const { clusters: pass1 } = evaluateClusters([t1, t2], [], now);
+    expect(pass1.length).toBe(1);
+
+    // Artificially inflate the visualExtent (simulates animation growing the extent)
+    const inflatedExtent = 99;
+    pass1[0].visualExtent = inflatedExtent;
+
+    // Second evaluation with the inflated existing cluster
+    const { clusters: pass2 } = evaluateClusters([t1, t2], pass1, now);
+    expect(pass2.length).toBe(1);
+    // The rebuilt cluster should preserve the high-water mark (Math.max(2, existingExtent))
+    expect(pass2[0].visualExtent).toBe(inflatedExtent);
+  });
+
   it("cluster label does NOT use participant when they are absent from some members (Spec 11)", () => {
     const now = Date.now();
     const alice = makeContact("alice@co.com", "Alice");

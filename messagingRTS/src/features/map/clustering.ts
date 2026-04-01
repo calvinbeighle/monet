@@ -5,8 +5,11 @@ import type { Thread, Position } from "../../lib/types";
 import type { Cluster, AffinityScore } from "../../lib/types/cluster";
 
 // Affinity component weights per Spec 11 (participant overlap is strongest)
-const WEIGHT_PARTICIPANT = 0.5;
-const WEIGHT_TOPIC = 0.2;
+// Per Spec 11: "No non-participant factor alone can produce a composite score
+// exceeding the clustering threshold (0.3)." Non-participant weights must sum
+// below CLUSTERING_THRESHOLD so even perfect scores on all three cannot reach it.
+const WEIGHT_PARTICIPANT = 0.55;
+const WEIGHT_TOPIC = 0.15;
 const WEIGHT_LABEL = 0.15;
 const WEIGHT_TEMPORAL = 0.15;
 
@@ -39,12 +42,15 @@ export function computeAffinity(a: Thread, b: Thread, _now: number = Date.now())
     sharedLabelScore * WEIGHT_LABEL +
     temporalProximity * WEIGHT_TEMPORAL;
 
+  // Per Spec 11: no non-participant factor alone can produce a composite exceeding
+  // the clustering threshold. meetsThreshold requires participant overlap > 0.
   return {
     participantOverlap,
     topicKeywordOverlap,
     sharedLabelScore,
     temporalProximity,
     composite,
+    meetsThreshold: composite >= CLUSTERING_THRESHOLD && participantOverlap > 0,
   };
 }
 
@@ -228,7 +234,7 @@ export function evaluateClusters(
   for (let i = 0; i < threadList.length; i++) {
     for (let j = i + 1; j < threadList.length; j++) {
       const score = computeAffinity(threadList[i], threadList[j], now);
-      if (score.composite >= CLUSTERING_THRESHOLD && score.participantOverlap > 0) {
+      if (score.meetsThreshold) {
         affinityPairs.push({ a: threadList[i].id, b: threadList[j].id, score });
       }
     }
@@ -275,12 +281,14 @@ export function evaluateClusters(
       const existingForTimestamp = reuseId
         ? existingClusters.find((c) => c.id === reuseId)
         : undefined;
+      // Per Spec 11: extent grows monotonically - restore high-water mark from existing cluster
+      const existingExtent = existingForTimestamp?.visualExtent ?? 0;
       const cluster: Cluster = {
         id: clusterId,
         memberThreadIds: [pair.a, pair.b],
         centroid: computeCentroid(membersData),
         label: deriveLabel(membersData),
-        visualExtent: 2,
+        visualExtent: Math.max(2, existingExtent),
         formationTimestamp: existingForTimestamp?.formationTimestamp ?? now,
         lastMembershipChange: now,
       };

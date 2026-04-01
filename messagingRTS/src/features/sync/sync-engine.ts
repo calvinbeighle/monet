@@ -509,7 +509,8 @@ export async function replayActionQueue(): Promise<void> {
 
     try {
       await executeAction(action);
-      // Clean up succeeded entries immediately per Spec 10
+      // Per Spec 10: transition to succeeded before removal
+      useSyncStore.getState().updateActionStatus(action.id, "succeeded");
       useSyncStore.getState().removeAction(action.id);
     } catch (err) {
       const retryable = isRetryableError(err);
@@ -517,7 +518,8 @@ export async function replayActionQueue(): Promise<void> {
         useSyncStore.getState().updateActionStatus(action.id, "pending");
         useSyncStore.getState().incrementRetryCount(action.id);
       } else {
-        // Per Spec 10: every failure surfaced to user, no silent drops
+        // Per Spec 10: transition to failed, surface to user, then remove
+        useSyncStore.getState().updateActionStatus(action.id, "failed");
         useAppStore.getState().addNotification({
           message: `Failed to ${action.type} thread. The action was discarded.`,
           severity: "warning",
