@@ -56,6 +56,22 @@ export function isValidAgentTransition(from: AgentStatus, to: AgentStatus): bool
   return VALID_TRANSITIONS[from].includes(to);
 }
 
+// Batch queue per Spec 05: threads beyond capacity are queued and processed
+// after the current batch completes
+const batchQueues = new Map<string, string[]>();
+
+export function getBatchQueue(agentId: string): string[] {
+  return batchQueues.get(agentId) ?? [];
+}
+
+export function clearBatchQueue(agentId: string): void {
+  batchQueues.delete(agentId);
+}
+
+export function clearAllBatchQueues(): void {
+  batchQueues.clear();
+}
+
 // Deploy agent to a cluster
 export function deployAgent(
   agent: AgentInstance,
@@ -68,8 +84,15 @@ export function deployAgent(
   }
 
   const def = AGENT_DEFINITIONS[agent.role];
-  // Capacity enforcement: take up to capacity, rest queued for batches
+  // Capacity enforcement per Spec 05: take up to capacity, queue the rest
   const assignedThreads = threadIds.slice(0, def.capacity);
+  const overflow = threadIds.slice(def.capacity);
+
+  if (overflow.length > 0) {
+    batchQueues.set(agent.id, overflow);
+  } else {
+    batchQueues.delete(agent.id);
+  }
 
   return {
     ...agent,
@@ -78,6 +101,30 @@ export function deployAgent(
     threadIds: assignedThreads,
     deployedAt: now,
   };
+}
+
+// Check if there are queued threads to process in the next batch
+export function hasQueuedThreads(agent: AgentInstance): boolean {
+  return (batchQueues.get(agent.id)?.length ?? 0) > 0;
+}
+
+// Dequeue the next batch of threads for processing
+// Returns null if no more queued threads
+export function dequeueNextBatch(agent: AgentInstance): string[] | null {
+  const queue = batchQueues.get(agent.id);
+  if (!queue || queue.length === 0) return null;
+
+  const def = AGENT_DEFINITIONS[agent.role];
+  const nextBatch = queue.slice(0, def.capacity);
+  const remaining = queue.slice(def.capacity);
+
+  if (remaining.length > 0) {
+    batchQueues.set(agent.id, remaining);
+  } else {
+    batchQueues.delete(agent.id);
+  }
+
+  return nextBatch;
 }
 
 // Start working (agent arrives at cluster)

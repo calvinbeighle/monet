@@ -4,6 +4,7 @@
 
 import { create } from "zustand";
 import type { AgentRole } from "../types";
+import { persistDeployments, loadDeployments } from "../utils/persistence";
 
 export type DeploymentStatus =
   | "confirming"
@@ -133,6 +134,10 @@ interface DeploymentStore {
   getCompletedDeploymentsForRole: (role: AgentRole) => DeploymentRecord[];
   getDeploymentHistory: () => DeploymentRecord[];
   getBatchDeployments: (batchId: string) => DeploymentRecord[];
+
+  // Persistence per Spec 06 Section 12
+  loadPersistedDeployments: () => Promise<void>;
+  persistDeploymentHistory: () => Promise<void>;
 }
 
 let deploymentCounter = 0;
@@ -385,4 +390,27 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
     })),
 
   getActiveTravelAnimations: () => get().travelAnimations,
+
+  // Persistence per Spec 06 Section 12
+  loadPersistedDeployments: async () => {
+    try {
+      const records = await loadDeployments();
+      if (records.length > 0) {
+        set((state) => ({
+          deployments: [...records, ...state.deployments],
+        }));
+      }
+    } catch {
+      // Proceed without persisted data
+    }
+  },
+
+  persistDeploymentHistory: async () => {
+    try {
+      const records = get().deployments;
+      await persistDeployments(records);
+    } catch {
+      // Silent failure - persistence is best-effort
+    }
+  },
 }));

@@ -13,11 +13,17 @@ import {
   canDeploy,
   isValidAgentTransition,
   resetCounters,
+  getBatchQueue,
+  clearBatchQueue,
+  clearAllBatchQueues,
+  hasQueuedThreads,
+  dequeueNextBatch,
 } from "./agent-manager";
 import { AGENT_DEFINITIONS } from "../../lib/types";
 
 beforeEach(() => {
   resetCounters();
+  clearAllBatchQueues();
 });
 
 describe("Agent manager", () => {
@@ -80,6 +86,59 @@ describe("Agent manager", () => {
       const deployed = deployAgent(agent, "c1", ["t1"]);
 
       expect(() => deployAgent(deployed, "c2", ["t2"])).toThrow();
+    });
+
+    it("queues overflow threads beyond capacity (Spec 05)", () => {
+      const agent = createAgentInstance("closer"); // capacity 5
+      const threads = ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"];
+      const deployed = deployAgent(agent, "cluster-1", threads);
+
+      expect(deployed.threadIds).toEqual(["t1", "t2", "t3", "t4", "t5"]);
+      expect(hasQueuedThreads(deployed)).toBe(true);
+      expect(getBatchQueue(deployed.id)).toEqual(["t6", "t7", "t8"]);
+    });
+
+    it("no queue when threads fit within capacity", () => {
+      const agent = createAgentInstance("closer"); // capacity 5
+      const deployed = deployAgent(agent, "cluster-1", ["t1", "t2"]);
+
+      expect(hasQueuedThreads(deployed)).toBe(false);
+      expect(getBatchQueue(deployed.id)).toEqual([]);
+    });
+
+    it("dequeues next batch up to capacity", () => {
+      const agent = createAgentInstance("scheduler"); // capacity 4
+      // Deploy with 10 threads (4 assigned, 6 queued)
+      const threads = Array.from({ length: 10 }, (_, i) => `t${i + 1}`);
+      const deployed = deployAgent(agent, "cluster-1", threads);
+
+      expect(deployed.threadIds.length).toBe(4);
+
+      // Dequeue first batch of overflow
+      const batch1 = dequeueNextBatch(deployed);
+      expect(batch1).toEqual(["t5", "t6", "t7", "t8"]);
+
+      // Dequeue second batch (remaining 2)
+      const batch2 = dequeueNextBatch(deployed);
+      expect(batch2).toEqual(["t9", "t10"]);
+
+      // No more queued
+      const batch3 = dequeueNextBatch(deployed);
+      expect(batch3).toBeNull();
+      expect(hasQueuedThreads(deployed)).toBe(false);
+    });
+
+    it("clearBatchQueue removes the queue for an agent", () => {
+      const agent = createAgentInstance("closer");
+      const deployed = deployAgent(
+        agent,
+        "c1",
+        Array.from({ length: 8 }, (_, i) => `t${i}`),
+      );
+      expect(hasQueuedThreads(deployed)).toBe(true);
+
+      clearBatchQueue(deployed.id);
+      expect(hasQueuedThreads(deployed)).toBe(false);
     });
   });
 

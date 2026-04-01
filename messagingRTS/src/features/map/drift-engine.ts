@@ -170,7 +170,18 @@ export function driftTick(
       t.riskTier = computeRiskTier(t, now);
     }
 
-    // 2c. Auto-transition lifecycle state based on risk tier changes per Spec 07/09
+    // 2c. Forced reclassification per Spec 04: clear user override when underlying
+    // state changes significantly (risk tier crosses to critical or lost)
+    if (
+      t.userOverrideZone &&
+      (t.riskTier === "critical" || t.riskTier === "lost") &&
+      prevRiskTier !== "critical" &&
+      prevRiskTier !== "lost"
+    ) {
+      t.userOverrideZone = false;
+    }
+
+    // 2d. Auto-transition lifecycle state based on risk tier changes per Spec 07/09
     // waiting -> at-risk when critical threshold crossed
     if (t.riskTier === "critical" && prevRiskTier !== "critical" && prevRiskTier !== "lost") {
       const next = resolveTransition(t.lifecycleState, "time-threshold-waiting");
@@ -210,7 +221,7 @@ export function driftTick(
       }
     }
 
-    // 2d. Update visual state based on current conditions
+    // 2e. Update visual state based on current conditions
     if (t.visualState !== "archived" && t.visualState !== "agent-occupied") {
       const driftMagnitude = Math.hypot(
         t.targetPosition.x - t.position.x,

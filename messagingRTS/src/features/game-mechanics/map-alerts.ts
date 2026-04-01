@@ -160,6 +160,15 @@ export function evaluateAlerts(
   return result;
 }
 
+// Create a resurfacing alert per Spec 09: hidden thread transitioned to at-risk/lost
+export function createThreadResurfacedAlert(thread: Thread): MapAlert {
+  return createAlert(
+    "thread-resurfaced",
+    `Filtered thread "${truncate(thread.subject)}" is now ${thread.lifecycleState === "lost" ? "lost" : "at risk"}`,
+    thread.id,
+  );
+}
+
 // Add an agent-completed alert (called externally when agent finishes)
 export function createAgentCompletedAlert(agentName: string, threadCount: number): MapAlert {
   return createAlert(

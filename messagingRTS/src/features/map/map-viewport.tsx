@@ -32,7 +32,8 @@ import {
   getCanonicalZoom,
   ZONE_SHORTCUTS,
 } from "../navigation/navigation-system";
-import { evaluateAlerts } from "../game-mechanics/map-alerts";
+import { evaluateAlerts, createThreadResurfacedAlert } from "../game-mechanics/map-alerts";
+import { shouldHideThread } from "../../lib/stores/filter-store";
 import { runGameTick, isTrustDecayDue, runTrustDecay } from "../game-mechanics/game-loop";
 import { Minimap } from "../../components/minimap";
 import { SearchOverlay } from "../../components/search-overlay";
@@ -282,13 +283,36 @@ export function MapViewport() {
 
       clustersRef.current = clusterResult.clusters;
 
+      // Detect hidden threads resurfacing per Spec 09: filtered threads that
+      // transition to at-risk/lost get a notification alert
+      const currentFilter = useFilterStore.getState().filter;
+      const resurfacedAlerts: ReturnType<typeof createThreadResurfacedAlert>[] = [];
+      for (const t of gameResult.updatedThreads) {
+        if (
+          (t.lifecycleState === "at-risk" || t.lifecycleState === "lost") &&
+          shouldHideThread({ ...t, lifecycleState: "active" } as typeof t, currentFilter)
+        ) {
+          // Thread is in a state that bypasses the filter, but would be hidden otherwise.
+          // Check if there's already an alert for this thread
+          const hasAlert = appState.mapAlerts.some(
+            (a) => a.type === "thread-resurfaced" && a.threadId === t.id && !a.autoResolved,
+          );
+          if (!hasAlert) {
+            resurfacedAlerts.push(createThreadResurfacedAlert(t));
+          }
+        }
+      }
+
       // Evaluate map alerts per Spec 07 - runs alongside drift tick
-      const newAlerts = evaluateAlerts(
+      let newAlerts = evaluateAlerts(
         gameResult.updatedThreads,
         appState.mapAlerts,
         now,
         appState.streakInboxZero,
       );
+      if (resurfacedAlerts.length > 0) {
+        newAlerts = [...newAlerts, ...resurfacedAlerts];
+      }
       appState.setMapAlerts(newAlerts);
 
       // Tick agent cooldowns per Spec 05

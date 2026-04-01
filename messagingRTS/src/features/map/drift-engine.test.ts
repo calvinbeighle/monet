@@ -168,6 +168,29 @@ describe("driftTick", () => {
     expect(current[0].zone).toBe("at-risk");
   });
 
+  it("clears userOverrideZone when risk tier crosses to critical (Spec 04)", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const HOUR = 60 * 60 * 1000;
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    // User manually placed thread in opportunities zone
+    thread.userOverrideZone = true;
+    thread.zone = "opportunities";
+    const oppCenter = getZoneCenter(zones, "opportunities");
+    thread.position = { ...oppCenter };
+    thread.targetPosition = { ...oppCenter };
+    // Set risk timer to just past the critical threshold for existing-relationship (48h)
+    thread.riskTimerStart = now - 49 * HOUR;
+    thread.riskTier = "elevated"; // was elevated, about to cross to critical
+    thread.lifecycleState = "active";
+
+    const [updated] = driftTick([thread], zones, now);
+
+    // userOverrideZone should be cleared due to forced reclassification
+    expect(updated.userOverrideZone).toBe(false);
+  });
+
   it("handles empty thread list", () => {
     const zones = createZoneLayout();
     const result = driftTick([], zones);

@@ -11,6 +11,7 @@ import {
   isStreakAtRisk,
   evaluateAlerts,
   createAgentCompletedAlert,
+  createThreadResurfacedAlert,
   acknowledgeAlert,
   countActiveAlerts,
   resetAlertIdCounter,
@@ -419,6 +420,32 @@ describe("Map alerts", () => {
       ];
 
       expect(countActiveAlerts(alerts)).toBe(2); // a1 and a4
+    });
+  });
+
+  describe("createThreadResurfacedAlert (Spec 09)", () => {
+    it("creates a thread-resurfaced alert for at-risk thread", () => {
+      const thread = makeThread({
+        id: "t-resurfaced",
+        subject: "Important Deal",
+        lifecycleState: "at-risk",
+      });
+      const alert = createThreadResurfacedAlert(thread);
+      expect(alert.type).toBe("thread-resurfaced");
+      expect(alert.threadId).toBe("t-resurfaced");
+      expect(alert.message).toContain("at risk");
+      expect(alert.message).toContain("Important Deal");
+    });
+
+    it("creates a thread-resurfaced alert for lost thread", () => {
+      const thread = makeThread({
+        id: "t-lost",
+        subject: "Client Follow-up",
+        lifecycleState: "lost",
+      });
+      const alert = createThreadResurfacedAlert(thread);
+      expect(alert.type).toBe("thread-resurfaced");
+      expect(alert.message).toContain("lost");
     });
   });
 });

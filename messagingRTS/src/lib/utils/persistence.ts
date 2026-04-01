@@ -5,11 +5,16 @@
 
 import { openDB, type IDBPDatabase } from "idb";
 import type { Thread, ActionQueueEntry } from "../types";
+import type { DeploymentRecord } from "../stores/deployment-store";
 
 const DB_NAME = "messaging-rts";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const THREADS_STORE = "threads";
 const ACTION_QUEUE_STORE = "action-queue";
+const DEPLOYMENTS_STORE = "deployments";
+
+// Retention limit for deployment history per Spec 06
+const DEPLOYMENT_RETENTION_LIMIT = 100;
 
 interface MessagingRTSDB {
   threads: {
@@ -24,6 +29,13 @@ interface MessagingRTSDB {
   "action-queue": {
     key: string;
     value: ActionQueueEntry;
+  };
+  deployments: {
+    key: string;
+    value: DeploymentRecord;
+    indexes: {
+      "by-started-at": number;
+    };
   };
 }
 
@@ -41,6 +53,10 @@ export function getDB(): Promise<IDBPDatabase<MessagingRTSDB>> {
         }
         if (oldVersion < 2) {
           db.createObjectStore(ACTION_QUEUE_STORE, { keyPath: "id" });
+        }
+        if (oldVersion < 3) {
+          const deployStore = db.createObjectStore(DEPLOYMENTS_STORE, { keyPath: "id" });
+          deployStore.createIndex("by-started-at", "startedAt");
         }
       },
     });
@@ -141,6 +157,33 @@ export async function loadActionQueue(): Promise<ActionQueueEntry[]> {
 export async function clearActionQueue(): Promise<void> {
   const db = await getDB();
   await db.clear(ACTION_QUEUE_STORE);
+}
+
+// --- Deployment History Persistence (Spec 06 Section 12) ---
+// Deployment records persist across sessions with a retention limit.
+
+export async function persistDeployments(deployments: DeploymentRecord[]): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(DEPLOYMENTS_STORE, "readwrite");
+  await tx.store.clear();
+  // Only persist up to retention limit, most recent first
+  const toKeep = deployments.slice(0, DEPLOYMENT_RETENTION_LIMIT);
+  for (const record of toKeep) {
+    tx.store.put(record);
+  }
+  await tx.done;
+}
+
+export async function loadDeployments(): Promise<DeploymentRecord[]> {
+  const db = await getDB();
+  const records = await db.getAll(DEPLOYMENTS_STORE);
+  // Sort by startedAt descending (most recent first)
+  return records.sort((a, b) => b.startedAt - a.startedAt);
+}
+
+export async function clearDeployments(): Promise<void> {
+  const db = await getDB();
+  await db.clear(DEPLOYMENTS_STORE);
 }
 
 // Close the database connection (useful for testing)

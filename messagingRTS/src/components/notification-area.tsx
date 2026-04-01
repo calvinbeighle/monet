@@ -28,6 +28,7 @@ const alertTypeSeverity: Record<MapAlertType, string> = {
   "about-to-be-lost": "critical",
   "agent-completed": "success",
   "streak-at-risk": "warning",
+  "thread-resurfaced": "warning",
 };
 
 export function NotificationArea() {

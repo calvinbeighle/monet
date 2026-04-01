@@ -45,4 +45,5 @@ export type MapAlertType =
   | "new-high-value"
   | "about-to-be-lost"
   | "agent-completed"
-  | "streak-at-risk";
+  | "streak-at-risk"
+  | "thread-resurfaced";

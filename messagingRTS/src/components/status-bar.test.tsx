@@ -53,7 +53,6 @@ describe("StatusBar", () => {
     });
     render(<StatusBar onAlertClick={() => {}} />);
 
-    const statusBar = screen.getByTestId("status-bar");
     const syncIndicator = screen.getByTestId("sync-indicator");
     const healthScore = screen.getByTestId("health-score");
     const alertBadge = screen.getByTestId("alert-badge");
