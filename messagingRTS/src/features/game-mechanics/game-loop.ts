@@ -104,7 +104,9 @@ export function runGameTick(
   // 4. Streak evaluation (throttled to every 60s)
   if (now - lastStreakCheckTime >= STREAK_CHECK_INTERVAL_MS) {
     lastStreakCheckTime = now;
-    const today = new Date(now).toISOString().split("T")[0];
+    // Use local date per Spec 07: "midnight in the user's local timezone"
+    const d = new Date(now);
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const newStreaks = evaluateStreaks(result.updatedThreads, streakState, today);
     if (
       newStreaks.inboxZeroDays !== streakState.inboxZeroDays ||

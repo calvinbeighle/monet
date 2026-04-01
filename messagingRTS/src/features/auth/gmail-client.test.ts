@@ -21,6 +21,8 @@ import {
   type GmailMessage,
 } from "./gmail-client";
 import { useAuthStore } from "./auth-store";
+import { useAppStore } from "../../lib/stores/app-store";
+import { rateLimiter } from "../../lib/utils/rate-limiter";
 
 // Create a mock proxy function that matches nangoProxy signature
 function createMockProxy(responses: Array<Partial<Response>>) {
@@ -205,6 +207,55 @@ describe("Gmail client (Nango proxy)", () => {
       expect(opts!.method).toBe("POST");
       const body = JSON.parse(opts!.body as string);
       expect(body.removeLabelIds).toEqual(["INBOX"]);
+    });
+  });
+
+  describe("daily quota exhaustion notification", () => {
+    it("adds critical notification when canProceed returns daily quota exhausted", async () => {
+      // Reset app store notifications
+      useAppStore.setState({ notifications: [] });
+
+      // Spy on rateLimiter.canProceed to simulate daily quota exhausted state.
+      // gmail-client imports the same rateLimiter singleton so the spy takes effect.
+      const canProceedSpy = vi.spyOn(rateLimiter, "canProceed").mockReturnValue({
+        allowed: false,
+        waitMs: 86400000,
+        reason: "daily quota exhausted - read-only mode",
+      });
+
+      try {
+        // The fetch should reject because canProceed disallows it
+        await expect(fetchThreadList()).rejects.toThrow("Rate limited");
+
+        // The critical notification should have been added to app store
+        const notifications = useAppStore.getState().notifications;
+        const criticalNotification = notifications.find((n) => n.severity === "critical");
+        expect(criticalNotification).toBeDefined();
+        expect(criticalNotification!.message).toContain("daily quota exhausted");
+      } finally {
+        canProceedSpy.mockRestore();
+      }
+    });
+
+    it("does not add notification for non-quota rate limit reason", async () => {
+      useAppStore.setState({ notifications: [] });
+
+      const canProceedSpy = vi.spyOn(rateLimiter, "canProceed").mockReturnValue({
+        allowed: false,
+        waitMs: 1000,
+        reason: "paused after 429",
+      });
+
+      try {
+        await expect(fetchThreadList()).rejects.toThrow("Rate limited");
+
+        const notifications = useAppStore.getState().notifications;
+        const criticalNotification = notifications.find((n) => n.severity === "critical");
+        // No critical notification for non-quota rate limits
+        expect(criticalNotification).toBeUndefined();
+      } finally {
+        canProceedSpy.mockRestore();
+      }
     });
   });
 

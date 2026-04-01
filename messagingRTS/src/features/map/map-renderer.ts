@@ -192,9 +192,12 @@ export class MapRenderer {
       g.rect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
       g.fill({ color: zone.colorTint as ColorSource, alpha: 0.3 });
 
-      // Zone border
+      // Zone border - alert state changes visual per Spec 04
+      const borderWidth = zone.alertState === "active" ? 3 : 2;
+      const borderAlpha = zone.alertState === "active" ? 0.8 : 0.5;
+      const borderColor = zone.alertState === "active" ? 0xdd3333 : zone.borderColor;
       g.rect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
-      g.stroke({ color: zone.borderColor as ColorSource, width: 2, alpha: 0.5 });
+      g.stroke({ color: borderColor as ColorSource, width: borderWidth, alpha: borderAlpha });
 
       // Zone label
       let label = this.zoneLabels.get(id);
@@ -212,7 +215,9 @@ export class MapRenderer {
         this.layers.background.addChild(label);
         this.zoneLabels.set(id, label);
       }
-      label.text = `${zone.name} (${zone.threadCount})`;
+      const alertPrefix = zone.alertState === "active" ? "! " : "";
+      label.text = `${alertPrefix}${zone.name} (${zone.threadCount})`;
+      label.alpha = zone.alertState === "active" ? 0.7 : 0.4;
       label.position.set((b.minX + b.maxX) / 2 - label.width / 2, b.minY + 10);
     }
   }
@@ -369,6 +374,80 @@ export class MapRenderer {
     }
   }
 
+  // Render connection lines between related threads per Spec 02 Section 3
+  // Threads sharing a participant get a faint edge on the mid layer.
+  // When clustered at low zoom, edges attach to cluster centroids instead.
+  renderConnections(threads: Thread[], clusters: Cluster[]): void {
+    if (!this.layers) return;
+
+    // Clear previous connections (mid layer holds only connections now)
+    const mid = this.layers.mid;
+    while (mid.children.length > 0) mid.removeChildAt(0);
+
+    const zoomLevel = this.getZoomLevel();
+    const bounds = this.getVisibleBounds();
+
+    // Build participant -> threadId[] index
+    const participantThreads = new Map<string, string[]>();
+    for (const t of threads) {
+      for (const p of t.participants) {
+        let list = participantThreads.get(p.email);
+        if (!list) {
+          list = [];
+          participantThreads.set(p.email, list);
+        }
+        list.push(t.id);
+      }
+    }
+
+    // Build threadId -> cluster centroid map for low-zoom attachment
+    const threadClusterCentroid = new Map<string, { x: number; y: number }>();
+    if (zoomLevel === "strategic" || zoomLevel === "tactical") {
+      for (const c of clusters) {
+        for (const tid of c.memberThreadIds) {
+          threadClusterCentroid.set(tid, c.centroid);
+        }
+      }
+    }
+
+    const threadMap = new Map(threads.map((t) => [t.id, t]));
+    const drawnEdges = new Set<string>();
+    const g = new Graphics();
+    mid.addChild(g);
+
+    for (const threadIds of participantThreads.values()) {
+      if (threadIds.length < 2) continue;
+      // Draw edges between pairs (limit to avoid O(n^2) explosion)
+      const limit = Math.min(threadIds.length, 8);
+      for (let i = 0; i < limit; i++) {
+        for (let j = i + 1; j < limit; j++) {
+          const a = threadIds[i];
+          const b = threadIds[j];
+          const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+          if (drawnEdges.has(key)) continue;
+          drawnEdges.add(key);
+
+          const tA = threadMap.get(a);
+          const tB = threadMap.get(b);
+          if (!tA || !tB) continue;
+
+          // Use cluster centroid at low zoom, thread position at high zoom
+          const posA = threadClusterCentroid.get(a) ?? tA.position;
+          const posB = threadClusterCentroid.get(b) ?? tB.position;
+
+          // Skip if both endpoints are outside viewport
+          const inA = this.isInBounds(posA.x, posA.y, bounds);
+          const inB = this.isInBounds(posB.x, posB.y, bounds);
+          if (!inA && !inB) continue;
+
+          g.moveTo(posA.x, posA.y);
+          g.lineTo(posB.x, posB.y);
+          g.stroke({ color: 0x4466aa as ColorSource, width: 1, alpha: 0.12 });
+        }
+      }
+    }
+  }
+
   // Render cluster visuals per Spec 02 section 5
   // At operational/detail: draw boundary around members with label
   // At strategic/tactical: collapse to aggregate representation (single dot + count)
@@ -416,7 +495,7 @@ export class MapRenderer {
 
       let g = this.clusterGraphics.get(cluster.id);
       if (!g) {
-        g = this.acquireGraphics(this.layers.mid);
+        g = this.acquireGraphics(this.layers.foreground);
         this.clusterGraphics.set(cluster.id, g);
       }
       g.clear();
@@ -439,7 +518,7 @@ export class MapRenderer {
         // Count label
         let label = this.clusterLabels.get(cluster.id);
         if (!label) {
-          label = this.acquireText(this.layers.mid);
+          label = this.acquireText(this.layers.foreground);
           label.style.fontSize = 13;
           label.style.fill = 0xffffff;
           label.style.align = "center";
@@ -485,7 +564,7 @@ export class MapRenderer {
         // Cluster label above boundary
         let label = this.clusterLabels.get(cluster.id);
         if (!label) {
-          label = this.acquireText(this.layers.mid);
+          label = this.acquireText(this.layers.foreground);
           label.style.fontSize = 11;
           label.style.fill = 0xaaaacc;
           label.style.align = "center";

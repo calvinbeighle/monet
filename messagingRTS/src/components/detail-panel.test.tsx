@@ -151,4 +151,100 @@ describe("DetailPanel", () => {
       "Close detail panel",
     );
   });
+
+  it("renders ParticipantTrust section when trustRecords exist for thread participants", () => {
+    const thread = {
+      ...createThread("t1", "Subject", "Snippet"),
+      participants: [
+        {
+          email: "alice@example.com",
+          displayName: "Alice",
+          organization: "",
+          vipFlag: false,
+          relationshipScore: 0,
+          responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+        },
+      ],
+    };
+    useThreadStore.setState({ threads: new Map([["t1", thread]]) });
+    useAppStore.setState({
+      selectedThreadId: "t1",
+      trustRecords: {
+        "alice@example.com": {
+          contactEmail: "alice@example.com",
+          score: 65,
+          tier: "established",
+          consecutiveStreak: 0,
+          tierEntryDate: Date.now() - 30 * 24 * 60 * 60 * 1000,
+          lastReplyTimestamp: Date.now() - 60 * 1000,
+          lastDecayCheck: Date.now(),
+        },
+      },
+    });
+
+    render(<DetailPanel />);
+    const trustSection = screen.getByTestId("participant-trust");
+    expect(trustSection).toBeInTheDocument();
+    expect(trustSection.textContent).toContain("established");
+    expect(trustSection.textContent).toContain("65");
+  });
+
+  it("does not render ParticipantTrust section when no trustRecords exist", () => {
+    const thread = {
+      ...createThread("t1", "Subject", "Snippet"),
+      participants: [
+        {
+          email: "alice@example.com",
+          displayName: "Alice",
+          organization: "",
+          vipFlag: false,
+          relationshipScore: 0,
+          responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+        },
+      ],
+    };
+    useThreadStore.setState({ threads: new Map([["t1", thread]]) });
+    useAppStore.setState({ selectedThreadId: "t1", trustRecords: {} });
+
+    render(<DetailPanel />);
+    expect(screen.queryByTestId("participant-trust")).not.toBeInTheDocument();
+  });
+
+  it("renders trust tier color class for high-trust participant", () => {
+    const thread = {
+      ...createThread("t1", "Subject", "Snippet"),
+      participants: [
+        {
+          email: "bob@example.com",
+          displayName: "Bob",
+          organization: "",
+          vipFlag: false,
+          relationshipScore: 0,
+          responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+        },
+      ],
+    };
+    useThreadStore.setState({ threads: new Map([["t1", thread]]) });
+    useAppStore.setState({
+      selectedThreadId: "t1",
+      trustRecords: {
+        "bob@example.com": {
+          contactEmail: "bob@example.com",
+          score: 90,
+          tier: "high-trust",
+          consecutiveStreak: 5,
+          tierEntryDate: Date.now() - 60 * 24 * 60 * 60 * 1000,
+          lastReplyTimestamp: Date.now() - 5 * 60 * 1000,
+          lastDecayCheck: Date.now(),
+        },
+      },
+    });
+
+    render(<DetailPanel />);
+    const trustSection = screen.getByTestId("participant-trust");
+    expect(trustSection.textContent).toContain("high-trust");
+    expect(trustSection.textContent).toContain("90");
+    // consecutiveStreak >= 3 shows streak indicator
+    expect(trustSection.textContent).toContain("*");
+  });
 });

@@ -2,21 +2,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AlertList } from "./alert-list";
 import { useAppStore } from "../lib/stores/app-store";
-
-type MapAlert = {
-  id: string;
-  type: string;
-  threadId: string | null;
-  acknowledged: boolean;
-  autoResolved: boolean;
-  createdAt: number;
-};
+import type { MapAlert } from "../lib/types/game-mechanics";
 
 function makeAlert(overrides: Partial<MapAlert> = {}): MapAlert {
   return {
     id: `alert-${Math.random().toString(36).slice(2)}`,
     type: "about-to-be-lost",
     threadId: "t1",
+    message: "Thread is about to be lost",
     acknowledged: false,
     autoResolved: false,
     createdAt: Date.now(),

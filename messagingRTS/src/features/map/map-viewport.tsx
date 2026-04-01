@@ -271,6 +271,7 @@ export function MapViewport() {
     renderer.setSelectedThread(selectedThreadId);
     renderer.setBatchSelectedIds(selectedThreadIds);
     renderer.renderZones(zonesRef.current);
+    renderer.renderConnections(visibleThreads, clustersRef.current);
     renderer.renderThreads(visibleThreads);
     renderer.renderClusters(clustersRef.current, visibleThreads);
   }, [threads, selectedThreadId, selectedThreadIds, filter]);

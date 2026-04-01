@@ -33,6 +33,9 @@ import type { AgentRole } from "./lib/types";
 import { initClaudeClient, isClaudeClientConfigured } from "./features/agents/claude-client";
 import { getAnthropicApiKey } from "./features/agents/ai-backend";
 
+// Session idle auto-trigger per Spec 07: auto-present summary after no interaction
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes of inactivity
+
 export function App() {
   const shellState = useAppStore((s) => s.shellState);
   const setShellState = useAppStore((s) => s.setShellState);
@@ -71,6 +74,34 @@ export function App() {
   const [summaryTrigger, setSummaryTrigger] = useState<HTMLElement | null>(null);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [showAlertList, setShowAlertList] = useState(false);
+
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (shellState !== "active" && shellState !== "degraded") return;
+
+    const resetIdleTimer = () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = setTimeout(() => {
+        // Only auto-trigger if no modal is already open
+        if (
+          useAppStore.getState().activePanel === "none" ||
+          useAppStore.getState().activePanel === "detail"
+        ) {
+          setActivePanel("session-summary");
+        }
+      }, IDLE_TIMEOUT_MS);
+    };
+
+    const events = ["mousedown", "keydown", "scroll", "touchstart"] as const;
+    for (const evt of events) window.addEventListener(evt, resetIdleTimer);
+    resetIdleTimer();
+
+    return () => {
+      for (const evt of events) window.removeEventListener(evt, resetIdleTimer);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    };
+  }, [shellState, setActivePanel]);
 
   const isCompact = viewportWidth > 0 && viewportWidth < RESPONSIVE_BREAKPOINT;
   const hasRightPanel = activePanel === "detail" || activePanel === "deployment-history";

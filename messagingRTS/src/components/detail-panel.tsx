@@ -6,6 +6,7 @@
 import { useState, useCallback } from "react";
 import { useAppStore, useThreadStore } from "../lib/stores";
 import type { Thread, RiskTier, OpportunityState } from "../lib/types";
+import type { TrustTier } from "../lib/types/game-mechanics";
 import {
   sendReplyAction,
   saveDraftAction,
@@ -29,6 +30,13 @@ const OPPORTUNITY_COLORS: Record<OpportunityState, string> = {
   fading: "text-yellow-400",
   expired: "text-gray-600",
   captured: "text-blue-400",
+};
+
+const TRUST_COLORS: Record<TrustTier, string> = {
+  new: "text-gray-500",
+  building: "text-yellow-400",
+  established: "text-blue-400",
+  "high-trust": "text-green-400",
 };
 
 function ThreadMetadata({ thread }: { thread: Thread }) {
@@ -186,6 +194,37 @@ function ReplyComposer({ thread }: { thread: Thread }) {
   );
 }
 
+function ParticipantTrust({ thread }: { thread: Thread }) {
+  const trustRecords = useAppStore((s) => s.trustRecords);
+  const participants = thread.participants.filter((p) => p.email.length > 0);
+  if (participants.length === 0) return null;
+
+  const hasTrust = participants.some((p) => trustRecords[p.email]);
+  if (!hasTrust) return null;
+
+  return (
+    <div className="mb-3" data-testid="participant-trust">
+      <div className="mb-1 text-[10px] text-gray-500">Trust</div>
+      <div className="space-y-1">
+        {participants.map((p) => {
+          const record = trustRecords[p.email];
+          if (!record) return null;
+          return (
+            <div key={p.email} className="flex items-center justify-between text-xs">
+              <span className="text-gray-400 truncate max-w-[140px]">
+                {p.displayName || p.email}
+              </span>
+              <span className={TRUST_COLORS[record.tier]}>
+                {record.tier} ({record.score}){record.consecutiveStreak >= 3 && " *"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function DetailPanel() {
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
   const setSelectedThread = useAppStore((s) => s.setSelectedThread);
@@ -252,6 +291,9 @@ export function DetailPanel() {
             <div className="mb-3">
               <ThreadMetadata thread={thread} />
             </div>
+
+            {/* Trust scores per participant per Spec 07 */}
+            <ParticipantTrust thread={thread} />
 
             <div className="text-xs text-gray-400">{thread.snippet}</div>
 

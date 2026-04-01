@@ -14,6 +14,26 @@ describe("MapRenderer", () => {
     expect(renderer.getApp()).toBeNull(); // not initialized yet
   });
 
+  it("has renderZones method", () => {
+    const renderer = new MapRenderer();
+    expect(typeof renderer.renderZones).toBe("function");
+  });
+
+  it("renderZones does nothing when layers not initialized", () => {
+    const renderer = new MapRenderer();
+    expect(() => renderer.renderZones(new Map())).not.toThrow();
+  });
+
+  it("has renderConnections method", () => {
+    const renderer = new MapRenderer();
+    expect(typeof renderer.renderConnections).toBe("function");
+  });
+
+  it("renderConnections does nothing when layers not initialized", () => {
+    const renderer = new MapRenderer();
+    expect(() => renderer.renderConnections([], [])).not.toThrow();
+  });
+
   it("reports correct initial camera state", () => {
     const renderer = new MapRenderer();
     const state = renderer.getCameraState();
@@ -315,6 +335,150 @@ describe("500-entity performance", () => {
     expect(pool.length).toBe(2);
   });
 });
+
+describe("Zone alert visual state", () => {
+  // Since PixiJS cannot run in jsdom, these tests verify the public API surface
+  // and that the renderer does not crash when processing zones with alertState = "active".
+
+  it("renderZones with active alert state does not throw", () => {
+    const renderer = new MapRenderer();
+    const zone = makeZone("active-front", "active");
+    expect(() => renderer.renderZones(new Map([["active-front", zone]]))).not.toThrow();
+  });
+
+  it("renderZones with inactive alert state does not throw", () => {
+    const renderer = new MapRenderer();
+    const zone = makeZone("active-front", "inactive");
+    expect(() => renderer.renderZones(new Map([["active-front", zone]]))).not.toThrow();
+  });
+
+  it("renderZones handles mixed alert states across multiple zones", () => {
+    const renderer = new MapRenderer();
+    const zones = new Map([
+      ["active-front", makeZone("active-front", "active")],
+      ["at-risk", makeZone("at-risk", "inactive")],
+      ["opportunities", makeZone("opportunities", "active")],
+    ]);
+    expect(() =>
+      renderer.renderZones(
+        zones as Map<import("../../lib/types").ZoneId, import("../../lib/types").Zone>,
+      ),
+    ).not.toThrow();
+  });
+});
+
+describe("Cluster layer ordering", () => {
+  // Clusters render on the foreground layer per the updated renderClusters implementation.
+  // Without PixiJS init we verify through the public API.
+
+  it("renderClusters does not crash with initialized-like call (no init)", () => {
+    const renderer = new MapRenderer();
+    const threads = generateThreads(6);
+    // Form a cluster referencing all 6 threads
+    const cluster = {
+      id: "c1",
+      memberThreadIds: threads.map((t) => t.id),
+      centroid: { x: 0, y: 0 },
+      label: "Test Cluster",
+      visualExtent: 60,
+      formationTimestamp: Date.now(),
+      lastMembershipChange: Date.now(),
+    };
+    // Without layers, renderClusters returns early - no crash, no side effects
+    expect(() => renderer.renderClusters([cluster], threads)).not.toThrow();
+    // Confirm layers are still null (not initialized)
+    expect(renderer.getApp()).toBeNull();
+  });
+
+  it("renderClusters exists and is distinct from renderThreads", () => {
+    const renderer = new MapRenderer();
+    // Both methods exist and are separate functions
+    expect(typeof renderer.renderClusters).toBe("function");
+    expect(typeof renderer.renderThreads).toBe("function");
+    expect(renderer.renderClusters).not.toBe(renderer.renderThreads);
+  });
+});
+
+describe("Connection line rendering", () => {
+  // renderConnections draws edges on the mid layer between threads sharing participants.
+  // Without PixiJS, verify the method is callable and does not crash under any input.
+
+  it("renderConnections with two threads sharing a participant does not throw", () => {
+    const renderer = new MapRenderer();
+    const t1 = createThread("t1", "Subject A", "snippet");
+    const t2 = createThread("t2", "Subject B", "snippet");
+    // Give both threads the same participant
+    const sharedParticipant = {
+      email: "shared@example.com",
+      displayName: "Shared",
+      organization: "",
+      vipFlag: false,
+      relationshipScore: 0,
+      responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+    };
+    t1.participants = [sharedParticipant];
+    t2.participants = [sharedParticipant];
+
+    // renderConnections returns early when layers not initialized - no crash
+    expect(() => renderer.renderConnections([t1, t2], [])).not.toThrow();
+  });
+
+  it("renderConnections with no shared participants does not throw", () => {
+    const renderer = new MapRenderer();
+    const t1 = createThread("t1", "Subject A", "snippet");
+    const t2 = createThread("t2", "Subject B", "snippet");
+    t1.participants = [
+      {
+        email: "alice@example.com",
+        displayName: "Alice",
+        organization: "",
+        vipFlag: false,
+        relationshipScore: 0,
+        responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+      },
+    ];
+    t2.participants = [
+      {
+        email: "bob@example.com",
+        displayName: "Bob",
+        organization: "",
+        vipFlag: false,
+        relationshipScore: 0,
+        responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+      },
+    ];
+    expect(() => renderer.renderConnections([t1, t2], [])).not.toThrow();
+  });
+
+  it("renderConnections with empty thread list does not throw", () => {
+    const renderer = new MapRenderer();
+    expect(() => renderer.renderConnections([], [])).not.toThrow();
+  });
+});
+
+// Helper: build a minimal Zone object for testing
+function makeZone(
+  id: string,
+  alertState: "active" | "inactive",
+): import("../../lib/types/zone").Zone {
+  return {
+    id: id as import("../../lib/types/zone").ZoneId,
+    name: id,
+    boundary: {
+      points: [],
+      minX: -100,
+      maxX: 100,
+      minY: -100,
+      maxY: 100,
+    },
+    colorTint: 0x1a3a5c,
+    borderColor: 0x2a6aac,
+    threadCount: 0,
+    alertThreshold: { minThreads: null, maxThreads: null },
+    alertState,
+    dynamicSizeWeight: 1,
+  };
+}
 
 // Helper: generate N threads spread across the map
 function generateThreads(count: number) {

@@ -5,6 +5,7 @@
 
 import { nangoProxy } from "../../lib/nango-client";
 import { useAuthStore } from "./auth-store";
+import { useAppStore } from "../../lib/stores/app-store";
 import { rateLimiter, getOperationName } from "../../lib/utils/rate-limiter";
 import type { ApiCallPriority } from "../../lib/utils/rate-limiter";
 
@@ -122,6 +123,14 @@ async function gmailFetch(
   // Per Spec 01: never make API calls predicted to exceed quota
   const check = rateLimiter.canProceed(operation, priority);
   if (!check.allowed) {
+    // Surface daily quota exhaustion to user per Spec 01 rate limiting section
+    if (check.reason?.includes("daily quota exhausted")) {
+      useAppStore.getState().addNotification({
+        message:
+          "Gmail daily quota exhausted. Sending, drafting, and archiving are disabled until the quota resets.",
+        severity: "critical",
+      });
+    }
     throw new GmailApiError(`Rate limited: ${check.reason ?? "quota exceeded"}`, 429, true);
   }
 
