@@ -1,11 +1,23 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { useFeedStore } from "../stores/feed-store";
 import { Card } from "./Card";
 
 export function Feed() {
-  const { cards, activeIndex, setActiveIndex, addCard, removeCard } =
-    useFeedStore();
+  const { cards, activeIndex, setActiveIndex, addCard } = useFeedStore();
   const containerRef = useRef<HTMLDivElement>(null);
+  const loadingRef = useRef(false);
+
+  const loadMore = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    // Add 10 cards in batch
+    const promises = [];
+    for (let i = 0; i < 10; i++) {
+      promises.push(addCard());
+    }
+    await Promise.all(promises);
+    loadingRef.current = false;
+  }, [addCard]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -14,11 +26,17 @@ export function Feed() {
     const handleScroll = () => {
       const index = Math.round(container.scrollTop / container.clientHeight);
       setActiveIndex(index);
+
+      // When within 3 cards of the end, load 10 more
+      const totalCards = useFeedStore.getState().cards.length;
+      if (index >= totalCards - 3) {
+        loadMore();
+      }
     };
 
     container.addEventListener("scroll", handleScroll);
     return () => container.removeEventListener("scroll", handleScroll);
-  }, [setActiveIndex]);
+  }, [setActiveIndex, loadMore]);
 
   return (
     <div

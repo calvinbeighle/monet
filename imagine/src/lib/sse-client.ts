@@ -4,6 +4,7 @@ export type CardData = {
   instruction: string | null;
   summary: string | null;
   imageUrl: string | null;
+  videoUrl: string | null;
   rawOutput: string;
 };
 

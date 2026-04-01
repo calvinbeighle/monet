@@ -32,8 +32,17 @@ export function Card({ card, index }: { card: CardData; index: number }) {
 
   return (
     <div className="card-slide">
-      {/* Background */}
-      {card.imageUrl ? (
+      {/* Background - video, image, or gradient */}
+      {card.videoUrl ? (
+        <video
+          src={card.videoUrl}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      ) : card.imageUrl ? (
         <img
           src={card.imageUrl}
           alt=""
@@ -126,7 +135,7 @@ export function Card({ card, index }: { card: CardData; index: number }) {
       {/* Left side content */}
       <div
         className="absolute z-10"
-        style={{ bottom: 120, left: 16, right: 80 }}
+        style={{ bottom: 130, left: 32, right: 80 }}
       >
         <p className="text-white font-bold text-[16px] mb-1">
           @agent-{card.id.slice(0, 6)}
