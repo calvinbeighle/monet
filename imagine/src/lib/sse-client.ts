@@ -6,7 +6,6 @@ export type CardData = {
   imageUrl: string | null;
   videoUrl: string | null;
   rawOutput: string;
-  suggestion: { reason: string; category: string; score: number } | null;
 };
 
 export function connectSSE(

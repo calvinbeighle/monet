@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { v4 as uuid } from "uuid";
 import { EventEmitter } from "events";
 import { generateVideo, generateImage } from "./image-generator";
+// prediction-engine.ts exists but is not used here - it will be used for card reordering
 import type { AgentSuggestion } from "./prediction-engine";
 
 const USE_IMAGINE = process.env.USE_IMAGINE === "true";
@@ -14,7 +15,6 @@ export interface AgentCard {
   imageUrl: string | null;
   videoUrl: string | null;
   rawOutput: string;
-  suggestion: { reason: string; category: string; score: number } | null;
 }
 
 // Verified working stock videos + dynamic fetch from Pexels
@@ -134,13 +134,15 @@ export class AgentManager extends EventEmitter {
       imageUrl: null,
       videoUrl: null,
       rawOutput: "",
-      suggestion: null,
     };
+    // Set video before first emit to avoid flicker
+    if (!USE_IMAGINE) {
+      card.videoUrl = nextStockVideo();
+    }
     this.agents.set(card.id, { card, abort: null, sessionId: null });
     this.emit("update", card);
 
     if (USE_IMAGINE) {
-      // Generate a random idle video via xAI
       const prompt = AgentManager.randomIdle();
       generateVideo(prompt)
         .then((url) => {
@@ -156,24 +158,8 @@ export class AgentManager extends EventEmitter {
             })
             .catch(() => {});
         });
-    } else {
-      // Use stock video
-      card.videoUrl = nextStockVideo();
-      this.emit("update", card);
     }
 
-    return card;
-  }
-
-  createAgentWithSuggestion(suggestion: AgentSuggestion): AgentCard {
-    const card = this.createAgent();
-    // Attach suggestion as context - user decides whether to act on it
-    card.suggestion = {
-      reason: suggestion.reason,
-      category: suggestion.category,
-      score: suggestion.score,
-    };
-    this.emit("update", card);
     return card;
   }
 
