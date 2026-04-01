@@ -647,27 +647,24 @@ export function MapViewport() {
             return;
           }
 
-          // Single drop: find threads in the drop zone (within a radius)
-          const dropRadius = 200 / cam.zoom; // generous drop radius scaled by zoom
-          const threadArray = [...useThreadStore.getState().threads.values()];
-          const nearbyThreads = threadArray.filter((t) => {
-            const dist = Math.hypot(t.position.x - mapPos.x, t.position.y - mapPos.y);
-            return dist < dropRadius;
-          });
+          // Single drop: per Spec 11 Section 10, only clusters are valid deployment targets
+          const dropCluster = hitTestCluster(
+            clustersRef.current,
+            mapPos.x,
+            mapPos.y,
+            200 / cam.zoom,
+          );
 
-          const zoneId = getZoneAtPosition(zonesRef.current, mapPos.x, mapPos.y);
-
-          if (nearbyThreads.length > 0) {
-            // Valid drop: threads found nearby
-            const threadIds = nearbyThreads.slice(0, def.capacity).map((t) => t.id);
+          if (dropCluster) {
+            const clusterThreadIds = dropCluster.memberThreadIds.slice(0, def.capacity);
             useDeploymentStore.getState().showConfirmation({
               agentRole: deployDrag.draggingRole,
-              clusterId: `zone-${zoneId}`,
-              threadIds,
-              description: `${def.name}: ${def.description.toLowerCase()} (${threadIds.length} thread${threadIds.length !== 1 ? "s" : ""} in ${zoneId})`,
+              clusterId: dropCluster.id,
+              threadIds: clusterThreadIds,
+              description: `${def.name}: ${def.description.toLowerCase()} (${clusterThreadIds.length} thread${clusterThreadIds.length !== 1 ? "s" : ""} in ${dropCluster.label || "cluster"})`,
             });
           } else {
-            // Invalid drop: no threads nearby, cancel
+            // Invalid drop: no cluster at drop position, cancel
             useDeploymentStore.getState().cancelDrag();
           }
         } else {
@@ -1012,21 +1009,16 @@ export function MapViewport() {
         const agentStore = useAgentStore.getState();
         if (agentStore.canDeployRole(quickDeployRole)) {
           const cam = renderer.getCameraState();
-          const threadArray = [...useThreadStore.getState().threads.values()];
-          const dropRadius = 400 / cam.zoom;
-          const nearbyThreads = threadArray.filter((t) => {
-            const dist = Math.hypot(t.position.x - cam.x, t.position.y - cam.y);
-            return dist < dropRadius;
-          });
-          if (nearbyThreads.length > 0) {
+          // Per Spec 11 Section 10: only clusters are valid deployment targets
+          const nearCluster = hitTestCluster(clustersRef.current, cam.x, cam.y, 400 / cam.zoom);
+          if (nearCluster) {
             const def = AGENT_DEFINITIONS[quickDeployRole];
-            const zId = getZoneAtPosition(zonesRef.current, cam.x, cam.y);
-            const threadIds = nearbyThreads.slice(0, def.capacity).map((t) => t.id);
+            const clusterThreadIds = nearCluster.memberThreadIds.slice(0, def.capacity);
             useDeploymentStore.getState().showConfirmation({
               agentRole: quickDeployRole,
-              clusterId: `zone-${zId}`,
-              threadIds,
-              description: `${def.name}: ${def.description.toLowerCase()} (${threadIds.length} thread${threadIds.length !== 1 ? "s" : ""} in ${zId})`,
+              clusterId: nearCluster.id,
+              threadIds: clusterThreadIds,
+              description: `${def.name}: ${def.description.toLowerCase()} (${clusterThreadIds.length} thread${clusterThreadIds.length !== 1 ? "s" : ""} in ${nearCluster.label || "cluster"})`,
             });
           }
         }
@@ -1108,22 +1100,9 @@ export function MapViewport() {
       return;
     }
 
-    // Hit-test individual threads
-    const threadArray = [...useThreadStore.getState().threads.values()];
-    const hitId = hitTestThread(threadArray, mapPos.x, mapPos.y);
-    if (hitId) {
-      const zoneId = getZoneAtPosition(zonesRef.current, mapPos.x, mapPos.y);
-      setContextMenu({
-        x: e.clientX,
-        y: e.clientY,
-        threadIds: [hitId],
-        clusterId: `zone-${zoneId}`,
-        zoneId,
-      });
-      return;
-    }
-
-    // No target hit - close any existing menu
+    // Per Spec 11 Section 10: only clusters are valid deployment targets,
+    // so context menu (which is for agent deployment) only appears on cluster hits
+    // Individual unassigned threads are not deployable
     setContextMenu(null);
   }, []);
 
