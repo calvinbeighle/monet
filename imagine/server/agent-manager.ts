@@ -172,6 +172,17 @@ export class AgentManager extends EventEmitter {
     return card;
   }
 
+  createAgentWithSuggestion(suggestion: {
+    reason: string;
+    category: string;
+    score: number;
+  }): AgentCard {
+    const card = this.createAgent();
+    // Show prediction hint on idle card - user still types their own instruction
+    card.summary = suggestion.reason;
+    return card;
+  }
+
   getAll(): AgentCard[] {
     return Array.from(this.agents.values()).map((a) => a.card);
   }
