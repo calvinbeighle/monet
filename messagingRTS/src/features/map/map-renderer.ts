@@ -194,10 +194,14 @@ export class MapRenderer {
       this.zoomBounceEdge = "max";
     }
 
-    // Anchor zoom to cursor position
-    const zoomRatio = this.cameraZoom / oldZoom;
-    this.cameraX = anchorX - (anchorX - this.cameraX) * zoomRatio;
-    this.cameraY = anchorY - (anchorY - this.cameraY) * zoomRatio;
+    // Anchor zoom to cursor position per Spec 08: map point under cursor stays fixed
+    // anchorX/Y are screen-space; convert to map-space before and after zoom
+    const sw = this.app?.screen.width ?? 1920;
+    const sh = this.app?.screen.height ?? 1080;
+    const mapAnchorX = (anchorX - sw / 2) / oldZoom + this.cameraX;
+    const mapAnchorY = (anchorY - sh / 2) / oldZoom + this.cameraY;
+    this.cameraX = mapAnchorX - (anchorX - sw / 2) / this.cameraZoom;
+    this.cameraY = mapAnchorY - (anchorY - sh / 2) / this.cameraZoom;
 
     if (this.app) {
       this.updateCamera(this.app.stage.children[0] as Container);

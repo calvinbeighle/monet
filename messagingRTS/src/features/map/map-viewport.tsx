@@ -766,6 +766,20 @@ export function MapViewport() {
           }
         }
       } else {
+        // At strategic zoom, try hitting cluster aggregate dots per Spec 08 Section 9
+        if (cam.level === "strategic") {
+          const hitCluster = hitTestCluster(clustersRef.current, mapPos.x, mapPos.y);
+          if (hitCluster) {
+            useNavigationStore.getState().saveCameraHistory();
+            renderer.animateTo(
+              hitCluster.centroid.x,
+              hitCluster.centroid.y,
+              getCanonicalZoom("tactical"),
+            );
+            return;
+          }
+        }
+
         // Click empty space -> clear selection per Spec 08
         selectThread(null);
         useNavigationStore.getState().closeDetailPanel();

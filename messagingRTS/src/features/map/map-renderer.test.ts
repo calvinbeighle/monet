@@ -115,6 +115,35 @@ describe("Viewport culling bounds computation", () => {
     expect(renderer.getCameraState().zoom).toBe(2.0); // clamped to max
   });
 
+  it("zoom anchors correctly to cursor position per Spec 08", () => {
+    const renderer = new MapRenderer();
+    // Camera at origin, zoom 1.0
+    renderer.setCamera(0, 0, 1.0);
+    // Zoom in at screen center (960, 540 for default 1920x1080)
+    // Zooming at center should not move camera position
+    renderer.zoom(1.5, 960, 540);
+    const state = renderer.getCameraState();
+    expect(state.x).toBeCloseTo(0, 1);
+    expect(state.y).toBeCloseTo(0, 1);
+    expect(state.zoom).toBe(1.5);
+  });
+
+  it("zoom at off-center cursor preserves map point under cursor", () => {
+    const renderer = new MapRenderer();
+    // Camera at (500, 300), zoom 0.5
+    renderer.setCamera(500, 300, 0.5);
+    // Screen default 1920x1080, anchor at top-left corner (0, 0)
+    // Map point at screen (0,0): mapX = (0 - 960) / 0.5 + 500 = -1920 + 500 = -1420
+    // After zoom to 0.75: cameraX = -1420 - (0 - 960) / 0.75 = -1420 + 1280 = -140
+    renderer.zoom(1.5, 0, 0); // factor 1.5 -> 0.5 * 1.5 = 0.75
+    const state = renderer.getCameraState();
+    expect(state.zoom).toBe(0.75);
+    // Verify the map point that was at screen (0,0) is still at screen (0,0)
+    // mapX at screen(0,0) = (0 - 960) / 0.75 + cameraX
+    const mapX = (0 - 960) / 0.75 + state.x;
+    expect(mapX).toBeCloseTo(-1420, 0);
+  });
+
   it("camera state is preserved after setCamera", () => {
     const renderer = new MapRenderer();
     renderer.setCamera(500, -300, 1.0);
