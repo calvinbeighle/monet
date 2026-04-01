@@ -52,6 +52,7 @@ function setupCompletedAgent() {
         startedAt: Date.now() - 5000,
         completedAt: Date.now(),
         recalledAt: null,
+        batchId: null,
       },
     ],
   });

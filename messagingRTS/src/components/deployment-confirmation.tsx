@@ -1,72 +1,116 @@
 // Deployment confirmation dialog per Spec 06
 // Shows agent role, description, thread count. Confirm deploys, cancel snaps agent back.
+// Batch mode (Spec 06 Section 11): shows list of target clusters and total thread count.
 // On confirm: deploys agent, travel animation, then AI backend processes threads.
+// Batch confirm creates one independent deployment record per cluster.
 
-import { AGENT_DEFINITIONS } from "../lib/types";
+import { AGENT_DEFINITIONS, type AgentRole } from "../lib/types";
 import { useDeploymentStore } from "../lib/stores/deployment-store";
 import { useAgentStore } from "../lib/stores/agent-store";
 import { useThreadStore } from "../lib/stores/thread-store";
 import { processAgentWork } from "../features/agents/ai-backend";
 
+// Shared logic: after travel delay, start AI work and complete/fail deployment records
+function startAgentWorkPhase(
+  agentRole: AgentRole,
+  allThreadIds: string[],
+  deploymentIds: string[],
+) {
+  const { startWork, completeDeployment, failDeployment } = useDeploymentStore.getState();
+
+  // Check agent is still deployed (not recalled during travel)
+  const currentAgent = useAgentStore.getState().getAgent(agentRole);
+  if (currentAgent.status !== "deployed") return;
+
+  useAgentStore.getState().startWork(agentRole);
+  for (const did of deploymentIds) {
+    startWork(did);
+  }
+
+  // Resolve thread objects for AI context
+  const threadStore = useThreadStore.getState();
+  const threads = allThreadIds
+    .map((id) => threadStore.getThread(id))
+    .filter((t) => t !== undefined);
+
+  // Process via AI backend (falls back to simulation if no API key)
+  processAgentWork(agentRole, allThreadIds, threads)
+    .then((result) => {
+      const workingAgent = useAgentStore.getState().getAgent(agentRole);
+      if (workingAgent.status !== "working") return;
+
+      if (result.errors.length > 0) {
+        console.warn(`[DeploymentConfirmation] ${agentRole} errors:`, result.errors);
+      }
+      if (result.source === "simulated") {
+        console.info(`[DeploymentConfirmation] ${agentRole} used simulated proposals`);
+      }
+
+      useAgentStore.getState().complete(agentRole, result.proposals);
+      for (const did of deploymentIds) {
+        completeDeployment(did);
+      }
+    })
+    .catch((err) => {
+      console.error(`[DeploymentConfirmation] ${agentRole} fatal error:`, err);
+      useAgentStore.getState().fail(agentRole);
+      for (const did of deploymentIds) {
+        failDeployment(did);
+      }
+    });
+}
+
 export function DeploymentConfirmation() {
   const confirmation = useDeploymentStore((s) => s.confirmation);
   const confirmDeployment = useDeploymentStore((s) => s.confirmDeployment);
+  const confirmBatchDeployment = useDeploymentStore((s) => s.confirmBatchDeployment);
   const cancelConfirmation = useDeploymentStore((s) => s.cancelConfirmation);
   const startTravel = useDeploymentStore((s) => s.startTravel);
-  const startWork = useDeploymentStore((s) => s.startWork);
-  const completeDeployment = useDeploymentStore((s) => s.completeDeployment);
-  const failDeployment = useDeploymentStore((s) => s.failDeployment);
 
   if (!confirmation) return null;
 
   const def = AGENT_DEFINITIONS[confirmation.agentRole];
   const colorHex = `#${def.color.toString(16).padStart(6, "0")}`;
+  const isBatch = confirmation.batchTargets && confirmation.batchTargets.length > 0;
+  const totalThreads = confirmation.threadIds.length;
 
   const handleConfirm = () => {
-    const record = confirmDeployment();
-    if (!record) return;
+    if (isBatch) {
+      // Batch deployment: create one record per cluster (Spec 06 Section 11)
+      const records = confirmBatchDeployment();
+      if (records.length === 0) return;
 
-    const agentStore = useAgentStore.getState();
-    agentStore.deploy(record.agentRole, record.clusterId, record.threadIds);
+      // Deploy agent with all threadIds across all clusters
+      const allThreadIds = records.flatMap((r) => r.threadIds);
+      const agentStore = useAgentStore.getState();
+      agentStore.deploy(records[0].agentRole, records[0].clusterId, allThreadIds);
 
-    // Travel phase (1.5s), then AI work phase
-    startTravel(record.id);
-    setTimeout(() => {
-      // Check agent is still deployed (not recalled during travel)
-      const currentAgent = useAgentStore.getState().getAgent(record.agentRole);
-      if (currentAgent.status !== "deployed") return;
+      // Staggered travel: each record starts travel with 300ms offset
+      const deploymentIds = records.map((r) => r.id);
+      records.forEach((record, i) => {
+        setTimeout(() => {
+          startTravel(record.id);
+        }, i * 300);
+      });
 
-      useAgentStore.getState().startWork(record.agentRole);
-      startWork(record.id);
+      // After all travel animations complete, start work phase
+      const travelDuration = 1500 + (records.length - 1) * 300;
+      setTimeout(() => {
+        startAgentWorkPhase(records[0].agentRole, allThreadIds, deploymentIds);
+      }, travelDuration);
+    } else {
+      // Single deployment (existing behavior)
+      const record = confirmDeployment();
+      if (!record) return;
 
-      // Resolve thread objects for AI context
-      const threadStore = useThreadStore.getState();
-      const threads = record.threadIds
-        .map((id) => threadStore.getThread(id))
-        .filter((t) => t !== undefined);
+      const agentStore = useAgentStore.getState();
+      agentStore.deploy(record.agentRole, record.clusterId, record.threadIds);
 
-      // Process via AI backend (falls back to simulation if no API key)
-      processAgentWork(record.agentRole, record.threadIds, threads)
-        .then((result) => {
-          const workingAgent = useAgentStore.getState().getAgent(record.agentRole);
-          if (workingAgent.status !== "working") return;
-
-          if (result.errors.length > 0) {
-            console.warn(`[DeploymentConfirmation] ${record.agentRole} errors:`, result.errors);
-          }
-          if (result.source === "simulated") {
-            console.info(`[DeploymentConfirmation] ${record.agentRole} used simulated proposals`);
-          }
-
-          useAgentStore.getState().complete(record.agentRole, result.proposals);
-          completeDeployment(record.id);
-        })
-        .catch((err) => {
-          console.error(`[DeploymentConfirmation] ${record.agentRole} fatal error:`, err);
-          useAgentStore.getState().fail(record.agentRole);
-          failDeployment(record.id);
-        });
-    }, 1500);
+      startTravel(record.id);
+      setTimeout(() => {
+        startAgentWorkPhase(record.agentRole, record.threadIds, [record.id]);
+      }, 1500);
+    }
   };
 
   return (
@@ -84,14 +128,46 @@ export function DeploymentConfirmation() {
         <div className="mb-4 flex items-center gap-3">
           <div className="h-4 w-4 rounded-full" style={{ backgroundColor: colorHex }} />
           <h3 className="text-sm font-medium text-gray-200">Deploy {def.name}</h3>
+          {isBatch && (
+            <span
+              className="rounded bg-blue-900/50 px-1.5 py-0.5 text-[10px] text-blue-300"
+              data-testid="batch-badge"
+            >
+              Batch
+            </span>
+          )}
         </div>
 
         <p className="mb-3 text-xs text-gray-400">{confirmation.description}</p>
 
+        {/* Batch target list per Spec 06 Section 11 */}
+        {isBatch && confirmation.batchTargets && (
+          <div className="mb-3 space-y-1" data-testid="batch-target-list">
+            {confirmation.batchTargets.map((target) => (
+              <div
+                key={target.clusterId}
+                className="flex items-center justify-between rounded bg-[#0e0e1a] px-2 py-1 text-xs"
+                data-testid={`batch-target-${target.clusterId}`}
+              >
+                <span className="text-gray-400">{target.label}</span>
+                <span className="text-gray-500">
+                  {target.threadIds.length} thread{target.threadIds.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="mb-4 flex items-center gap-4 text-xs text-gray-500">
           <span>
-            {confirmation.threadIds.length} thread{confirmation.threadIds.length !== 1 ? "s" : ""}
+            {totalThreads} thread{totalThreads !== 1 ? "s" : ""} total
           </span>
+          {isBatch && (
+            <span>
+              {confirmation.batchTargets!.length} cluster
+              {confirmation.batchTargets!.length !== 1 ? "s" : ""}
+            </span>
+          )}
           <span>Capacity: {def.capacity}</span>
         </div>
 

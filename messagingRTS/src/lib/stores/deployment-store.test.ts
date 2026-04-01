@@ -1,5 +1,6 @@
 // Deployment store tests per Spec 06
-// Verifies: drag state, confirmation flow, deployment lifecycle, recall, queries
+// Verifies: drag state, confirmation flow, deployment lifecycle, recall, queries,
+// batch deployment (Spec 06 Section 11), cluster selection
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { useDeploymentStore } from "./deployment-store";
@@ -11,6 +12,7 @@ describe("DeploymentStore", () => {
       confirmation: null,
       deployments: [],
       activeDeploymentId: null,
+      selectedClusterIds: [],
     });
   });
 
@@ -79,7 +81,7 @@ describe("DeploymentStore", () => {
       expect(useDeploymentStore.getState().confirmation).toBeNull();
     });
 
-    it("confirms deployment and creates record", () => {
+    it("confirms deployment and creates record with null batchId", () => {
       useDeploymentStore.getState().showConfirmation({
         agentRole: "scheduler",
         clusterId: "c1",
@@ -93,6 +95,7 @@ describe("DeploymentStore", () => {
       expect(record!.clusterId).toBe("c1");
       expect(record!.threadIds).toEqual(["t1", "t2", "t3"]);
       expect(record!.status).toBe("confirming");
+      expect(record!.batchId).toBeNull();
 
       // Confirmation cleared
       expect(useDeploymentStore.getState().confirmation).toBeNull();
@@ -231,6 +234,223 @@ describe("DeploymentStore", () => {
       useDeploymentStore.getState().confirmDeployment();
 
       expect(useDeploymentStore.getState().getDeploymentHistory().length).toBe(2);
+    });
+  });
+
+  // Batch deployment tests per Spec 06 Section 11
+  describe("cluster selection", () => {
+    it("toggles cluster selection on and off", () => {
+      useDeploymentStore.getState().toggleClusterSelection("c1");
+      expect(useDeploymentStore.getState().selectedClusterIds).toEqual(["c1"]);
+
+      useDeploymentStore.getState().toggleClusterSelection("c2");
+      expect(useDeploymentStore.getState().selectedClusterIds).toEqual(["c1", "c2"]);
+
+      // Toggle c1 off
+      useDeploymentStore.getState().toggleClusterSelection("c1");
+      expect(useDeploymentStore.getState().selectedClusterIds).toEqual(["c2"]);
+    });
+
+    it("clears all cluster selections", () => {
+      useDeploymentStore.getState().toggleClusterSelection("c1");
+      useDeploymentStore.getState().toggleClusterSelection("c2");
+      useDeploymentStore.getState().toggleClusterSelection("c3");
+      expect(useDeploymentStore.getState().selectedClusterIds.length).toBe(3);
+
+      useDeploymentStore.getState().clearClusterSelection();
+      expect(useDeploymentStore.getState().selectedClusterIds).toEqual([]);
+    });
+  });
+
+  describe("batch deployment", () => {
+    it("creates one independent record per cluster with shared batchId", () => {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "cleaner",
+        clusterId: "batch",
+        threadIds: ["t1", "t2", "t3", "t4"],
+        description: "Clean across 2 clusters",
+        batchTargets: [
+          { clusterId: "c1", threadIds: ["t1", "t2"], label: "Cluster A" },
+          { clusterId: "c2", threadIds: ["t3", "t4"], label: "Cluster B" },
+        ],
+      });
+
+      const records = useDeploymentStore.getState().confirmBatchDeployment();
+      expect(records.length).toBe(2);
+
+      // Each record has independent identity and cluster
+      expect(records[0].clusterId).toBe("c1");
+      expect(records[0].threadIds).toEqual(["t1", "t2"]);
+      expect(records[1].clusterId).toBe("c2");
+      expect(records[1].threadIds).toEqual(["t3", "t4"]);
+
+      // Both share the same batchId
+      expect(records[0].batchId).not.toBeNull();
+      expect(records[0].batchId).toBe(records[1].batchId);
+
+      // Both are in confirming status
+      expect(records[0].status).toBe("confirming");
+      expect(records[1].status).toBe("confirming");
+
+      // All records added to deployments
+      expect(useDeploymentStore.getState().deployments.length).toBe(2);
+
+      // Confirmation cleared
+      expect(useDeploymentStore.getState().confirmation).toBeNull();
+
+      // Cluster selection cleared after batch confirm
+      expect(useDeploymentStore.getState().selectedClusterIds).toEqual([]);
+    });
+
+    it("returns empty array when no batch targets", () => {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "closer",
+        clusterId: "c1",
+        threadIds: ["t1"],
+        description: "Test",
+      });
+      // No batchTargets - confirmBatchDeployment returns empty
+      const records = useDeploymentStore.getState().confirmBatchDeployment();
+      expect(records).toEqual([]);
+    });
+
+    it("returns empty array when no confirmation", () => {
+      const records = useDeploymentStore.getState().confirmBatchDeployment();
+      expect(records).toEqual([]);
+    });
+
+    it("batch records have independent lifecycles", () => {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "researcher",
+        clusterId: "batch",
+        threadIds: ["t1", "t2", "t3"],
+        description: "Research across 3 clusters",
+        batchTargets: [
+          { clusterId: "c1", threadIds: ["t1"], label: "Cluster 1" },
+          { clusterId: "c2", threadIds: ["t2"], label: "Cluster 2" },
+          { clusterId: "c3", threadIds: ["t3"], label: "Cluster 3" },
+        ],
+      });
+
+      const records = useDeploymentStore.getState().confirmBatchDeployment();
+      expect(records.length).toBe(3);
+
+      // Start travel for first two, recall the third
+      useDeploymentStore.getState().startTravel(records[0].id);
+      useDeploymentStore.getState().startTravel(records[1].id);
+      useDeploymentStore.getState().recallDeployment(records[2].id);
+
+      const deployments = useDeploymentStore.getState().deployments;
+      const d0 = deployments.find((d) => d.id === records[0].id)!;
+      const d1 = deployments.find((d) => d.id === records[1].id)!;
+      const d2 = deployments.find((d) => d.id === records[2].id)!;
+
+      expect(d0.status).toBe("traveling");
+      expect(d1.status).toBe("traveling");
+      expect(d2.status).toBe("recalled");
+
+      // Complete first, fail second
+      useDeploymentStore.getState().startWork(records[0].id);
+      useDeploymentStore.getState().completeDeployment(records[0].id);
+      useDeploymentStore.getState().startWork(records[1].id);
+      useDeploymentStore.getState().failDeployment(records[1].id);
+
+      const final = useDeploymentStore.getState().deployments;
+      expect(final.find((d) => d.id === records[0].id)!.status).toBe("completed");
+      expect(final.find((d) => d.id === records[1].id)!.status).toBe("failed");
+      expect(final.find((d) => d.id === records[2].id)!.status).toBe("recalled");
+    });
+
+    it("getBatchDeployments returns all records for a batch", () => {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "drafter",
+        clusterId: "batch",
+        threadIds: ["t1", "t2"],
+        description: "Draft across clusters",
+        batchTargets: [
+          { clusterId: "c1", threadIds: ["t1"], label: "A" },
+          { clusterId: "c2", threadIds: ["t2"], label: "B" },
+        ],
+      });
+
+      const records = useDeploymentStore.getState().confirmBatchDeployment();
+      const batchId = records[0].batchId!;
+
+      const batchRecords = useDeploymentStore.getState().getBatchDeployments(batchId);
+      expect(batchRecords.length).toBe(2);
+      expect(batchRecords.every((r) => r.batchId === batchId)).toBe(true);
+    });
+
+    it("getActiveDeploymentsForRole returns all active batch records", () => {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "closer",
+        clusterId: "batch",
+        threadIds: ["t1", "t2", "t3"],
+        description: "Close across clusters",
+        batchTargets: [
+          { clusterId: "c1", threadIds: ["t1"], label: "A" },
+          { clusterId: "c2", threadIds: ["t2"], label: "B" },
+          { clusterId: "c3", threadIds: ["t3"], label: "C" },
+        ],
+      });
+
+      const records = useDeploymentStore.getState().confirmBatchDeployment();
+
+      // All 3 are active (confirming)
+      let active = useDeploymentStore.getState().getActiveDeploymentsForRole("closer");
+      expect(active.length).toBe(3);
+
+      // Recall one - only 2 remain active
+      useDeploymentStore.getState().recallDeployment(records[0].id);
+      active = useDeploymentStore.getState().getActiveDeploymentsForRole("closer");
+      expect(active.length).toBe(2);
+    });
+
+    it("getCompletedDeploymentsForRole returns all completed batch records", () => {
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "scheduler",
+        clusterId: "batch",
+        threadIds: ["t1", "t2"],
+        description: "Schedule",
+        batchTargets: [
+          { clusterId: "c1", threadIds: ["t1"], label: "A" },
+          { clusterId: "c2", threadIds: ["t2"], label: "B" },
+        ],
+      });
+
+      const records = useDeploymentStore.getState().confirmBatchDeployment();
+
+      // Complete both
+      for (const r of records) {
+        useDeploymentStore.getState().startTravel(r.id);
+        useDeploymentStore.getState().startWork(r.id);
+        useDeploymentStore.getState().completeDeployment(r.id);
+      }
+
+      const completed = useDeploymentStore.getState().getCompletedDeploymentsForRole("scheduler");
+      expect(completed.length).toBe(2);
+    });
+
+    it("shows correct total thread count in batch confirmation", () => {
+      // This verifies the confirmation state carries the right data for the dialog
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: "cleaner",
+        clusterId: "batch",
+        threadIds: ["t1", "t2", "t3", "t4", "t5"],
+        description: "Clean 5 threads across 3 clusters",
+        batchTargets: [
+          { clusterId: "c1", threadIds: ["t1", "t2"], label: "Cluster A" },
+          { clusterId: "c2", threadIds: ["t3"], label: "Cluster B" },
+          { clusterId: "c3", threadIds: ["t4", "t5"], label: "Cluster C" },
+        ],
+      });
+
+      const conf = useDeploymentStore.getState().confirmation!;
+      expect(conf.threadIds.length).toBe(5); // total thread count
+      expect(conf.batchTargets!.length).toBe(3); // cluster count
+      expect(conf.batchTargets![0].threadIds.length).toBe(2);
+      expect(conf.batchTargets![1].threadIds.length).toBe(1);
+      expect(conf.batchTargets![2].threadIds.length).toBe(2);
     });
   });
 });

@@ -28,6 +28,28 @@ import { evaluateAlerts } from "../game-mechanics/map-alerts";
 import { Minimap } from "../../components/minimap";
 import { SearchOverlay } from "../../components/search-overlay";
 import type { ZoneId } from "../../lib/types";
+import type { BatchTarget } from "../../lib/stores/deployment-store";
+
+// Hit-test clusters by checking distance to centroid (Spec 06 Section 11 batch selection)
+function hitTestCluster(
+  clusters: Cluster[],
+  mapX: number,
+  mapY: number,
+  hitRadius: number = 80,
+): Cluster | null {
+  let best: Cluster | null = null;
+  let bestDist = Infinity;
+  for (const cluster of clusters) {
+    const dx = cluster.centroid.x - mapX;
+    const dy = cluster.centroid.y - mapY;
+    const dist = Math.hypot(dx, dy);
+    if (dist < hitRadius && dist < bestDist) {
+      best = cluster;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
 
 // Drift tick interval in ms (fires independently of render per Spec 10)
 const DRIFT_TICK_INTERVAL = 200;
@@ -267,8 +289,47 @@ export function MapViewport() {
           const screenY = e.clientY - rect.top;
           const cam = renderer.getCameraState();
           const mapPos = screenToMap(screenX, screenY, cam, rect.width, rect.height);
+          const def = AGENT_DEFINITIONS[deployDrag.draggingRole];
 
-          // Find threads in the drop zone (within a radius)
+          // Check for pre-selected clusters (Spec 06 Section 11 batch deployment)
+          const selectedClusterIds = useDeploymentStore.getState().selectedClusterIds;
+          if (selectedClusterIds.length > 1) {
+            // Batch deployment mode: deploy to all selected clusters
+            const threadArray = [...useThreadStore.getState().threads.values()];
+            const threadMap = new Map(threadArray.map((t) => [t.id, t]));
+            const batchTargets: BatchTarget[] = [];
+            const allThreadIds: string[] = [];
+
+            for (const clusterId of selectedClusterIds) {
+              const cluster = clustersRef.current.find((c) => c.id === clusterId);
+              if (!cluster) continue;
+              const clusterThreadIds = cluster.memberThreadIds
+                .filter((tid) => threadMap.has(tid))
+                .slice(0, def.capacity);
+              if (clusterThreadIds.length === 0) continue;
+              batchTargets.push({
+                clusterId: cluster.id,
+                threadIds: clusterThreadIds,
+                label: cluster.label,
+              });
+              allThreadIds.push(...clusterThreadIds);
+            }
+
+            if (batchTargets.length > 0) {
+              useDeploymentStore.getState().showConfirmation({
+                agentRole: deployDrag.draggingRole,
+                clusterId: "batch",
+                threadIds: allThreadIds,
+                description: `${def.name}: ${def.description.toLowerCase()} across ${batchTargets.length} clusters`,
+                batchTargets,
+              });
+            } else {
+              useDeploymentStore.getState().cancelDrag();
+            }
+            return;
+          }
+
+          // Single drop: find threads in the drop zone (within a radius)
           const dropRadius = 200 / cam.zoom; // generous drop radius scaled by zoom
           const threadArray = [...useThreadStore.getState().threads.values()];
           const nearbyThreads = threadArray.filter((t) => {
@@ -277,7 +338,6 @@ export function MapViewport() {
           });
 
           const zoneId = getZoneAtPosition(zonesRef.current, mapPos.x, mapPos.y);
-          const def = AGENT_DEFINITIONS[deployDrag.draggingRole];
 
           if (nearbyThreads.length > 0) {
             // Valid drop: threads found nearby
@@ -310,6 +370,20 @@ export function MapViewport() {
       const screenY = e.clientY - rect.top;
       const cam = renderer.getCameraState();
       const mapPos = screenToMap(screenX, screenY, cam, rect.width, rect.height);
+
+      // Ctrl+click cluster selection for batch deployment (Spec 06 Section 11)
+      if (e.ctrlKey || e.metaKey) {
+        const hitCluster = hitTestCluster(clustersRef.current, mapPos.x, mapPos.y, 120 / cam.zoom);
+        if (hitCluster) {
+          useDeploymentStore.getState().toggleClusterSelection(hitCluster.id);
+          return;
+        }
+      }
+
+      // Clear cluster selection on non-Ctrl clicks
+      if (useDeploymentStore.getState().selectedClusterIds.length > 0) {
+        useDeploymentStore.getState().clearClusterSelection();
+      }
 
       const threadArray = [...useThreadStore.getState().threads.values()];
       const hitId = hitTestThread(threadArray, mapPos.x, mapPos.y);

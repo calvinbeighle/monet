@@ -1,5 +1,6 @@
 // Deployment interaction store per Spec 06
-// Manages drag-to-deploy state, deployment records, and confirmation dialog
+// Manages drag-to-deploy state, deployment records, confirmation dialog, and batch deployment
+// Batch deployment (Spec 06 Section 11): multi-cluster selection creates independent records per cluster
 
 import { create } from "zustand";
 import type { AgentRole } from "../types";
@@ -22,6 +23,8 @@ export interface DeploymentRecord {
   startedAt: number;
   completedAt: number | null;
   recalledAt: number | null;
+  // Batch deployment: links records from the same batch operation
+  batchId: string | null;
 }
 
 export interface DragState {
@@ -35,11 +38,21 @@ export interface DragState {
   dropValid: boolean;
 }
 
+// Per-cluster target within a batch deployment
+export interface BatchTarget {
+  clusterId: string;
+  threadIds: string[];
+  label: string;
+}
+
 export interface ConfirmationState {
   agentRole: AgentRole;
   clusterId: string;
   threadIds: string[];
   description: string;
+  // Batch deployment targets (Spec 06 Section 11)
+  // When present, this is a batch deployment across multiple clusters
+  batchTargets?: BatchTarget[];
 }
 
 interface DeploymentStore {
@@ -47,6 +60,8 @@ interface DeploymentStore {
   confirmation: ConfirmationState | null;
   deployments: DeploymentRecord[];
   activeDeploymentId: string | null;
+  // Multi-cluster selection for batch deployment (Spec 06 Section 11)
+  selectedClusterIds: string[];
 
   // Drag actions
   startDrag: (role: AgentRole, screenX: number, screenY: number) => void;
@@ -54,10 +69,16 @@ interface DeploymentStore {
   setDragTarget: (clusterId: string | null, zoneId: string | null, valid: boolean) => void;
   cancelDrag: () => void;
 
+  // Cluster selection for batch deployment
+  toggleClusterSelection: (clusterId: string) => void;
+  clearClusterSelection: () => void;
+
   // Confirmation actions
   showConfirmation: (state: ConfirmationState) => void;
   cancelConfirmation: () => void;
   confirmDeployment: () => DeploymentRecord | null;
+  // Batch deployment: creates one record per cluster, returns all records
+  confirmBatchDeployment: () => DeploymentRecord[];
 
   // Deployment lifecycle
   startTravel: (deploymentId: string) => void;
@@ -71,17 +92,22 @@ interface DeploymentStore {
 
   // Queries
   getActiveDeploymentForRole: (role: AgentRole) => DeploymentRecord | undefined;
+  getActiveDeploymentsForRole: (role: AgentRole) => DeploymentRecord[];
   getCompletedDeploymentForRole: (role: AgentRole) => DeploymentRecord | undefined;
+  getCompletedDeploymentsForRole: (role: AgentRole) => DeploymentRecord[];
   getDeploymentHistory: () => DeploymentRecord[];
+  getBatchDeployments: (batchId: string) => DeploymentRecord[];
 }
 
 let deploymentCounter = 0;
+let batchCounter = 0;
 
 export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
   dragState: null,
   confirmation: null,
   deployments: [],
   activeDeploymentId: null,
+  selectedClusterIds: [],
 
   startDrag: (role, screenX, screenY) =>
     set({
@@ -116,6 +142,19 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
 
   cancelDrag: () => set({ dragState: null }),
 
+  // Cluster selection for batch deployment (Spec 06 Section 11)
+  toggleClusterSelection: (clusterId) =>
+    set((state) => {
+      const exists = state.selectedClusterIds.includes(clusterId);
+      return {
+        selectedClusterIds: exists
+          ? state.selectedClusterIds.filter((id) => id !== clusterId)
+          : [...state.selectedClusterIds, clusterId],
+      };
+    }),
+
+  clearClusterSelection: () => set({ selectedClusterIds: [] }),
+
   showConfirmation: (confirmation) => set({ confirmation, dragState: null }),
 
   cancelConfirmation: () => set({ confirmation: null }),
@@ -133,6 +172,7 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
       startedAt: Date.now(),
       completedAt: null,
       recalledAt: null,
+      batchId: null,
     };
 
     set((state) => ({
@@ -142,6 +182,37 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
     }));
 
     return record;
+  },
+
+  // Batch deployment: creates one independent record per cluster (Spec 06 Section 11)
+  confirmBatchDeployment: () => {
+    const { confirmation } = get();
+    if (!confirmation || !confirmation.batchTargets || confirmation.batchTargets.length === 0) {
+      return [];
+    }
+
+    const bId = `batch-${++batchCounter}`;
+    const now = Date.now();
+    const records: DeploymentRecord[] = confirmation.batchTargets.map((target) => ({
+      id: `deploy-${++deploymentCounter}`,
+      agentRole: confirmation.agentRole,
+      clusterId: target.clusterId,
+      threadIds: target.threadIds,
+      status: "confirming" as const,
+      startedAt: now,
+      completedAt: null,
+      recalledAt: null,
+      batchId: bId,
+    }));
+
+    set((state) => ({
+      confirmation: null,
+      selectedClusterIds: [],
+      deployments: [...records, ...state.deployments],
+      activeDeploymentId: records[0]?.id ?? null,
+    }));
+
+    return records;
   },
 
   startTravel: (deploymentId) =>
@@ -202,9 +273,25 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
     );
   },
 
+  getActiveDeploymentsForRole: (role) => {
+    return get().deployments.filter(
+      (d) =>
+        d.agentRole === role &&
+        (d.status === "confirming" || d.status === "traveling" || d.status === "in-progress"),
+    );
+  },
+
   getCompletedDeploymentForRole: (role) => {
     return get().deployments.find((d) => d.agentRole === role && d.status === "completed");
   },
 
+  getCompletedDeploymentsForRole: (role) => {
+    return get().deployments.filter((d) => d.agentRole === role && d.status === "completed");
+  },
+
   getDeploymentHistory: () => get().deployments,
+
+  getBatchDeployments: (batchId) => {
+    return get().deployments.filter((d) => d.batchId === batchId);
+  },
 }));

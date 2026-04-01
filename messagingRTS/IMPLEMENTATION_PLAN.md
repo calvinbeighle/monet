@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 689 tests passing. Tags through v0.7.0. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and all core systems implemented. 702 tests passing. Tags through v0.7.1. Build, typecheck, lint all clean.
 
 **Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
-2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (drag-to-deploy, confirmation, recall, quick-deploy).
+2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (complete - drag-to-deploy, confirmation, recall, quick-deploy, batch deployment).
 
-**Next priorities**: 4.3 Batch deployment (multi-cluster selection), then cross-cutting concerns (filter system, batch operations).
+**Next priorities**: Cross-cutting concerns (filter system, batch operations, accessibility, performance optimization, responsive layout).
 
 ---
 
@@ -307,7 +307,7 @@ These must be resolved before implementation begins:
 - [x] In-progress: progress indicator on cluster, agent icon anchored
 - [x] Results overlay: actionable approve/reject per proposal, no auto-dismiss
 - [x] Recall: cancel traveling/in-progress deployment, agent returns to idle (no cooldown)
-- [ ] Batch deployment: multi-cluster selection, independent records per cluster
+- [x] Batch deployment: multi-cluster selection, independent records per cluster
 - [x] Deployment history panel: reverse-chronological log, filter by role/status
 - [x] Quick-deploy: right-click context menu, keyboard shortcuts per agent type
 - [x] **Spec**: 06-agent-deployment
@@ -471,3 +471,12 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - 1.3 Thread Data Model complete: Real IndexedDB persistence tests via fake-indexeddb (round-trip, bulk persist, zone index query, delete, count, thread removal reconciliation when deleted from Gmail). Merge-on-reload edge cases (empty array overwrite, falsy-but-not-nullish boolean). Thread store transitionState now guards against invalid transitions using isValidTransition. Multi-step state history accumulation tested (5-step lifecycle new->active->waiting->at-risk->lost->handled).
 - 2.2 Performance optimizations for 500+ entities: Viewport culling (AABB from camera state, entities outside bounds hidden not destroyed), object pooling (Graphics/Text recycled via free list instead of destroy/recreate), dirty flagging (skip redraw for low-urgency threads with unchanged position/scores/visual state). Search mode bypasses culling to preserve dimming effect. Performance benchmark tests verify culling math, dirty flag behavior, and pool mechanics.
 - Test count: 689 total (25 new: 15 persistence, 3 thread-store, 7 map-renderer performance), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Batch Deployment (2026-03-31)
+
+- Batch deployment (Spec 06 Section 11): Multi-cluster selection and independent deployment records per cluster. Ctrl+click (or Cmd+click on macOS) on cluster centroids to toggle selection. When an agent is dragged with 2+ clusters selected, a batch confirmation dialog appears showing all target clusters, per-cluster thread counts, and total thread count. Confirming creates one independent DeploymentRecord per cluster, all sharing a batchId.
+- deployment-store.ts: Added selectedClusterIds state, toggleClusterSelection/clearClusterSelection actions, confirmBatchDeployment (creates N records with shared batchId), getActiveDeploymentsForRole/getCompletedDeploymentsForRole (plural versions for batch), getBatchDeployments query. DeploymentRecord gains batchId field (null for single deployments).
+- deployment-confirmation.tsx: Refactored to shared startAgentWorkPhase helper for both single and batch paths. Batch confirm creates staggered travel animations (300ms offset per cluster), then runs a single processAgentWork call with all threadIds. All deployment records complete/fail together.
+- map-viewport.tsx: Added hitTestCluster function (distance to centroid). Ctrl+click toggles cluster selection. Agent drop with pre-selected clusters builds BatchTarget array and shows batch confirmation. Non-Ctrl clicks clear cluster selection.
+- ConfirmationState extended with optional batchTargets: Array<BatchTarget> for batch mode. Dialog shows batch badge, cluster list with per-cluster thread counts, total counts.
+- Test count: 702 total (13 new: 8 deployment-store batch, 3 deployment-confirmation batch, 2 cluster selection), all passing. Typecheck and lint clean.
