@@ -21,6 +21,9 @@ interface SyncStore {
   // Action queue for offline operations
   actionQueue: ActionQueueEntry[];
 
+  // Positioning tick per Spec 10
+  lastPositioningTick: number;
+
   // Polling control
   pollIntervalMs: number;
   lookbackDays: number;
@@ -52,6 +55,7 @@ export const useSyncStore = create<SyncStore>((set, get) => ({
 
   actionQueue: [],
 
+  lastPositioningTick: 0,
   pollIntervalMs: 5000, // 5 seconds - spec says within 10 seconds
   lookbackDays: 30,
 

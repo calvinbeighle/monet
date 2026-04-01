@@ -520,4 +520,32 @@ describe("DeploymentStore", () => {
       expect(updated.outcomeSummary).toBe("API rate limit exceeded");
     });
   });
+
+  describe("Snap-back animation per Spec 06", () => {
+    it("cancelDrag creates snap-back animation from current drag position", () => {
+      useDeploymentStore.getState().startDrag("closer", 300, 200);
+      useDeploymentStore.getState().cancelDrag();
+
+      const snap = useDeploymentStore.getState().snapBackAnimation;
+      expect(snap).not.toBeNull();
+      expect(snap!.agentRole).toBe("closer");
+      expect(snap!.fromX).toBe(300);
+      expect(snap!.fromY).toBe(200);
+      expect(snap!.duration).toBe(400);
+    });
+
+    it("clearSnapBack removes snap-back animation", () => {
+      useDeploymentStore.getState().startDrag("closer", 100, 100);
+      useDeploymentStore.getState().cancelDrag();
+      expect(useDeploymentStore.getState().snapBackAnimation).not.toBeNull();
+
+      useDeploymentStore.getState().clearSnapBack();
+      expect(useDeploymentStore.getState().snapBackAnimation).toBeNull();
+    });
+
+    it("cancelDrag without active drag produces null snap-back", () => {
+      useDeploymentStore.getState().cancelDrag();
+      expect(useDeploymentStore.getState().snapBackAnimation).toBeNull();
+    });
+  });
 });

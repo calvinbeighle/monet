@@ -15,6 +15,7 @@ import {
   useDeploymentStore,
   useFilterStore,
 } from "../../lib/stores";
+import { useSyncStore } from "../../lib/stores/sync-store";
 import { getZoneAtPosition } from "./zone-layout";
 import { getVisibleThreads } from "../../lib/stores/filter-store";
 import { AGENT_DEFINITIONS, type AgentRole } from "../../lib/types";
@@ -214,6 +215,9 @@ export function MapViewport() {
       updateZoneSizes(zonesRef.current, counts);
       setZonesSnapshot(new Map(zonesRef.current));
 
+      // Record positioning tick timestamp per Spec 10
+      useSyncStore.setState({ lastPositioningTick: now });
+
       // Run game mechanics tick per Spec 07
       const appState = useAppStore.getState();
       const gameResult = runGameTick(
@@ -407,7 +411,50 @@ export function MapViewport() {
         }
       }
 
-      if (!isDraggingRef.current) return;
+      if (!isDraggingRef.current) {
+        // Agent tooltip detection per Spec 06 Section 8
+        if (!deployDrag) {
+          const renderer = rendererRef.current;
+          const container = containerRef.current;
+          if (renderer && container) {
+            const rect = container.getBoundingClientRect();
+            const screenX = e.clientX - rect.left;
+            const screenY = e.clientY - rect.top;
+            const cam = renderer.getCameraState();
+            const mapPos = screenToMap(screenX, screenY, cam, rect.width, rect.height);
+            const hitCluster = hitTestCluster(
+              clustersRef.current,
+              mapPos.x,
+              mapPos.y,
+              80 / cam.zoom,
+            );
+
+            if (hitCluster) {
+              const deployments = useDeploymentStore.getState().deployments;
+              const activeDeploy = deployments.find(
+                (d) =>
+                  d.clusterId === hitCluster.id &&
+                  (d.status === "in-progress" || d.status === "traveling"),
+              );
+              if (activeDeploy) {
+                setAgentTooltip({
+                  x: e.clientX,
+                  y: e.clientY,
+                  agentRole: activeDeploy.agentRole,
+                  elapsed: Date.now() - activeDeploy.startedAt,
+                  threadCount: activeDeploy.threadIds.length,
+                  deploymentId: activeDeploy.id,
+                });
+              } else {
+                setAgentTooltip(null);
+              }
+            } else {
+              setAgentTooltip(null);
+            }
+          }
+        }
+        return;
+      }
       const dx = e.clientX - lastMouseRef.current.x;
       const dy = e.clientY - lastMouseRef.current.y;
       dragDistanceRef.current += Math.abs(dx) + Math.abs(dy);
@@ -727,6 +774,53 @@ export function MapViewport() {
     }
   }, []);
 
+  // -- Pinch-to-zoom gesture per Spec 08 Section 5 --
+  const pinchRef = useRef<{ startDistance: number; lastDistance: number } | null>(null);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[1].clientX - e.touches[0].clientX;
+      const dy = e.touches[1].clientY - e.touches[0].clientY;
+      const dist = Math.hypot(dx, dy);
+      pinchRef.current = { startDistance: dist, lastDistance: dist };
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      e.preventDefault();
+      const renderer = rendererRef.current;
+      if (!renderer) return;
+
+      const dx = e.touches[1].clientX - e.touches[0].clientX;
+      const dy = e.touches[1].clientY - e.touches[0].clientY;
+      const dist = Math.hypot(dx, dy);
+      const prevLevel = renderer.getCameraState().level;
+
+      // Zoom factor from distance delta, anchored at midpoint per Spec 08
+      const factor = dist / pinchRef.current.lastDistance;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+        renderer.zoom(factor, midX, midY);
+      }
+
+      pinchRef.current.lastDistance = dist;
+
+      const newLevel = renderer.getCameraState().level;
+      if (newLevel !== prevLevel) {
+        useNavigationStore.getState().saveCameraHistory();
+      }
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length < 2) {
+      pinchRef.current = null;
+    }
+  }, []);
+
   // -- Keyboard handlers --
 
   const handleKeyDown = useCallback(
@@ -938,6 +1032,16 @@ export function MapViewport() {
     };
   }, []);
 
+  // -- Agent deployment tooltip per Spec 06 Section 8 --
+  const [agentTooltip, setAgentTooltip] = useState<{
+    x: number;
+    y: number;
+    agentRole: string;
+    elapsed: number;
+    threadCount: number;
+    deploymentId: string;
+  } | null>(null);
+
   // -- Context menu state for right-click agent deploy per Spec 06 --
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -1083,6 +1187,9 @@ export function MapViewport() {
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       onKeyDown={handleKeyDown}
       onContextMenu={handleContextMenu}
     >
@@ -1142,6 +1249,18 @@ export function MapViewport() {
               </button>
             );
           })}
+        </div>
+      )}
+      {/* Agent deployment tooltip per Spec 06 Section 8 */}
+      {agentTooltip && (
+        <div
+          className="pointer-events-none fixed z-50 rounded border border-gray-700 bg-[#14142a] px-3 py-2 text-xs text-gray-300 shadow-xl"
+          style={{ left: agentTooltip.x + 12, top: agentTooltip.y - 8 }}
+          data-testid="agent-deploy-tooltip"
+        >
+          <div className="font-medium text-gray-200">{agentTooltip.agentRole}</div>
+          <div className="text-gray-400">{Math.floor(agentTooltip.elapsed / 1000)}s elapsed</div>
+          <div className="text-gray-400">{agentTooltip.threadCount} threads</div>
         </div>
       )}
       <SearchOverlay

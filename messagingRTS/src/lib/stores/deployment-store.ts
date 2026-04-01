@@ -59,6 +59,15 @@ export interface ConfirmationState {
   batchTargets?: BatchTarget[];
 }
 
+// Snap-back animation state per Spec 06 Sections 4-5
+export interface SnapBackAnimation {
+  agentRole: AgentRole;
+  fromX: number;
+  fromY: number;
+  startTime: number;
+  duration: number; // ms
+}
+
 // Travel arc animation state per Spec 06
 export interface TravelAnimation {
   agentRole: AgentRole;
@@ -80,12 +89,15 @@ interface DeploymentStore {
   selectedClusterIds: string[];
   // Active travel arc animations per Spec 06
   travelAnimations: TravelAnimation[];
+  // Snap-back animation per Spec 06 Sections 4-5
+  snapBackAnimation: SnapBackAnimation | null;
 
   // Drag actions
   startDrag: (role: AgentRole, screenX: number, screenY: number) => void;
   updateDrag: (screenX: number, screenY: number) => void;
   setDragTarget: (clusterId: string | null, zoneId: string | null, valid: boolean) => void;
   cancelDrag: () => void;
+  clearSnapBack: () => void;
 
   // Cluster selection for batch deployment
   toggleClusterSelection: (clusterId: string) => void;
@@ -133,6 +145,7 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
   activeDeploymentId: null,
   selectedClusterIds: [],
   travelAnimations: [],
+  snapBackAnimation: null,
 
   startDrag: (role, screenX, screenY) =>
     set({
@@ -165,7 +178,22 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
       };
     }),
 
-  cancelDrag: () => set({ dragState: null }),
+  cancelDrag: () =>
+    set((state) => {
+      // Trigger snap-back animation per Spec 06 Section 4
+      const snapBack = state.dragState
+        ? {
+            agentRole: state.dragState.draggingRole,
+            fromX: state.dragState.screenX,
+            fromY: state.dragState.screenY,
+            startTime: Date.now(),
+            duration: 400,
+          }
+        : null;
+      return { dragState: null, snapBackAnimation: snapBack };
+    }),
+
+  clearSnapBack: () => set({ snapBackAnimation: null }),
 
   // Cluster selection for batch deployment (Spec 06 Section 11)
   toggleClusterSelection: (clusterId) =>
@@ -182,7 +210,7 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
 
   showConfirmation: (confirmation) => set({ confirmation, dragState: null }),
 
-  cancelConfirmation: () => set({ confirmation: null }),
+  cancelConfirmation: () => set({ confirmation: null, snapBackAnimation: null }),
 
   confirmDeployment: () => {
     const { confirmation } = get();
