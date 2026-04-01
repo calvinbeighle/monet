@@ -67,6 +67,56 @@ export function convertGmailMessage(msg: GmailMessage): ThreadMessage {
 
 // Convert a full Gmail thread detail response into our Thread model.
 // Per Spec 01: derives participants, canonical subject, timestamps, message count, unread status.
+// Contact enrichment per Spec 09: compute response history and relationship score
+// from message sequence within a thread. Runs locally without external API calls.
+function enrichParticipants(
+  participantMap: Map<string, ContactEnrichment>,
+  messages: ThreadMessage[],
+): void {
+  // Count messages per sender and compute response times
+  const msgCountBySender = new Map<string, number>();
+  const responseTimes = new Map<string, number[]>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const senderEmail = extractEmailAddress(messages[i].sender);
+    if (!senderEmail) continue;
+    msgCountBySender.set(senderEmail, (msgCountBySender.get(senderEmail) ?? 0) + 1);
+
+    // Response time: time between this message and the previous one from a different sender
+    if (i > 0) {
+      const prevSender = extractEmailAddress(messages[i - 1].sender);
+      if (prevSender && prevSender !== senderEmail) {
+        const responseTime = messages[i].timestamp - messages[i - 1].timestamp;
+        if (responseTime > 0) {
+          const times = responseTimes.get(senderEmail) ?? [];
+          times.push(responseTime);
+          responseTimes.set(senderEmail, times);
+        }
+      }
+    }
+  }
+
+  // Update each participant's enrichment data
+  for (const [email, enrichment] of participantMap) {
+    const msgCount = msgCountBySender.get(email) ?? 0;
+    const times = responseTimes.get(email) ?? [];
+    const avgResponseTime =
+      times.length > 0 ? times.reduce((sum, t) => sum + t, 0) / times.length : 0;
+    enrichment.responseHistory = {
+      avgResponseTimeMs: avgResponseTime,
+      threadFrequency: msgCount,
+    };
+    // Relationship score: higher when participant is more active and responsive
+    // Score 0-1: weight message participation (0.4) and response speed (0.6)
+    const participationScore = Math.min(1, msgCount / messages.length);
+    const speedScore =
+      avgResponseTime > 0
+        ? Math.max(0, 1 - avgResponseTime / (24 * 60 * 60 * 1000)) // 1.0 = instant, 0.0 = 24h+
+        : 0;
+    enrichment.relationshipScore = participationScore * 0.4 + speedScore * 0.6;
+  }
+}
+
 export function convertGmailThread(detail: GmailThreadDetail): Thread {
   const messages = detail.messages.map(convertGmailMessage);
   const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
@@ -111,6 +161,9 @@ export function convertGmailThread(detail: GmailThreadDetail): Thread {
 
   const now = Date.now();
   const thread = createThread(detail.id, subject, snippet);
+
+  // Contact enrichment per Spec 09: compute response history from message data
+  enrichParticipants(participantMap, sortedMessages);
 
   // Override defaults with actual Gmail data
   thread.participants = [...participantMap.values()];

@@ -112,6 +112,11 @@ export class MapRenderer {
   private zoomBlend = 0; // 0 = fully aggregate, 1 = fully individual
   private lastDeltaSec = 0.016; // frame delta for urgency smoothing
 
+  // Zoom boundary feedback per Spec 02
+  private zoomBounceTime = 0; // time remaining (seconds) for boundary flash
+  private zoomBounceEdge: "min" | "max" | null = null;
+  private zoomBounceGraphics: Graphics | null = null;
+
   async init(options: MapRendererOptions): Promise<void> {
     this.app = new Application();
     await this.app.init({
@@ -177,7 +182,17 @@ export class MapRenderer {
 
   zoom(factor: number, anchorX: number, anchorY: number): void {
     const oldZoom = this.cameraZoom;
-    this.cameraZoom = Math.max(0.1, Math.min(2.0, this.cameraZoom * factor));
+    const unclamped = this.cameraZoom * factor;
+    this.cameraZoom = Math.max(0.1, Math.min(2.0, unclamped));
+
+    // Zoom boundary feedback per Spec 02
+    if (unclamped <= 0.1 && factor < 1) {
+      this.zoomBounceTime = 0.3;
+      this.zoomBounceEdge = "min";
+    } else if (unclamped >= 2.0 && factor > 1) {
+      this.zoomBounceTime = 0.3;
+      this.zoomBounceEdge = "max";
+    }
 
     // Anchor zoom to cursor position
     const zoomRatio = this.cameraZoom / oldZoom;
@@ -227,14 +242,33 @@ export class MapRenderer {
       g.clear();
 
       // Zone fill
-      g.rect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+      const w = b.maxX - b.minX;
+      const h = b.maxY - b.minY;
+      g.rect(b.minX, b.minY, w, h);
       g.fill({ color: zone.colorTint as ColorSource, alpha: 0.3 });
+
+      // Soft boundary membership indicator per Spec 04
+      // Brighter edge strips (40px inward) so threads near boundaries still show zone ownership
+      const edgeSize = Math.min(40, w * 0.1, h * 0.1);
+      const edgeAlpha = 0.12;
+      // Top edge
+      g.rect(b.minX, b.minY, w, edgeSize);
+      g.fill({ color: zone.colorTint as ColorSource, alpha: edgeAlpha });
+      // Bottom edge
+      g.rect(b.minX, b.maxY - edgeSize, w, edgeSize);
+      g.fill({ color: zone.colorTint as ColorSource, alpha: edgeAlpha });
+      // Left edge
+      g.rect(b.minX, b.minY, edgeSize, h);
+      g.fill({ color: zone.colorTint as ColorSource, alpha: edgeAlpha });
+      // Right edge
+      g.rect(b.maxX - edgeSize, b.minY, edgeSize, h);
+      g.fill({ color: zone.colorTint as ColorSource, alpha: edgeAlpha });
 
       // Zone border - alert state changes visual per Spec 04
       const borderWidth = zone.alertState === "active" ? 3 : 2;
       const borderAlpha = zone.alertState === "active" ? 0.8 : 0.5;
       const borderColor = zone.alertState === "active" ? 0xdd3333 : zone.borderColor;
-      g.rect(b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY);
+      g.rect(b.minX, b.minY, w, h);
       g.stroke({ color: borderColor as ColorSource, width: borderWidth, alpha: borderAlpha });
 
       // Zone label
@@ -397,8 +431,9 @@ export class MapRenderer {
         g.alpha = 1.0;
       }
 
-      // Label (only at operational zoom or higher)
-      if (zoomLevel === "operational" || zoomLevel === "detail") {
+      // Label rendering per Spec 02
+      // Operational/detail: full labels; tactical: truncated labels; strategic: hidden
+      if (zoomLevel === "operational" || zoomLevel === "detail" || zoomLevel === "tactical") {
         let label = this.threadLabels.get(thread.id);
         if (!label) {
           label = this.acquireText(this.layers.foreground);
@@ -406,9 +441,17 @@ export class MapRenderer {
         }
 
         const sender = thread.participants[0]?.displayName ?? thread.participants[0]?.email ?? "";
-        label.text = sender ? `${sender}\n${thread.subject}` : thread.subject;
+        if (zoomLevel === "tactical") {
+          // Truncated label at medium zoom per Spec 02
+          const truncName = sender.length > 12 ? sender.slice(0, 12) + "..." : sender;
+          label.text = truncName || thread.subject.slice(0, 12);
+        } else {
+          label.text = sender ? `${sender}\n${thread.subject}` : thread.subject;
+        }
         label.position.set(thread.position.x + r + 4, thread.position.y - 8);
-        label.alpha = alpha * 0.8;
+        // Fade labels in during tactical->operational transition
+        const labelBlend = zoomLevel === "tactical" ? Math.max(0.3, this.zoomBlend) : 1.0;
+        label.alpha = alpha * 0.8 * labelBlend;
         label.visible = true;
       } else {
         const label = this.threadLabels.get(thread.id);
@@ -774,6 +817,12 @@ export class MapRenderer {
     this.lastDeltaSec = deltaSec;
     this.pulseTime += deltaSec;
 
+    // Decay zoom boundary flash per Spec 02
+    if (this.zoomBounceTime > 0) {
+      this.zoomBounceTime = Math.max(0, this.zoomBounceTime - deltaSec);
+      if (this.zoomBounceTime === 0) this.zoomBounceEdge = null;
+    }
+
     // Update zoom density blend factor per Spec 02
     // Blend between aggregate (0) and individual (1) near the tactical/operational threshold (0.6)
     const blendTarget =
@@ -807,6 +856,40 @@ export class MapRenderer {
         this.updateCamera(this.app.stage.children[0] as Container);
       }
     }
+
+    // Zoom boundary flash overlay per Spec 02
+    this.renderZoomBoundaryFlash();
+  }
+
+  private renderZoomBoundaryFlash(): void {
+    if (!this.layers) return;
+    if (this.zoomBounceTime <= 0) {
+      if (this.zoomBounceGraphics) this.zoomBounceGraphics.visible = false;
+      return;
+    }
+    if (!this.zoomBounceGraphics) {
+      this.zoomBounceGraphics = new Graphics();
+      this.layers.overlay.addChild(this.zoomBounceGraphics);
+    }
+    const g = this.zoomBounceGraphics;
+    g.clear();
+    g.visible = true;
+    const flashAlpha = 0.15 * (this.zoomBounceTime / 0.3); // fade out over 300ms
+    const sw = this.app?.screen.width ?? 1920;
+    const sh = this.app?.screen.height ?? 1080;
+    const color = this.zoomBounceEdge === "max" ? 0xffffff : 0x4488cc;
+    // Draw border vignette (4 edge rectangles)
+    const thickness = 4;
+    g.rect(0, 0, sw, thickness).fill({ color: color as ColorSource, alpha: flashAlpha });
+    g.rect(0, sh - thickness, sw, thickness).fill({
+      color: color as ColorSource,
+      alpha: flashAlpha,
+    });
+    g.rect(0, 0, thickness, sh).fill({ color: color as ColorSource, alpha: flashAlpha });
+    g.rect(sw - thickness, 0, thickness, sh).fill({
+      color: color as ColorSource,
+      alpha: flashAlpha,
+    });
   }
 
   getApp(): Application | null {
@@ -819,6 +902,10 @@ export class MapRenderer {
 
   getSmoothedUrgency(threadId: string): number | undefined {
     return this.smoothedUrgency.get(threadId);
+  }
+
+  getZoomBounceState(): { time: number; edge: "min" | "max" | null } {
+    return { time: this.zoomBounceTime, edge: this.zoomBounceEdge };
   }
 
   getCameraState() {

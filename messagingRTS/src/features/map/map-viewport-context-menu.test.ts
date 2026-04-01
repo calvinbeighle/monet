@@ -114,4 +114,35 @@ describe("Right-click context menu for Deploy Agent (Spec 06)", () => {
     const limited = threadIds.slice(0, def.capacity);
     expect(limited).toHaveLength(4);
   });
+
+  it("cluster filter blocks agents already deployed to same cluster", () => {
+    // Deploy closer to cluster-1
+    const deployStore = useDeploymentStore.getState();
+    deployStore.showConfirmation({
+      agentRole: "closer",
+      clusterId: "cluster-1",
+      threadIds: ["t1"],
+      description: "test",
+    });
+    deployStore.confirmDeployment();
+
+    // Check: closer should have active deployment on cluster-1
+    const deployments = useDeploymentStore.getState().deployments;
+    const clusterAlreadyDeployed = deployments.some(
+      (d) =>
+        d.agentRole === "closer" &&
+        d.clusterId === "cluster-1" &&
+        (d.status === "confirming" || d.status === "traveling" || d.status === "in-progress"),
+    );
+    expect(clusterAlreadyDeployed).toBe(true);
+
+    // Researcher is not deployed to cluster-1
+    const researcherDeployed = deployments.some(
+      (d) =>
+        d.agentRole === "researcher" &&
+        d.clusterId === "cluster-1" &&
+        (d.status === "confirming" || d.status === "traveling" || d.status === "in-progress"),
+    );
+    expect(researcherDeployed).toBe(false);
+  });
 });

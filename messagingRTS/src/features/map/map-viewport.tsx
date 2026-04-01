@@ -1211,15 +1211,27 @@ export function MapViewport() {
           ).map(([role, def]) => {
             const agentState = useAgentStore.getState().agents.get(role);
             const canDeploy = useAgentStore.getState().canDeployRole(role);
-            const statusLabel =
-              agentState?.status === "cooldown"
+            // Cluster compatibility filter per Spec 06 Section 13
+            const clusterAlreadyDeployed = useDeploymentStore
+              .getState()
+              .deployments.some(
+                (d) =>
+                  d.agentRole === role &&
+                  d.clusterId === contextMenu.clusterId &&
+                  (d.status === "confirming" ||
+                    d.status === "traveling" ||
+                    d.status === "in-progress"),
+              );
+            const statusLabel = clusterAlreadyDeployed
+              ? "Already deployed"
+              : agentState?.status === "cooldown"
                 ? "Cooldown"
                 : agentState?.status === "working" || agentState?.status === "deployed"
                   ? "Busy"
                   : canDeploy
                     ? "Available"
                     : "Unavailable";
-            const isAvailable = canDeploy;
+            const isAvailable = canDeploy && !clusterAlreadyDeployed;
             const colorHex = `#${def.color.toString(16).padStart(6, "0")}`;
 
             return (

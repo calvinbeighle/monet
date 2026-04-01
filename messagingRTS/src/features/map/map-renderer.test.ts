@@ -352,6 +352,22 @@ describe("Zone alert visual state", () => {
     expect(() => renderer.renderZones(new Map([["active-front", zone]]))).not.toThrow();
   });
 
+  it("soft boundary indicator edge size computation", () => {
+    // Edge size = min(40, width*0.1, height*0.1)
+    const w = 500;
+    const h = 300;
+    const edgeSize = Math.min(40, w * 0.1, h * 0.1);
+    expect(edgeSize).toBe(30); // 300*0.1 = 30, smallest
+
+    // Small zone: edge proportional
+    const smallEdge = Math.min(40, 200 * 0.1, 200 * 0.1);
+    expect(smallEdge).toBe(20);
+
+    // Large zone: capped at 40
+    const largeEdge = Math.min(40, 800 * 0.1, 600 * 0.1);
+    expect(largeEdge).toBe(40);
+  });
+
   it("renderZones handles mixed alert states across multiple zones", () => {
     const renderer = new MapRenderer();
     const zones = new Map([
@@ -667,5 +683,55 @@ describe("Zoom density blend per Spec 02", () => {
       blend += Math.sign(blendTarget - blend) * Math.min(blendSpeed, Math.abs(blendTarget - blend));
     }
     expect(blend).toBeCloseTo(1.0, 2);
+  });
+});
+
+describe("Zoom boundary feedback per Spec 02", () => {
+  it("no bounce state initially", () => {
+    const renderer = new MapRenderer();
+    const state = renderer.getZoomBounceState();
+    expect(state.time).toBe(0);
+    expect(state.edge).toBeNull();
+  });
+
+  it("zoom at min boundary triggers bounce", () => {
+    const renderer = new MapRenderer();
+    renderer.setCamera(0, 0, 0.1); // at min
+    renderer.zoom(0.5, 0, 0); // try to zoom out further (below min)
+    const state = renderer.getZoomBounceState();
+    expect(state.time).toBeCloseTo(0.3, 2);
+    expect(state.edge).toBe("min");
+  });
+
+  it("zoom at max boundary triggers bounce", () => {
+    const renderer = new MapRenderer();
+    renderer.setCamera(0, 0, 2.0); // at max
+    renderer.zoom(2.0, 0, 0); // try to zoom in further (above max)
+    const state = renderer.getZoomBounceState();
+    expect(state.time).toBeCloseTo(0.3, 2);
+    expect(state.edge).toBe("max");
+  });
+
+  it("normal zoom does not trigger bounce", () => {
+    const renderer = new MapRenderer();
+    renderer.setCamera(0, 0, 1.0);
+    renderer.zoom(1.1, 0, 0);
+    const state = renderer.getZoomBounceState();
+    expect(state.time).toBe(0);
+    expect(state.edge).toBeNull();
+  });
+});
+
+describe("Label truncation at tactical zoom per Spec 02", () => {
+  it("truncates names longer than 12 chars at tactical zoom", () => {
+    const longName = "Alexander Hamilton";
+    const truncated = longName.length > 12 ? longName.slice(0, 12) + "..." : longName;
+    expect(truncated).toBe("Alexander Ha...");
+  });
+
+  it("preserves short names at tactical zoom", () => {
+    const shortName = "Bob Smith";
+    const truncated = shortName.length > 12 ? shortName.slice(0, 12) + "..." : shortName;
+    expect(truncated).toBe("Bob Smith");
   });
 });

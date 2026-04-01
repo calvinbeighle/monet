@@ -507,3 +507,82 @@ describe("performInitialLoad", () => {
     expect(maxInFlight).toBeGreaterThan(1);
   });
 });
+
+describe("Contact enrichment per Spec 09", () => {
+  it("computes relationship score and response history from messages", () => {
+    const now = Date.now();
+    const detail: GmailThreadDetail = {
+      id: "thread-enrichment",
+      historyId: "h1",
+      messages: [
+        makeGmailMessage({
+          id: "m1",
+          internalDate: String(now - 60000), // 1 min ago
+          payload: {
+            headers: [
+              { name: "From", value: "alice@test.com" },
+              { name: "To", value: "bob@test.com" },
+              { name: "Subject", value: "Hello" },
+            ],
+            mimeType: "text/plain",
+            body: { size: 5, data: "aGVsbG8=" },
+            parts: [],
+          },
+        }),
+        makeGmailMessage({
+          id: "m2",
+          internalDate: String(now - 30000), // 30s ago (30s response time)
+          payload: {
+            headers: [
+              { name: "From", value: "bob@test.com" },
+              { name: "To", value: "alice@test.com" },
+              { name: "Subject", value: "Re: Hello" },
+            ],
+            mimeType: "text/plain",
+            body: { size: 5, data: "aGVsbG8=" },
+            parts: [],
+          },
+        }),
+      ],
+    };
+
+    const thread = convertGmailThread(detail);
+    const bob = thread.participants.find((p) => p.email === "bob@test.com");
+    expect(bob).toBeDefined();
+    // Bob responded, so should have non-zero relationship score
+    expect(bob!.relationshipScore).toBeGreaterThan(0);
+    // Bob's response time should be ~30 seconds
+    expect(bob!.responseHistory.avgResponseTimeMs).toBeCloseTo(30000, -2);
+    expect(bob!.responseHistory.threadFrequency).toBe(1);
+  });
+
+  it("participants with no responses get zero speed score", () => {
+    const now = Date.now();
+    const detail: GmailThreadDetail = {
+      id: "thread-no-reply",
+      historyId: "h1",
+      messages: [
+        makeGmailMessage({
+          id: "m1",
+          internalDate: String(now),
+          payload: {
+            headers: [
+              { name: "From", value: "alice@test.com" },
+              { name: "To", value: "bob@test.com" },
+              { name: "Subject", value: "Test" },
+            ],
+            mimeType: "text/plain",
+            body: { size: 5, data: "aGVsbG8=" },
+            parts: [],
+          },
+        }),
+      ],
+    };
+
+    const thread = convertGmailThread(detail);
+    const bob = thread.participants.find((p) => p.email === "bob@test.com");
+    expect(bob).toBeDefined();
+    expect(bob!.responseHistory.avgResponseTimeMs).toBe(0);
+    expect(bob!.responseHistory.threadFrequency).toBe(0);
+  });
+});
