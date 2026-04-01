@@ -2,7 +2,7 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 1167 tests passing. Tags through v0.9.5.
+**Current state**: 1174 tests passing. Tags through v0.9.6.
 
 **Implemented**: All 12 specs fully implemented. 1.1-1.7 Foundation (Gmail auth, thread model, fetching, sync, outbound actions, offline queue), 2.1-2.6 Core Map (shell, rendering, navigation, zones, drift, clustering), 3.1-3.5 Game Mechanics (risk scoring, trust, opportunities, front health, alerts), 4.1-4.3 Agent System (units, AI backend, deployment UI), 5.1-5.8 Spec Compliance Round 1 (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1-6.5 Spec Compliance Round 2 (quota UI, travel arc, history filters, cluster indicator, draft store), 7.1-7.6 Spec Compliance Round 3 (organic drift, cluster migration, cluster-biased placement, failed thread identification, batch queue, zone quick-nav), 8.1-8.7 Spec Compliance Round 4 (clustering affinity nudge, collision avoidance on target positions, wobble stability, onLabel/onMarkRead handlers, reauth banner, read-state-change sync, failedThreadIds full propagation), 9.1-9.3 Spec Compliance Round 5 (topicTags on Thread model with topic-biased placement, drifting-lost and approaching-archive lifecycle states, extractKeywords reuse from clustering), 10.1-10.3 Spec Compliance Round 6 (arrow key New->Active transition, search close focus zone restoration, three-step Escape with composerActive state), 11.1-11.3 Spec Compliance Round 7 (draft deletion on send, deployment progress/outcomeSummary fields, trust tier-crossing and 3-consecutive visual indicators), 12.1-12.4 Spec Compliance Round 8 (pinch-to-zoom gesture, snap-back animation on cancelled drag, agent hover tooltip with elapsed time, lastPositioningTick written after drift tick), 13.1-13.2 Spec Compliance Round 9 (smoothed urgency pulse fade-out with lerp, zoom density blend transitions with smooth crossfade), 14.1-14.6 Spec Compliance Round 10 (zoom min/max boundary flash, label truncation at tactical zoom, soft boundary membership indicator, context menu cluster filter, contact enrichment from message history, new thread evaluation timing already correct), 15.1-15.4 Spec Compliance Round 11 (quotaExhausted wiring, archived pulse suppression, cluster migration animation, cluster label at aggregate zoom, zone alert wiring, smooth zone boundaries, agent-completed alert, session counter reset, zoom anchor math fix, strategic cluster click, cooldown timer in agent dock, outcomeSummary rendering in deployment history, cluster-only deployment target validation per Spec 11 Section 10), 16.1-16.4 Spec Compliance Round 12 (dissolved cluster ID retirement per Spec 11, visualExtent high-water mark per Spec 11, search overlay z-index above notifications per Spec 12, distinct initial-load sync indicator per Spec 10).
 
@@ -23,17 +23,13 @@ Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
 - Spec 02: No label collision detection for thread entities
 - Spec 02: Drift settlement timing not enforced (no 1-second guarantee)
-- Spec 04: Forced reclassification override not implemented (userOverrideZone permanent)
-- Spec 05: Thread queue mechanic for capacity overflow not implemented
 - Spec 06: Map tooltip recall button not implemented
 - Spec 06: History panel recall option for in-progress entries not implemented
 - Spec 06: Results overlay not cluster-anchored
-- Spec 06: Deployment history not persisted across sessions
 - Spec 06: Cancelled deployment record state not tracked
 - Spec 07: Trust decay floor clock resets on tier transitions (established<->high-trust)
 - Spec 08: Detail zoom level lacks reduced-opacity surrounding context
 - Spec 08: Minimap does not render cluster aggregate positions
-- Spec 09: No active resurfacing push for hidden threads transitioning to at-risk/lost
 - Spec 11: Manual override exclusions not persisted across page reload (session-scoped)
 
 ---
@@ -655,3 +651,11 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Risk load weighting (Spec 07): computeRiskLoad in front-health.ts now weights each thread's tier score by THREAD_TYPE_RISK_WEIGHT (internal=1.5, warm-intro=1.4, existing-relationship=1.0, cold-outreach=0.8, transactional=0.5). Tighter tolerance = higher weight.
 - Status bar ordering (Spec 12): All four primary indicators (sync, health, streaks, alert badge) now render left-to-right in a single flex group per Spec 12 Section 3. Additional items (lost tally, deployments, filter, summary) grouped separately on the right.
 - Test count: 1167 total (21 new: 12 deadline detection, 2 body keyword, 1 drift stabilization, 3 opportunity window start, 1 risk weighting, 1 status bar ordering, 1 sync-engine fixture), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Spec Compliance Round 14 (2026-04-01)
+
+- Thread queue mechanic (Spec 05): deployAgent() now queues overflow threads beyond capacity. getBatchQueue(), hasQueuedThreads(), dequeueNextBatch() manage the batch lifecycle. Each dequeue returns up to capacity threads, remaining stay queued. Queue is module-level Map keyed by agent ID.
+- Deployment history persistence (Spec 06): IndexedDB schema bumped to v3 with new "deployments" object store. persistDeployments() writes up to 100 most recent records. loadDeployments() returns sorted by startedAt descending. Deployment store gains loadPersistedDeployments() and persistDeploymentHistory() actions.
+- Forced reclassification (Spec 04): driftTick now clears userOverrideZone when a thread's risk tier crosses from safe/elevated to critical or lost. This allows the classifier to reassign the thread to at-risk/lost zones despite a prior user override.
+- Thread resurfacing alerts (Spec 09): New "thread-resurfaced" MapAlertType. When a thread that would be hidden by the active filter transitions to at-risk/lost lifecycle state, a notification alert is created. The filter store already force-shows at-risk/lost threads; this adds the visual notification push.
+- Test count: 1174 total (7 new: 4 batch queue, 1 forced reclassification, 2 resurfacing alerts), all passing. Typecheck and lint clean.
