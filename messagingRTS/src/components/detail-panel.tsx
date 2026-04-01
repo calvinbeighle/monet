@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useAppStore, useThreadStore } from "../lib/stores";
+import { useDraftStore } from "../lib/stores/draft-store";
 import type { Thread, RiskTier, OpportunityState } from "../lib/types";
 import type { TrustTier } from "../lib/types/game-mechanics";
 import {
@@ -13,7 +14,6 @@ import {
   discardDraftAction,
   archiveThreadAction,
   updateDraftContent,
-  getDraftState,
 } from "../features/sync/outbound-actions";
 import type { SendReplyPayload, DraftPayload } from "../features/auth/gmail-client";
 
@@ -76,8 +76,8 @@ function ReplyComposer({ thread }: { thread: Thread }) {
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  const draftState = getDraftState(thread.id);
+  const quotaExhausted = useAppStore((s) => s.quotaExhausted);
+  const draftState = useDraftStore((s) => s.getDraftState(thread.id));
   const lastMessage = thread.messages[thread.messages.length - 1];
 
   // Build reply payload from thread context per Spec 01 Section 4
@@ -162,21 +162,30 @@ function ReplyComposer({ thread }: { thread: Thread }) {
         </div>
       )}
 
+      {/* Quota exhaustion warning per Spec 01 */}
+      {quotaExhausted && (
+        <div className="mt-1 text-[10px] text-yellow-500" data-testid="quota-exhausted-warning">
+          Daily Gmail quota exhausted. Send, draft, and archive actions are disabled until reset.
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="mt-2 flex gap-2">
         <button
           className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-500 disabled:opacity-40"
           onClick={handleSend}
-          disabled={!body.trim() || sending}
+          disabled={!body.trim() || sending || quotaExhausted}
           data-testid="send-reply-btn"
+          title={quotaExhausted ? "Daily Gmail quota exhausted" : undefined}
         >
           {sending ? "Sending..." : "Send"}
         </button>
         <button
           className="rounded bg-gray-700 px-3 py-1 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40"
           onClick={handleSaveDraft}
-          disabled={!body.trim() || saving}
+          disabled={!body.trim() || saving || quotaExhausted}
           data-testid="save-draft-btn"
+          title={quotaExhausted ? "Daily Gmail quota exhausted" : undefined}
         >
           {saving ? "Saving..." : "Save Draft"}
         </button>
@@ -228,6 +237,7 @@ function ParticipantTrust({ thread }: { thread: Thread }) {
 export function DetailPanel() {
   const selectedThreadId = useAppStore((s) => s.selectedThreadId);
   const setSelectedThread = useAppStore((s) => s.setSelectedThread);
+  const quotaExhausted = useAppStore((s) => s.quotaExhausted);
   const threads = useThreadStore((s) => s.threads);
 
   // Slide animation state per Spec 12 Section 5
@@ -265,10 +275,12 @@ export function DetailPanel() {
         <div className="flex gap-2">
           {thread && thread.gmailLabels.includes("INBOX") && (
             <button
-              className="rounded bg-gray-800 px-2 py-0.5 text-xs text-gray-400 hover:bg-gray-700"
+              className="rounded bg-gray-800 px-2 py-0.5 text-xs text-gray-400 hover:bg-gray-700 disabled:opacity-40"
               onClick={handleArchive}
+              disabled={quotaExhausted}
               data-testid="archive-btn"
               aria-label="Archive thread"
+              title={quotaExhausted ? "Daily Gmail quota exhausted" : undefined}
             >
               Archive
             </button>

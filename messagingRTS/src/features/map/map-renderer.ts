@@ -52,6 +52,20 @@ export class MapRenderer {
   private searchHighlightIds: Set<string> = new Set();
   private searchActive = false;
 
+  // In-progress deployment cluster IDs per Spec 06 Section 4
+  private inProgressClusterIds: Set<string> = new Set();
+
+  // Travel arc animations per Spec 06
+  private travelAnimations: Array<{
+    agentColor: number;
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    startTime: number;
+    duration: number;
+  }> = [];
+
   // Agent drag visual state per Spec 06 Section 3
   private agentDragState: {
     active: boolean;
@@ -546,6 +560,13 @@ export class MapRenderer {
           }
         }
 
+        // In-progress deployment indicator per Spec 06 Section 4
+        if (this.inProgressClusterIds.has(cluster.id)) {
+          const pulseAlpha = 0.3 + 0.3 * Math.sin(this.pulseTime * 3.0);
+          g.circle(cluster.centroid.x, cluster.centroid.y, r + 8);
+          g.stroke({ color: 0xffd700 as ColorSource, width: 3, alpha: pulseAlpha });
+        }
+
         // Count label
         let label = this.clusterLabels.get(cluster.id);
         if (!label) {
@@ -606,6 +627,13 @@ export class MapRenderer {
             g.roundRect(minX - 2, minY - 2, w + 4, h + 4, cornerRadius);
             g.stroke({ color: 0xcc4444 as ColorSource, width: 2, alpha: 0.4 });
           }
+        }
+
+        // In-progress deployment indicator per Spec 06 Section 4
+        if (this.inProgressClusterIds.has(cluster.id)) {
+          const pulseAlpha = 0.3 + 0.3 * Math.sin(this.pulseTime * 3.0);
+          g.roundRect(minX - 4, minY - 4, w + 8, h + 8, cornerRadius);
+          g.stroke({ color: 0xffd700 as ColorSource, width: 3, alpha: pulseAlpha });
         }
 
         // Cluster label above boundary
@@ -824,5 +852,98 @@ export class MapRenderer {
 
   getScreenHeight(): number {
     return this.app?.screen.height ?? 0;
+  }
+
+  // Set cluster IDs with in-progress deployments per Spec 06 Section 4
+  setInProgressClusterIds(ids: Set<string>): void {
+    this.inProgressClusterIds = ids;
+  }
+
+  getInProgressClusterIds(): Set<string> {
+    return this.inProgressClusterIds;
+  }
+
+  // Travel arc animations per Spec 06
+  setTravelAnimations(
+    animations: Array<{
+      agentColor: number;
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+      startTime: number;
+      duration: number;
+    }>,
+  ): void {
+    this.travelAnimations = animations;
+  }
+
+  getTravelAnimations(): Array<{
+    agentColor: number;
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    startTime: number;
+    duration: number;
+  }> {
+    return this.travelAnimations;
+  }
+
+  // Render travel arc animations on the overlay layer
+  renderTravelArcs(now: number = Date.now()): void {
+    if (!this.layers) return;
+
+    for (const anim of this.travelAnimations) {
+      const elapsed = now - anim.startTime;
+      const t = Math.min(1.0, elapsed / anim.duration);
+      if (t >= 1.0) continue; // completed, will be cleaned up by caller
+
+      // Quadratic bezier arc: control point above midpoint for curved path
+      const midX = (anim.startX + anim.endX) / 2;
+      const midY = (anim.startY + anim.endY) / 2;
+      const dx = anim.endX - anim.startX;
+      const dy = anim.endY - anim.startY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      // Control point offset perpendicular to the line, proportional to distance
+      const cpX = midX - (dy / dist) * dist * 0.3;
+      const cpY = midY + (dx / dist) * dist * 0.3;
+
+      // Evaluate bezier at parameter t
+      const x = (1 - t) * (1 - t) * anim.startX + 2 * (1 - t) * t * cpX + t * t * anim.endX;
+      const y = (1 - t) * (1 - t) * anim.startY + 2 * (1 - t) * t * cpY + t * t * anim.endY;
+
+      const g = new Graphics();
+      this.layers.overlay.addChild(g);
+
+      // Draw the traveling agent dot
+      g.circle(x, y, 6);
+      g.fill({ color: anim.agentColor as ColorSource, alpha: 0.9 });
+      // Glow
+      g.circle(x, y, 10);
+      g.fill({ color: anim.agentColor as ColorSource, alpha: 0.3 });
+    }
+  }
+
+  // Compute a point on a quadratic bezier arc (for external use / testing)
+  static bezierPoint(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    t: number,
+  ): { x: number; y: number } {
+    const midX = (startX + endX) / 2;
+    const midY = (startY + endY) / 2;
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const cpX = midX - (dy / dist) * dist * 0.3;
+    const cpY = midY + (dx / dist) * dist * 0.3;
+
+    return {
+      x: (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * cpX + t * t * endX,
+      y: (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * cpY + t * t * endY,
+    };
   }
 }

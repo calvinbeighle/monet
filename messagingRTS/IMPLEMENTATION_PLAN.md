@@ -2,21 +2,19 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 943 tests passing. Tags through v0.8.1.
+**Current state**: 1008 tests passing. Tags through v0.8.2.
 
 **Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
-2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (complete - drag-to-deploy, confirmation, recall, quick-deploy, batch deployment), 5.1 Thread Drag-to-Zone Reclassification, 5.2 Agent Drop Target Validation Visuals, 5.3 Thread Drag-out-of-Cluster Override, 5.4 Detail Panel Slide Animation, 5.5 Session Summary Backdrop, 5.6 Reconnect Exponential Backoff, 5.7 Drafter Tone Variants in Results UI, 5.8 Right-Click Deploy Context Menu.
+2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (complete), 5.1-5.8 Spec Compliance (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1 Quota-Disabled UI, 6.2 Agent Travel Arc Animation, 6.3 Deployment History Filtering, 6.4 In-Progress Cluster Indicator, 6.5 Draft Reactive Store.
 
-**Next priorities**: Remaining spec gaps (agent travel arc, deployment history filtering, cluster progress indicator, quota-disabled UI, draft reactive store), performance profiling, integration testing.
+**Next priorities**: Remaining spec gaps (organic drift, cluster migration animation, cluster-biased placement, failed thread identification, batch thread queue), performance profiling, integration testing.
 
 **Remaining spec gaps (medium priority)**:
 
-- Spec 01: Send/archive/draft UI not disabled when daily quota exhausted; draft state not in reactive store
 - Spec 02: Organic drift animation (currently linear); cluster member migration animation (500ms)
 - Spec 03: Initial thread placement not biased toward cluster members; drift tick doesn't nudge toward cluster members
 - Spec 05: Failed threads not identified per-thread in proposal review; batch thread queue within single deployment
-- Spec 06: Agent travel arc animation; deployment history filtering/summaries; in-progress cluster indicator on map
 - Spec 08: Persistent zone quick-nav label panel
 
 ---
@@ -584,3 +582,12 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Drafter tone variants in results UI (Spec 07): results-overlay.tsx now groups proposals by threadId for Drafter agent. extractToneLabel() parses [tone_label] prefixes. ToneVariantGroup component renders tabbed navigation when multiple tone variants exist for the same thread.
 - Right-click deploy context menu (Spec 06): map-viewport.tsx handleContextMenu hit-tests clusters and threads. Renders positioned menu listing all 6 agent types with availability status (Available/Busy/Cooldown/Unavailable). Selecting available agent triggers showConfirmation flow.
 - Test count: 943 total (21 new: 2 detail-panel animation, 2 session-summary backdrop, 4 sync-engine backoff, 5 results-overlay tone variants, 8 context-menu), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Quota UI, Travel Arc, History Filters, Cluster Indicator, Draft Store (2026-04-01)
+
+- Quota-disabled UI (Spec 01): app-store gains quotaExhausted boolean. detail-panel disables Send/Save Draft/Archive buttons with tooltip when exhausted. batch-action-bar disables Mark Handled/Apply Label with "Quota exhausted" badge.
+- Agent travel arc animation (Spec 06): deployment-store gains TravelAnimation interface and travelAnimations array. map-renderer adds renderTravelArcs() using quadratic bezier curves from dock to cluster centroid. Animated dots travel along the arc over 800ms.
+- Deployment history filtering (Spec 06): deployment-history-panel adds role and status filter dropdowns with outcome summary bar (deployment count, approved/rejected counts).
+- In-progress cluster indicator (Spec 06): map-renderer tracks inProgressClusterIds set. renderClusters draws pulsing gold ring on clusters with active deployments at both zoom levels.
+- Draft reactive store (Spec 01): New useDraftStore Zustand store mirrors draft lifecycle state reactively. outbound-actions.ts syncs all draft mutations to the store. detail-panel reads draft state reactively instead of from module-level Map.
+- Test count: 1008 total (65 new: 15 quota UI, 16 travel arc, 10 history filters, 6 cluster indicator, 18 draft store), all passing. Typecheck and lint clean.

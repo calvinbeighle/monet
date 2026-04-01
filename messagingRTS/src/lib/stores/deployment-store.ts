@@ -55,6 +55,18 @@ export interface ConfirmationState {
   batchTargets?: BatchTarget[];
 }
 
+// Travel arc animation state per Spec 06
+export interface TravelAnimation {
+  agentRole: AgentRole;
+  deploymentId: string;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  startTime: number;
+  duration: number; // ms
+}
+
 interface DeploymentStore {
   dragState: DragState | null;
   confirmation: ConfirmationState | null;
@@ -62,6 +74,8 @@ interface DeploymentStore {
   activeDeploymentId: string | null;
   // Multi-cluster selection for batch deployment (Spec 06 Section 11)
   selectedClusterIds: string[];
+  // Active travel arc animations per Spec 06
+  travelAnimations: TravelAnimation[];
 
   // Drag actions
   startDrag: (role: AgentRole, screenX: number, screenY: number) => void;
@@ -90,6 +104,11 @@ interface DeploymentStore {
   // Resolution
   resolveDeployment: (deploymentId: string) => void;
 
+  // Travel animation per Spec 06
+  addTravelAnimation: (animation: TravelAnimation) => void;
+  removeTravelAnimation: (deploymentId: string) => void;
+  getActiveTravelAnimations: () => TravelAnimation[];
+
   // Queries
   getActiveDeploymentForRole: (role: AgentRole) => DeploymentRecord | undefined;
   getActiveDeploymentsForRole: (role: AgentRole) => DeploymentRecord[];
@@ -108,6 +127,7 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
   deployments: [],
   activeDeploymentId: null,
   selectedClusterIds: [],
+  travelAnimations: [],
 
   startDrag: (role, screenX, screenY) =>
     set({
@@ -294,4 +314,16 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
   getBatchDeployments: (batchId) => {
     return get().deployments.filter((d) => d.batchId === batchId);
   },
+
+  addTravelAnimation: (animation) =>
+    set((state) => ({
+      travelAnimations: [...state.travelAnimations, animation],
+    })),
+
+  removeTravelAnimation: (deploymentId) =>
+    set((state) => ({
+      travelAnimations: state.travelAnimations.filter((a) => a.deploymentId !== deploymentId),
+    })),
+
+  getActiveTravelAnimations: () => get().travelAnimations,
 }));

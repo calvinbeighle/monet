@@ -54,6 +54,7 @@ interface AppStore {
   sessionStats: SessionStats;
   streakState: StreakState;
   initialHealthScore: number; // captured at session start for net health change
+  quotaExhausted: boolean; // per Spec 01: true when Gmail daily quota is exhausted
 
   // Actions
   setShellState: (state: ShellState) => void;
@@ -67,6 +68,7 @@ interface AppStore {
   setSelectedThread: (threadId: string | null) => void;
   setTrustRecords: (records: Record<string, TrustRecord>) => void;
   updateSessionStats: (delta: Partial<SessionStats>) => void;
+  setQuotaExhausted: (exhausted: boolean) => void;
   addNotification: (
     notification: Omit<ShellNotification, "id" | "dismissed" | "createdAt">,
   ) => void;
@@ -109,6 +111,7 @@ export const useAppStore = create<AppStore>((set) => ({
     lastEvaluationDate: "",
   },
   initialHealthScore: 100,
+  quotaExhausted: false,
 
   setShellState: (shellState) => set({ shellState }),
   setActivePanel: (activePanel) => set({ activePanel }),
@@ -128,6 +131,7 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({
       sessionStats: { ...state.sessionStats, ...delta },
     })),
+  setQuotaExhausted: (quotaExhausted) => set({ quotaExhausted }),
   setSelectedThread: (threadId) =>
     set((state) => ({
       selectedThreadId: threadId,

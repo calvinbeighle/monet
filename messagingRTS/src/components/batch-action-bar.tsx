@@ -7,6 +7,7 @@
 // After any batch action completes, selection is cleared automatically.
 
 import { useState } from "react";
+import { useAppStore } from "../lib/stores/app-store";
 import { useThreadStore } from "../lib/stores/thread-store";
 import {
   batchMarkHandled,
@@ -36,6 +37,7 @@ const AGENT_OPTIONS: { role: AgentRole; label: string }[] = [
 export function BatchActionBar() {
   const selectedThreadIds = useThreadStore((s) => s.selectedThreadIds);
   const clearBatchSelection = useThreadStore((s) => s.clearBatchSelection);
+  const quotaExhausted = useAppStore((s) => s.quotaExhausted);
   const [showZoneMenu, setShowZoneMenu] = useState(false);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const [labelInput, setLabelInput] = useState("");
@@ -88,12 +90,21 @@ export function BatchActionBar() {
 
       <div className="mx-1 h-3 w-px bg-gray-600" />
 
+      {/* Quota exhaustion indicator per Spec 01 */}
+      {quotaExhausted && (
+        <span className="text-[10px] text-yellow-500" data-testid="batch-quota-warning">
+          Quota exhausted
+        </span>
+      )}
+
       {/* Mark as Handled */}
       <button
         onClick={handleMarkHandled}
-        className="rounded px-2 py-0.5 hover:bg-gray-700 transition-colors"
+        disabled={quotaExhausted}
+        className="rounded px-2 py-0.5 hover:bg-gray-700 transition-colors disabled:opacity-40"
         data-testid="batch-mark-handled"
         aria-label="Mark selected threads as handled"
+        title={quotaExhausted ? "Daily Gmail quota exhausted" : undefined}
       >
         Mark Handled
       </button>
@@ -141,9 +152,11 @@ export function BatchActionBar() {
             setShowZoneMenu(false);
             setShowAgentMenu(false);
           }}
-          className="rounded px-2 py-0.5 hover:bg-gray-700 transition-colors"
+          disabled={quotaExhausted}
+          className="rounded px-2 py-0.5 hover:bg-gray-700 transition-colors disabled:opacity-40"
           data-testid="batch-apply-label"
           aria-label="Apply label to selected threads"
+          title={quotaExhausted ? "Daily Gmail quota exhausted" : undefined}
         >
           Apply Label
         </button>

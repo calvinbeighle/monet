@@ -19,3 +19,5 @@ export type {
 export { useSyncStore } from "./sync-store";
 export { useFilterStore } from "./filter-store";
 export type { ThreadFilter } from "./filter-store";
+export { useDraftStore } from "./draft-store";
+export type { DraftRecord } from "./draft-store";

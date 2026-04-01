@@ -21,6 +21,7 @@ import type { SendReplyPayload, DraftPayload } from "../auth/gmail-client";
 import { useThreadStore } from "../../lib/stores";
 import { useSyncStore } from "../../lib/stores/sync-store";
 import { useAppStore } from "../../lib/stores";
+import { useDraftStore } from "../../lib/stores/draft-store";
 import type { Thread, ThreadMessage } from "../../lib/types";
 import { updateTrustOnReply } from "../game-mechanics/game-loop";
 import { captureOpportunity } from "../game-mechanics/opportunity-system";
@@ -79,6 +80,7 @@ export function _resetOutboundFns(): void {
 
 export function _clearDraftRecords(): void {
   draftRecords.clear();
+  useDraftStore.getState().clearAllDrafts();
 }
 
 // --- Draft State Queries ---
@@ -94,12 +96,14 @@ export function getDraftState(threadId: string): DraftState {
 // --- Draft Content Management ---
 
 export function beginDraft(threadId: string, body: string): void {
-  draftRecords.set(threadId, {
+  const record: DraftRecord = {
     threadId,
     gmailDraftId: null,
     body,
     state: "unsaved",
-  });
+  };
+  draftRecords.set(threadId, record);
+  useDraftStore.getState().setDraft(threadId, record);
 }
 
 export function updateDraftContent(threadId: string, body: string): void {
@@ -114,10 +118,12 @@ export function updateDraftContent(threadId: string, body: string): void {
   if (record.state === "saved") {
     record.state = "dirty";
   }
+  useDraftStore.getState().setDraft(threadId, { ...record });
 }
 
 function clearDraftRecord(threadId: string): void {
   draftRecords.delete(threadId);
+  useDraftStore.getState().removeDraft(threadId);
 }
 
 // --- Reply Action (Spec 01 Section 4) ---
@@ -173,6 +179,7 @@ export async function sendReplyAction(
   const draftRecord = draftRecords.get(threadId);
   if (draftRecord) {
     draftRecord.state = "sending";
+    useDraftStore.getState().updateDraftState(threadId, "sending");
   }
 
   try {
@@ -234,6 +241,7 @@ export async function sendReplyAction(
     // Draft transitions: Sending -> Saved (draft preserved)
     if (draftRecord) {
       draftRecord.state = draftRecord.gmailDraftId ? "saved" : "unsaved";
+      useDraftStore.getState().updateDraftState(threadId, draftRecord.state);
     }
 
     useAppStore.getState().addNotification({
@@ -295,13 +303,16 @@ export async function saveDraftAction(threadId: string, payload: DraftPayload): 
     if (record) {
       record.body = payload.body;
       record.state = "saved";
+      useDraftStore.getState().setDraft(threadId, { ...record });
     } else {
-      draftRecords.set(threadId, {
+      const newRecord: DraftRecord = {
         threadId,
         gmailDraftId: null,
         body: payload.body,
         state: "saved",
-      });
+      };
+      draftRecords.set(threadId, newRecord);
+      useDraftStore.getState().setDraft(threadId, newRecord);
     }
     return true;
   }
@@ -313,15 +324,18 @@ export async function saveDraftAction(threadId: string, payload: DraftPayload): 
       record.gmailDraftId = result.id;
       record.body = payload.body;
       record.state = "saved";
+      useDraftStore.getState().setDraft(threadId, { ...record });
     } else {
       // Create new draft per Spec 01: assigned a Gmail draft ID on first save
       const result = await _createDraft(payload);
-      draftRecords.set(threadId, {
+      const newRecord: DraftRecord = {
         threadId,
         gmailDraftId: result.id,
         body: payload.body,
         state: "saved",
-      });
+      };
+      draftRecords.set(threadId, newRecord);
+      useDraftStore.getState().setDraft(threadId, newRecord);
     }
     return true;
   } catch {
@@ -348,6 +362,7 @@ export async function discardDraftAction(threadId: string): Promise<boolean> {
     });
     record.state = "discarded";
     draftRecords.delete(threadId);
+    useDraftStore.getState().removeDraft(threadId);
     return true;
   }
 
@@ -358,6 +373,7 @@ export async function discardDraftAction(threadId: string): Promise<boolean> {
     }
     record.state = "discarded";
     draftRecords.delete(threadId);
+    useDraftStore.getState().removeDraft(threadId);
     return true;
   } catch {
     useAppStore.getState().addNotification({

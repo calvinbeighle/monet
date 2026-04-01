@@ -100,18 +100,20 @@ describe("DeploymentHistoryPanel", () => {
   it("shows agent name and status", () => {
     seedDeployments();
     render(<DeploymentHistoryPanel />);
-    expect(screen.getByText("Closer")).toBeInTheDocument();
-    expect(screen.getByText("completed")).toBeInTheDocument();
-    expect(screen.getByText("Researcher")).toBeInTheDocument();
-    expect(screen.getByText("in-progress")).toBeInTheDocument();
+    // Agent names appear in both filter dropdown and deployment cards
+    expect(screen.getAllByText("Closer").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("completed").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Researcher").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("in-progress").length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows thread count and approval stats", () => {
     seedDeployments();
     render(<DeploymentHistoryPanel />);
     expect(screen.getByText(/3 threads/)).toBeInTheDocument();
-    expect(screen.getByText(/2 approved/)).toBeInTheDocument();
-    expect(screen.getByText(/1 rejected/)).toBeInTheDocument();
+    // Approved/rejected appear in both summary and per-deployment cards
+    expect(screen.getAllByText(/2 approved/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/1 rejected/).length).toBeGreaterThanOrEqual(1);
   });
 
   it("close button sets activePanel to none", () => {
