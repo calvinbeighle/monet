@@ -5,6 +5,7 @@
 
 import { useRef, useEffect, useCallback } from "react";
 import type { Thread, Zone, ZoneId } from "../lib/types";
+import type { Cluster } from "../lib/types/cluster";
 
 // Map dimensions (must match zone-layout.ts canvas)
 const MAP_WIDTH = 4000;
@@ -15,6 +16,7 @@ const MINIMAP_HEIGHT = 135;
 interface MinimapProps {
   threads: Thread[];
   zones: Map<ZoneId, Zone>;
+  clusters?: Cluster[];
   cameraX: number;
   cameraY: number;
   cameraZoom: number;
@@ -26,6 +28,7 @@ interface MinimapProps {
 export function Minimap({
   threads,
   zones,
+  clusters = [],
   cameraX,
   cameraY,
   cameraZoom,
@@ -93,6 +96,20 @@ export function Minimap({
       ctx.fillRect(pos.x - 1, pos.y - 1, 2, 2);
     }
 
+    // Cluster aggregate positions per Spec 08
+    for (const cluster of clusters) {
+      if (cluster.memberThreadIds.length < 2) continue;
+      const pos = toMinimapCoord(cluster.centroid.x, cluster.centroid.y);
+      const r = Math.max(3, Math.min(6, cluster.memberThreadIds.length));
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(136, 136, 204, 0.5)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(136, 136, 204, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
     // Viewport indicator rectangle
     const vpWidthInMap = viewportWidth / cameraZoom;
     const vpHeightInMap = viewportHeight / cameraZoom;
@@ -110,6 +127,7 @@ export function Minimap({
   }, [
     threads,
     zones,
+    clusters,
     cameraX,
     cameraY,
     cameraZoom,

@@ -109,6 +109,8 @@ export function MapViewport() {
 
   // Zone snapshot for render - updated from the ref by the drift tick
   const [zonesSnapshot, setZonesSnapshot] = useState(createZoneLayout);
+  // Cluster snapshot for minimap - updated from the ref by the drift tick
+  const [clustersSnapshot, setClustersSnapshot] = useState<Cluster[]>([]);
   // Track whether a thread drag is active for cursor styling
   const [isThreadDragging, setIsThreadDragging] = useState(false);
   // Tab-focused zone for zone label cycling per Spec 08 Section 16
@@ -282,6 +284,7 @@ export function MapViewport() {
       }
 
       clustersRef.current = clusterResult.clusters;
+      setClustersSnapshot(clusterResult.clusters);
 
       // Detect hidden threads resurfacing per Spec 09: filtered threads that
       // transition to at-risk/lost get a notification alert
@@ -1297,13 +1300,24 @@ export function MapViewport() {
       {/* Agent deployment tooltip per Spec 06 Section 8 */}
       {agentTooltip && (
         <div
-          className="pointer-events-none fixed z-50 rounded border border-gray-700 bg-[#14142a] px-3 py-2 text-xs text-gray-300 shadow-xl"
+          className="fixed z-50 rounded border border-gray-700 bg-[#14142a] px-3 py-2 text-xs text-gray-300 shadow-xl"
           style={{ left: agentTooltip.x + 12, top: agentTooltip.y - 8 }}
           data-testid="agent-deploy-tooltip"
         >
           <div className="font-medium text-gray-200">{agentTooltip.agentRole}</div>
           <div className="text-gray-400">{Math.floor(agentTooltip.elapsed / 1000)}s elapsed</div>
           <div className="text-gray-400">{agentTooltip.threadCount} threads</div>
+          <button
+            className="mt-1 rounded bg-gray-700 px-2 py-0.5 text-yellow-400 hover:bg-gray-600"
+            data-testid="tooltip-recall-btn"
+            onClick={() => {
+              useDeploymentStore.getState().recallDeployment(agentTooltip.deploymentId);
+              useAgentStore.getState().recall(agentTooltip.agentRole as AgentRole);
+              setAgentTooltip(null);
+            }}
+          >
+            Recall
+          </button>
         </div>
       )}
       <SearchOverlay
@@ -1316,6 +1330,7 @@ export function MapViewport() {
       <Minimap
         threads={visibleThreadArray}
         zones={zonesSnapshot}
+        clusters={clustersSnapshot}
         cameraX={camera.x}
         cameraY={camera.y}
         cameraZoom={camera.zoom}

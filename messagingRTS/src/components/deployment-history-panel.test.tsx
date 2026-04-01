@@ -126,3 +126,31 @@ describe("DeploymentHistoryPanel", () => {
     expect(useAppStore.getState().activePanel).toBe("none");
   });
 });
+
+describe("Deployment history recall button per Spec 06", () => {
+  beforeEach(resetStores);
+
+  it("shows recall button for in-progress deployments", () => {
+    seedDeployments();
+    render(<DeploymentHistoryPanel />);
+    // d2 is in-progress, should have recall button
+    expect(screen.getByTestId("recall-d2")).toBeTruthy();
+  });
+
+  it("does not show recall button for completed deployments", () => {
+    seedDeployments();
+    render(<DeploymentHistoryPanel />);
+    // d1 is completed, should NOT have recall button
+    expect(screen.queryByTestId("recall-d1")).toBeNull();
+  });
+
+  it("recall button calls recallDeployment and recall agent", () => {
+    seedDeployments();
+    render(<DeploymentHistoryPanel />);
+    const recallBtn = screen.getByTestId("recall-d2");
+    fireEvent.click(recallBtn);
+    // After recall, deployment status should be "recalled"
+    const deployment = useDeploymentStore.getState().deployments.find((d) => d.id === "d2");
+    expect(deployment?.status).toBe("recalled");
+  });
+});

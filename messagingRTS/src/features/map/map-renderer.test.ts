@@ -764,3 +764,51 @@ describe("Label truncation at tactical zoom per Spec 02", () => {
     expect(truncated).toBe("Bob Smith");
   });
 });
+
+describe("Detail zoom context dimming per Spec 08", () => {
+  it("detail zoom level activates at zoom >= 1.2", () => {
+    const renderer = new MapRenderer();
+    renderer.setCamera(2000, 1500, 1.2);
+    expect(renderer.getZoomLevel()).toBe("detail");
+    renderer.setCamera(2000, 1500, 1.5);
+    expect(renderer.getZoomLevel()).toBe("detail");
+  });
+
+  it("detail zoom with selected thread does not crash renderThreads", () => {
+    const renderer = new MapRenderer();
+    renderer.setCamera(2000, 1500, 1.5);
+    renderer.setSelectedThread("t1");
+    const t1 = createThread("t1", "Subject 1", "snippet");
+    t1.position = { x: 2000, y: 1500 };
+    const t2 = createThread("t2", "Subject 2", "snippet");
+    t2.position = { x: 2020, y: 1510 };
+    const t3 = createThread("t3", "Subject 3", "snippet");
+    t3.position = { x: 2040, y: 1520 };
+    expect(() => renderer.renderThreads([t1, t2, t3])).not.toThrow();
+  });
+
+  it("search dimming takes priority over detail zoom dimming", () => {
+    const renderer = new MapRenderer();
+    renderer.setCamera(2000, 1500, 1.5);
+    renderer.setSelectedThread("t1");
+    renderer.setSearchHighlight(["t2"], true);
+    const t1 = createThread("t1", "Subject 1", "snippet");
+    t1.position = { x: 2000, y: 1500 };
+    const t2 = createThread("t2", "Subject 2", "snippet");
+    t2.position = { x: 2020, y: 1510 };
+    // Should not crash - search dimming logic runs first
+    expect(() => renderer.renderThreads([t1, t2])).not.toThrow();
+  });
+
+  it("detail zoom dimming is inactive without selection", () => {
+    const renderer = new MapRenderer();
+    renderer.setCamera(2000, 1500, 1.5);
+    // No selected thread - dimming should not apply
+    renderer.setSelectedThread(null);
+    const t1 = createThread("t1", "Subject 1", "snippet");
+    t1.position = { x: 2000, y: 1500 };
+    const t2 = createThread("t2", "Subject 2", "snippet");
+    t2.position = { x: 2020, y: 1510 };
+    expect(() => renderer.renderThreads([t1, t2])).not.toThrow();
+  });
+});

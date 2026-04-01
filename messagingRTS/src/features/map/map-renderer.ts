@@ -85,6 +85,9 @@ export class MapRenderer {
   private graphicsPool: Graphics[] = [];
   private textPool: Text[] = [];
 
+  // Thread positions for label collision detection per Spec 02
+  private threadPositionCache: Array<{ id: string; x: number; y: number; r: number }> = [];
+
   // Dirty flagging - cache of last-rendered state per thread
   private threadRenderCache: Map<
     string,
@@ -169,6 +172,7 @@ export class MapRenderer {
     this.graphicsPool.length = 0;
     this.textPool.length = 0;
     this.threadRenderCache.clear();
+    this.threadPositionCache = [];
   }
 
   // Camera control
@@ -319,6 +323,9 @@ export class MapRenderer {
     const zoomLevel = this.getZoomLevel();
     const bounds = this.getVisibleBounds();
 
+    // Build position cache for label collision detection per Spec 02
+    this.threadPositionCache = [];
+
     for (const thread of threads) {
       // Viewport culling - skip entities outside visible area
       // When search is active, keep all threads visible for dimming effect
@@ -400,6 +407,14 @@ export class MapRenderer {
       // Draw the thread entity
       const r = radius * pulse;
 
+      // Cache position for label collision detection per Spec 02
+      this.threadPositionCache.push({
+        id: thread.id,
+        x: thread.position.x,
+        y: thread.position.y,
+        r,
+      });
+
       // Glow for high urgency (uses smoothed value for fade-out)
       if (smoothed > 0.5) {
         g.circle(thread.position.x, thread.position.y, r * 1.5);
@@ -435,6 +450,13 @@ export class MapRenderer {
         } else {
           g.alpha = 1.0;
         }
+      } else if (
+        zoomLevel === "detail" &&
+        this.selectedThreadId !== null &&
+        thread.id !== this.selectedThreadId
+      ) {
+        // Detail zoom: surrounding context at reduced opacity per Spec 08
+        g.alpha = 0.3;
       } else {
         g.alpha = 1.0;
       }
@@ -460,7 +482,38 @@ export class MapRenderer {
         // Fade labels in during tactical->operational transition
         const labelBlend = zoomLevel === "tactical" ? Math.max(0.3, this.zoomBlend) : 1.0;
         label.alpha = alpha * 0.8 * labelBlend;
-        label.visible = true;
+        // Detail zoom: de-emphasize non-selected labels per Spec 08
+        if (
+          zoomLevel === "detail" &&
+          this.selectedThreadId !== null &&
+          thread.id !== this.selectedThreadId &&
+          !(this.searchActive && this.searchHighlightIds.size > 0)
+        ) {
+          label.alpha *= 0.3;
+        }
+        // Label collision detection per Spec 02: hide label if it overlaps adjacent thread glyphs
+        const labelX = thread.position.x + r + 4;
+        const labelY = thread.position.y - 8;
+        const labelW = 120;
+        const labelH = 22;
+        let labelCollides = false;
+        for (const other of this.threadPositionCache) {
+          if (other.id === thread.id) continue;
+          // Check if label rectangle overlaps other thread's circle (approximate as AABB)
+          const closestX = Math.max(labelX, Math.min(other.x, labelX + labelW));
+          const closestY = Math.max(labelY, Math.min(other.y, labelY + labelH));
+          const dx = other.x - closestX;
+          const dy = other.y - closestY;
+          if (dx * dx + dy * dy < other.r * other.r) {
+            labelCollides = true;
+            break;
+          }
+        }
+        if (labelCollides) {
+          label.visible = false;
+        } else {
+          label.visible = true;
+        }
       } else {
         const label = this.threadLabels.get(thread.id);
         if (label) label.visible = false;

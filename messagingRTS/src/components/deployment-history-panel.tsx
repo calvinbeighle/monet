@@ -48,7 +48,9 @@ const AGENT_ROLE_OPTIONS: { role: AgentRole; label: string }[] = [
 export function DeploymentHistoryPanel() {
   const setActivePanel = useAppStore((s) => s.setActivePanel);
   const storeDeployments = useDeploymentStore((s) => s.deployments);
+  const recallDeployment = useDeploymentStore((s) => s.recallDeployment);
   const agents = useAgentStore((s) => s.agents);
+  const recallAgent = useAgentStore((s) => s.recall);
 
   // Filter state per Spec 06
   const [roleFilter, setRoleFilter] = useState<AgentRole | "all">("all");
@@ -85,6 +87,11 @@ export function DeploymentHistoryPanel() {
   // Outcome summary per Spec 06
   const totalApproved = filteredDeployments.reduce((sum, d) => sum + d.approvedCount, 0);
   const totalRejected = filteredDeployments.reduce((sum, d) => sum + d.rejectedCount, 0);
+
+  const handleRecall = (dep: DeploymentRecord) => {
+    recallDeployment(dep.id);
+    recallAgent(dep.agentRole as import("../lib/types").AgentRole);
+  };
 
   return (
     <div
@@ -186,7 +193,18 @@ export function DeploymentHistoryPanel() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-gray-300">{dep.agentName}</span>
-                    <span className={`text-xs ${statusColor}`}>{dep.status}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs ${statusColor}`}>{dep.status}</span>
+                      {(dep.status === "traveling" || dep.status === "in-progress") && (
+                        <button
+                          className="rounded bg-gray-700 px-1.5 py-0.5 text-xs text-yellow-400 hover:bg-gray-600"
+                          data-testid={`recall-${dep.id}`}
+                          onClick={() => handleRecall(dep)}
+                        >
+                          Recall
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
                     {dep.threadCount} thread{dep.threadCount !== 1 ? "s" : ""}
