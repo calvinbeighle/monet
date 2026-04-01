@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 826 tests passing. Tags through v0.7.6.
+**Current state**: 858 tests passing. Tags through v0.7.6.
 
 **Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (complete - drag-to-deploy, confirmation, recall, quick-deploy, batch deployment).
 
-**Next priorities**: Integration testing, accessibility (ARIA), performance profiling, responsive polish.
+**Next priorities**: Performance profiling, accessibility (ARIA), responsive polish, integration testing.
 
 ---
 
@@ -513,3 +513,15 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Bug fix - arrow key first-press: findNextThreadInDirection() was selecting threads[0] (array order) when nothing was selected. Now accepts optional viewportCenter parameter and uses findNearestThread() to select the thread nearest to the viewport center per Spec 08.
 - Bug fix - empty zone threadCount: updateZoneSizes() returned early when total threads was 0, leaving stale threadCount values on zones. Now explicitly sets threadCount=0 for all zones in the zero-thread case per Spec 04.
 - Test count: 826 total (23 new rate limiter tests), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Spec Compliance Fixes (2026-03-31)
+
+- Drift engine auto-lifecycle transitions (Spec 03, 07, 09): driftTick now calls computeRiskTier() on every tick to update thread.riskTier based on latency thresholds. When riskTier crosses to "critical", resolveTransition("time-threshold-waiting") auto-transitions waiting -> at-risk. When riskTier crosses to "lost", resolveTransition("time-threshold-lost") auto-transitions at-risk -> lost. State history entries recorded with triggers "risk-tier-critical" and "risk-tier-lost". Handled threads excluded from risk tier updates. This fixes the critical gap where threads drifted visually to the lost zone but lifecycle state never changed, making game mechanics (lost counts, streaks, front health) incorrect.
+- Visual state auto-update: driftTick now updates thread.visualState on every tick based on drift magnitude (drifting when > 5px), zone (active when in active-front or unread), preserving archived and agent-occupied states.
+- Agent-occupied visual state (Spec 02): deployment-confirmation.tsx now sets visualState="agent-occupied" on threads when startAgentWorkPhase fires, clears it in .finally() after completion/failure. agent-store.ts recall action clears agent-occupied state on recalled agent's threads.
+- Filter UI panel (Spec 09): New filter-panel.tsx component with zone toggles, label/sender input, urgency range sliders. Accessible from status bar "Filter" button. Filter state persists via existing filter-store localStorage. "Clear all" button resets filters. Escape hatch note explains at-risk/lost threads always surface.
+- Alert list UI (Spec 07): New alert-list.tsx component showing unacknowledged and acknowledged map alerts. Accessible by clicking the alert badge in status bar. Per-alert dismiss button calls acknowledgeMapAlert. Grouped display: unacknowledged first, acknowledged below dimmed.
+- Thread-fetcher concurrency limit: performInitialLoad now uses fetchWithConcurrencyLimit(entries, 5, fn) instead of unbounded Promise.all. Limits to 5 parallel thread detail fetches per page to avoid Gmail API rate limit bursts.
+- Status bar enhanced: Added filter trigger button (shows "Filtered" in blue when active), made alert badge clickable.
+- App.tsx wired: Filter panel and alert list render as positioned popovers below status bar, toggled by new state variables. Mutually exclusive (opening one closes the other).
+- Test count: 858 total (32 new: 7 drift-engine lifecycle, 8 filter-panel, 13 alert-list, 1 thread-fetcher concurrency, 3 agent-store recall), all passing. Typecheck and lint clean.
