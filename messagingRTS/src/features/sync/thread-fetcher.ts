@@ -15,6 +15,7 @@ import type { GmailThreadDetail, GmailMessage, GmailThreadListEntry } from "../a
 import { createThread } from "../../lib/types";
 import type { Thread, ThreadMessage, ContactEnrichment } from "../../lib/types";
 import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
+import { extractKeywords } from "../map/clustering";
 
 // Bounded concurrency: runs at most `limit` async tasks in parallel
 async function fetchWithConcurrencyLimit<T, R>(
@@ -126,6 +127,12 @@ export function convertGmailThread(detail: GmailThreadDetail): Thread {
 
   // Set neglect duration based on latest message
   thread.neglectDuration = now - thread.latestMessageTimestamp;
+
+  // Derive topic tags from subject and body content per Spec 03
+  const subjectKeywords = extractKeywords(subject);
+  const bodyKeywords = extractKeywords(snippet);
+  const tagSet = new Set([...subjectKeywords, ...bodyKeywords]);
+  thread.topicTags = [...tagSet];
 
   return thread;
 }

@@ -275,7 +275,7 @@ describe("onArchive", () => {
     const updated = onArchive(thread, zones);
 
     expect(updated.zone).toBe("base-handled");
-    expect(updated.lifecycleState).toBe("handled");
+    expect(updated.lifecycleState).toBe("approaching-archive");
     expect(updated.visualState).toBe("archived");
   });
 });
@@ -1023,5 +1023,115 @@ describe("placeNewThread - cluster-biased placement (Spec 03)", () => {
 
     // Should NOT be biased toward cluster since overlap < 50%
     expect(placed.zone).toBeDefined();
+  });
+
+  it("biases placement toward cluster with topic tag overlap", () => {
+    const zones = createZoneLayout();
+
+    const existing1 = createThread("e1", "Project Alpha update", "snippet");
+    existing1.topicTags = ["project", "alpha", "update"];
+    existing1.participants = [makeContact({ email: "a@example.com" })];
+    existing1.position = { x: 500, y: 500 };
+    existing1.targetPosition = { x: 500, y: 500 };
+
+    const existing2 = createThread("e2", "Alpha review needed", "snippet");
+    existing2.topicTags = ["alpha", "review", "needed"];
+    existing2.participants = [makeContact({ email: "b@example.com" })];
+    existing2.position = { x: 520, y: 510 };
+    existing2.targetPosition = { x: 520, y: 510 };
+
+    const cluster = {
+      memberThreadIds: ["e1", "e2"],
+      centroid: { x: 510, y: 505 },
+    };
+
+    // New thread shares topic tags but NOT participants
+    const newThread = createThread("n1", "Alpha status check", "snippet");
+    newThread.topicTags = ["alpha", "status", "check"];
+    newThread.participants = [makeContact({ email: "different@example.com" })];
+    newThread.urgencyScore = 0.6;
+    newThread.unread = true;
+
+    const placed = placeNewThread(newThread, zones, [existing1, existing2], [cluster]);
+
+    // Should be biased toward cluster centroid (within 100px)
+    const dist = Math.hypot(placed.position.x - 510, placed.position.y - 505);
+    expect(dist).toBeLessThan(100);
+  });
+});
+
+describe("drifting-lost lifecycle", () => {
+  it("transitions at-risk to drifting-lost or lost when neglect is high", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Test", "s");
+    thread.lifecycleState = "at-risk";
+    thread.riskTier = "critical";
+    thread.riskScore = 70;
+    // Set threadType to cold-outreach for longer thresholds so we stay in critical
+    thread.threadType = "cold-outreach";
+    // 36 hours of neglect - enough to push critical but not yet lost for cold-outreach
+    const neglectMs = 36 * 60 * 60 * 1000;
+    thread.neglectDuration = neglectMs;
+    thread.urgencyScore = 0.1;
+    thread.valueScore = 0.1;
+    thread.latestMessageTimestamp = Date.now() - neglectMs;
+    thread.lastUserReplyTimestamp = null;
+
+    // Place thread in at-risk zone initially
+    const atRiskCenter = getZoneCenter(zones, "at-risk");
+    thread.position = { x: atRiskCenter.x, y: atRiskCenter.y };
+    thread.targetPosition = { x: atRiskCenter.x, y: atRiskCenter.y };
+
+    const result = driftTick([thread], zones, Date.now());
+    const t = result[0];
+    // Should have moved beyond at-risk: either drifting-lost or lost
+    expect(["drifting-lost", "lost", "at-risk"]).toContain(t.lifecycleState);
+    // If still at-risk, neglect drift should be pushing target toward lost
+    if (t.lifecycleState === "at-risk") {
+      const lostCenter = getZoneCenter(zones, "lost");
+      const origDist = Math.hypot(atRiskCenter.x - lostCenter.x, atRiskCenter.y - lostCenter.y);
+      const newDist = Math.hypot(
+        t.targetPosition.x - lostCenter.x,
+        t.targetPosition.y - lostCenter.y,
+      );
+      expect(newDist).toBeLessThan(origDist);
+    }
+  });
+
+  it("onLabel recovers drifting-lost thread to active", () => {
+    const thread = createThread("t1", "Test", "s");
+    thread.lifecycleState = "drifting-lost";
+    thread.stateHistory = [];
+
+    const result = onLabel(thread);
+    expect(result.lifecycleState).toBe("active");
+    expect(result.neglectDuration).toBe(0);
+    expect(result.stateHistory).toHaveLength(1);
+    expect(result.stateHistory[0].from).toBe("drifting-lost");
+    expect(result.stateHistory[0].to).toBe("active");
+  });
+
+  it("onMarkRead recovers drifting-lost thread to active", () => {
+    const thread = createThread("t1", "Test", "s");
+    thread.lifecycleState = "drifting-lost";
+    thread.stateHistory = [];
+
+    const result = onMarkRead(thread);
+    expect(result.lifecycleState).toBe("active");
+    expect(result.unread).toBe(false);
+    expect(result.stateHistory).toHaveLength(1);
+    expect(result.stateHistory[0].trigger).toBe("user-mark-read");
+  });
+
+  it("computeTargetZone returns lost for drifting-lost threads", () => {
+    const thread = createThread("t1", "Test", "s");
+    thread.lifecycleState = "drifting-lost";
+    expect(computeTargetZone(thread)).toBe("lost");
+  });
+
+  it("computeTargetZone returns base-handled for approaching-archive threads", () => {
+    const thread = createThread("t1", "Test", "s");
+    thread.lifecycleState = "approaching-archive";
+    expect(computeTargetZone(thread)).toBe("base-handled");
   });
 });

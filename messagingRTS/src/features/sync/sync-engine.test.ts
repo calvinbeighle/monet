@@ -177,6 +177,7 @@ describe("SyncEngine", () => {
         riskTimerStart: Date.now(),
         opportunityState: "none",
         opportunityWindowEnd: null,
+        topicTags: [],
         visualState: "idle",
         userOverrideZone: false,
         lastUserReplyTimestamp: null,

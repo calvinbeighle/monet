@@ -97,7 +97,7 @@ const STOP_WORDS = new Set([
   "at",
 ]);
 
-function extractKeywords(subject: string): Set<string> {
+export function extractKeywords(subject: string): Set<string> {
   return new Set(
     subject
       .toLowerCase()

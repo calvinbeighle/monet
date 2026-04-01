@@ -43,9 +43,18 @@ export interface AttachmentDescriptor {
   attachmentId: string;
 }
 
-// Lifecycle states per Spec 09:
-// New -> Active <-> Waiting <-> At-Risk -> Lost; Any -> Handled
-export type ThreadLifecycleState = "new" | "active" | "waiting" | "at-risk" | "lost" | "handled";
+// Lifecycle states per Spec 09 and Spec 03:
+// New -> Active <-> Waiting <-> At-Risk -> Drifting-Lost -> Lost; Any -> Handled
+// Approaching-Archive is the transitional state when a thread is dismissed/archived
+export type ThreadLifecycleState =
+  | "new"
+  | "active"
+  | "waiting"
+  | "at-risk"
+  | "drifting-lost"
+  | "lost"
+  | "handled"
+  | "approaching-archive";
 
 // Thread types for game mechanics latency tolerance (Spec 07)
 export type ThreadType =
@@ -115,6 +124,9 @@ export interface Thread {
   opportunityState: OpportunityState;
   opportunityWindowEnd: number | null;
 
+  // Topic tags derived from subject and body per Spec 03
+  topicTags: string[];
+
   // Visual state for rendering
   visualState: ThreadVisualState;
 
@@ -160,6 +172,8 @@ export function createThread(id: string, subject: string, snippet: string): Thre
     riskTimerStart: now,
     opportunityState: "none",
     opportunityWindowEnd: null,
+
+    topicTags: [],
 
     visualState: "idle",
 

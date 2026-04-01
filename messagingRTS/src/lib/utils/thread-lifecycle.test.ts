@@ -14,10 +14,16 @@ describe("Thread lifecycle state machine", () => {
       ["waiting", "at-risk"],
       ["waiting", "handled"],
       ["at-risk", "active"],
+      ["at-risk", "drifting-lost"],
       ["at-risk", "lost"],
       ["at-risk", "handled"],
+      ["drifting-lost", "active"],
+      ["drifting-lost", "lost"],
+      ["drifting-lost", "handled"],
       ["lost", "active"],
       ["lost", "handled"],
+      ["handled", "approaching-archive"],
+      ["approaching-archive", "handled"],
     ];
 
     it.each(validPaths)("allows %s -> %s", (from, to) => {
@@ -55,8 +61,8 @@ describe("Thread lifecycle state machine", () => {
       expect(getValidTransitions("new")).toEqual(["active", "handled"]);
     });
 
-    it("returns empty for handled (terminal)", () => {
-      expect(getValidTransitions("handled")).toEqual([]);
+    it("returns approaching-archive for handled", () => {
+      expect(getValidTransitions("handled")).toEqual(["approaching-archive"]);
     });
 
     it("returns three options for waiting", () => {
@@ -117,7 +123,14 @@ describe("Thread lifecycle state machine", () => {
     });
 
     it("handled-action: any non-handled state -> handled", () => {
-      const states: ThreadLifecycleState[] = ["new", "active", "waiting", "at-risk", "lost"];
+      const states: ThreadLifecycleState[] = [
+        "new",
+        "active",
+        "waiting",
+        "at-risk",
+        "drifting-lost",
+        "lost",
+      ];
       for (const state of states) {
         expect(resolveTransition(state, "handled-action")).toBe("handled");
       }
@@ -125,6 +138,30 @@ describe("Thread lifecycle state machine", () => {
 
     it("handled-action: no-op when already handled", () => {
       expect(resolveTransition("handled", "handled-action")).toBeNull();
+    });
+
+    it("time-threshold-drifting-lost: at-risk -> drifting-lost", () => {
+      expect(resolveTransition("at-risk", "time-threshold-drifting-lost")).toBe("drifting-lost");
+    });
+
+    it("time-threshold-lost: drifting-lost -> lost", () => {
+      expect(resolveTransition("drifting-lost", "time-threshold-lost")).toBe("lost");
+    });
+
+    it("user-replied: drifting-lost -> active (recovery)", () => {
+      expect(resolveTransition("drifting-lost", "user-replied")).toBe("active");
+    });
+
+    it("inbound-message: drifting-lost -> active (recovery)", () => {
+      expect(resolveTransition("drifting-lost", "inbound-message")).toBe("active");
+    });
+
+    it("archive-drift-start: handled -> approaching-archive", () => {
+      expect(resolveTransition("handled", "archive-drift-start")).toBe("approaching-archive");
+    });
+
+    it("archive-drift-complete: approaching-archive -> handled", () => {
+      expect(resolveTransition("approaching-archive", "archive-drift-complete")).toBe("handled");
     });
   });
 });

@@ -77,11 +77,15 @@ export function computeTargetZone(thread: Thread): ZoneId {
   // User override takes precedence
   if (thread.userOverrideZone) return thread.zone;
 
-  // Handled threads go to base
-  if (thread.lifecycleState === "handled") return "base-handled";
+  // Handled and approaching-archive threads go to base
+  if (thread.lifecycleState === "handled" || thread.lifecycleState === "approaching-archive")
+    return "base-handled";
 
   // Lost threads
   if (thread.lifecycleState === "lost" || thread.riskTier === "lost") return "lost";
+
+  // Drifting-lost threads target the lost zone (they are drifting toward it)
+  if (thread.lifecycleState === "drifting-lost") return "lost";
 
   // At-risk threads
   if (thread.lifecycleState === "at-risk" || thread.riskTier === "critical") return "at-risk";
@@ -178,7 +182,23 @@ export function driftTick(
         t.lifecycleState = next;
       }
     }
-    // at-risk -> lost when lost threshold crossed
+    // at-risk -> drifting-lost when target enters lost zone per Spec 03
+    if (t.lifecycleState === "at-risk" && t.riskTier === "critical") {
+      const targetZoneCheck = getZoneAtPosition(zones, t.targetPosition.x, t.targetPosition.y);
+      if (targetZoneCheck === "lost" || targetZoneCheck === "at-risk") {
+        const next = resolveTransition(t.lifecycleState, "time-threshold-drifting-lost");
+        if (next) {
+          t.stateHistory = [
+            ...t.stateHistory,
+            { from: t.lifecycleState, to: next, timestamp: now, trigger: "drift-toward-lost" },
+          ];
+          t.lifecycleState = next;
+        }
+      }
+    }
+
+    // drifting-lost -> lost when actual position enters lost zone
+    // at-risk -> lost when lost threshold crossed (direct transition if not via drifting-lost)
     if (t.riskTier === "lost" && prevRiskTier !== "lost") {
       const next = resolveTransition(t.lifecycleState, "time-threshold-lost");
       if (next) {
@@ -351,37 +371,54 @@ export function placeNewThread(
   const targetZone = computeTargetZone(thread);
   let position = getRandomPositionInZone(zones, targetZone);
 
-  // Cluster-biased placement per Spec 03
-  if (existingThreads && clusters && clusters.length > 0 && thread.participants.length > 0) {
+  // Cluster-biased placement per Spec 03: bias toward clusters sharing participants or topic tags
+  if (existingThreads && clusters && clusters.length > 0) {
     const newEmails = new Set(thread.participants.map((p) => p.email));
+    const newTags = new Set(thread.topicTags ?? []);
     let bestCluster: { centroid: { x: number; y: number } } | null = null;
-    let bestOverlap = 0;
+    let bestScore = 0;
 
     for (const cluster of clusters) {
-      // Compute participant overlap with cluster members
-      let overlapCount = 0;
+      let participantOverlap = 0;
+      let topicOverlap = 0;
       let memberCount = 0;
+
       for (const memberId of cluster.memberThreadIds) {
         const member = existingThreads.find((t) => t.id === memberId);
         if (!member) continue;
         memberCount++;
+
+        // Check participant overlap
         for (const p of member.participants) {
           if (newEmails.has(p.email)) {
-            overlapCount++;
-            break; // count each member once
+            participantOverlap++;
+            break;
+          }
+        }
+
+        // Check topic tag overlap
+        const memberTags = member.topicTags ?? [];
+        for (const tag of memberTags) {
+          if (newTags.has(tag)) {
+            topicOverlap++;
+            break;
           }
         }
       }
 
-      // Require at least half the members share a participant
-      if (memberCount > 0 && overlapCount / memberCount >= 0.5 && overlapCount > bestOverlap) {
-        bestOverlap = overlapCount;
+      if (memberCount === 0) continue;
+
+      // Combined affinity score: participant overlap weighted higher per Spec 11
+      const score = (participantOverlap / memberCount) * 0.6 + (topicOverlap / memberCount) * 0.4;
+
+      // Require meaningful affinity (at least 30% overlap)
+      if (score >= 0.3 && score > bestScore) {
+        bestScore = score;
         bestCluster = cluster;
       }
     }
 
     if (bestCluster) {
-      // Offset position toward cluster centroid with some randomness
       const jitterX = (Math.random() - 0.5) * 60;
       const jitterY = (Math.random() - 0.5) * 60;
       position = {
@@ -422,38 +459,56 @@ export function onUserReply(thread: Thread, zones: Map<ZoneId, Zone>): Thread {
   };
 }
 
-// Archive: drift toward base-handled boundary
+// Archive: drift toward base-handled boundary via approaching-archive state per Spec 03
 export function onArchive(thread: Thread, zones: Map<ZoneId, Zone>): Thread {
   const position = getRandomPositionInZone(zones, "base-handled");
   return {
     ...thread,
     zone: "base-handled",
     targetPosition: position,
-    lifecycleState: "handled",
+    lifecycleState: "approaching-archive",
     visualState: "archived",
     lastModified: Date.now(),
   };
 }
 
 // Label action: reset neglect per Spec 03 Section 3
+// Recovers drifting-lost threads back to active per Spec 03
 export function onLabel(thread: Thread): Thread {
-  return {
+  const result: Thread = {
     ...thread,
     neglectDuration: 0,
     lastUserReplyTimestamp: Date.now(),
     lastModified: Date.now(),
   };
+  if (thread.lifecycleState === "drifting-lost") {
+    result.lifecycleState = "active";
+    result.stateHistory = [
+      ...thread.stateHistory,
+      { from: "drifting-lost", to: "active", timestamp: Date.now(), trigger: "user-label" },
+    ];
+  }
+  return result;
 }
 
 // Mark read action: reset neglect per Spec 03 Section 3
+// Recovers drifting-lost threads back to active per Spec 03
 export function onMarkRead(thread: Thread): Thread {
-  return {
+  const result: Thread = {
     ...thread,
     neglectDuration: 0,
     lastUserReplyTimestamp: Date.now(),
     unread: false,
     lastModified: Date.now(),
   };
+  if (thread.lifecycleState === "drifting-lost") {
+    result.lifecycleState = "active";
+    result.stateHistory = [
+      ...thread.stateHistory,
+      { from: "drifting-lost", to: "active", timestamp: Date.now(), trigger: "user-mark-read" },
+    ];
+  }
+  return result;
 }
 
 // Manual reclassification: user drags thread to a different zone
