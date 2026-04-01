@@ -88,6 +88,42 @@ describe("Front health", () => {
       expect(healthGood).toBeGreaterThan(healthBad);
     });
 
+    it("weights risk load by thread type (Spec 07)", () => {
+      // A lost warm-intro (high weight) should hurt health more than a lost transactional (low weight)
+      const warmIntroLost = {
+        ...createThread("t1", "S", "s"),
+        riskTier: "lost" as const,
+        threadType: "warm-intro" as const,
+      };
+      const transactionalLost = {
+        ...createThread("t2", "S", "s"),
+        riskTier: "lost" as const,
+        threadType: "transactional" as const,
+      };
+      const safeThread = {
+        ...createThread("t3", "S", "s"),
+        riskTier: "safe" as const,
+        threadType: "existing-relationship" as const,
+      };
+
+      const stats = createSessionStats();
+
+      // One warm-intro lost + one safe
+      const healthWarmLost = computeFrontHealth([warmIntroLost, safeThread], [], {
+        ...stats,
+        lostThreadCount: 1,
+      });
+
+      // One transactional lost + one safe
+      const healthTransLost = computeFrontHealth([transactionalLost, safeThread], [], {
+        ...stats,
+        lostThreadCount: 1,
+      });
+
+      // Warm-intro lost should produce lower health than transactional lost
+      expect(healthWarmLost).toBeLessThan(healthTransLost);
+    });
+
     it("is bounded between 0 and 100", () => {
       const threads = [{ ...createThread("t1", "S", "s"), riskTier: "lost" as const }];
       const stats = { ...createSessionStats(), lostThreadCount: 100 };

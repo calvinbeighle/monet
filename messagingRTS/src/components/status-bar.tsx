@@ -51,16 +51,60 @@ export function StatusBar({
             : "bg-gray-500";
   const syncLabel = isInitialLoad ? "loading" : syncStatus;
 
+  // Per Spec 12 Section 3: left-to-right order is sync indicator, front health,
+  // streak counters, alert badge. Additional items (deployments, filter, summary,
+  // lost tally) do not displace these four.
   return (
     <div
       className="flex h-10 w-full items-center justify-between border-b border-gray-800 bg-[#0e0e1a] px-4"
       data-testid="status-bar"
     >
       <div className="flex items-center gap-4">
+        {/* 1. Sync status indicator */}
         <div className="flex items-center gap-2">
           <div className={`h-2 w-2 rounded-full ${syncIndicator}`} data-testid="sync-indicator" />
           <span className="text-xs text-gray-400">{syncLabel}</span>
         </div>
+
+        {/* 2. Front health score display */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Health</span>
+          <span className={`text-sm font-mono ${healthColor}`} data-testid="health-score">
+            {frontHealthScore}
+          </span>
+        </div>
+
+        {/* 3. Streak counter display */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Inbox Zero</span>
+          <span className="text-sm font-mono text-gray-300">{streakInboxZero}d</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Zero Lost</span>
+          <span className="text-sm font-mono text-gray-300">{streakZeroLost}d</span>
+        </div>
+
+        {/* 4. Alert badge */}
+        {unreadAlertCount > 0 && (
+          <button
+            className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs text-white hover:bg-red-500 cursor-pointer"
+            data-testid="alert-badge"
+            onClick={onAlertClick}
+            aria-label={`${unreadAlertCount} unread alerts`}
+          >
+            {unreadAlertCount}
+          </button>
+        )}
+      </div>
+
+      {/* Additional items - do not displace the four primary indicators */}
+      <div className="flex items-center gap-4">
+        {lostThreadCount > 0 && (
+          <div className="flex items-center gap-2" data-testid="lost-tally">
+            <span className="text-xs text-gray-500">Lost</span>
+            <span className="text-sm font-mono text-red-400">{lostThreadCount}</span>
+          </div>
+        )}
 
         {onHistoryClick && (
           <button
@@ -82,32 +126,6 @@ export function StatusBar({
             {filterActive ? "Filtered" : "Filter"}
           </button>
         )}
-      </div>
-
-      <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Health</span>
-          <span className={`text-sm font-mono ${healthColor}`} data-testid="health-score">
-            {frontHealthScore}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Inbox Zero</span>
-          <span className="text-sm font-mono text-gray-300">{streakInboxZero}d</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">Zero Lost</span>
-          <span className="text-sm font-mono text-gray-300">{streakZeroLost}d</span>
-        </div>
-
-        {lostThreadCount > 0 && (
-          <div className="flex items-center gap-2" data-testid="lost-tally">
-            <span className="text-xs text-gray-500">Lost</span>
-            <span className="text-sm font-mono text-red-400">{lostThreadCount}</span>
-          </div>
-        )}
 
         {onSummaryClick && (
           <button
@@ -116,17 +134,6 @@ export function StatusBar({
             data-testid="summary-trigger"
           >
             Summary
-          </button>
-        )}
-
-        {unreadAlertCount > 0 && (
-          <button
-            className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-xs text-white hover:bg-red-500 cursor-pointer"
-            data-testid="alert-badge"
-            onClick={onAlertClick}
-            aria-label={`${unreadAlertCount} unread alerts`}
-          >
-            {unreadAlertCount}
           </button>
         )}
       </div>

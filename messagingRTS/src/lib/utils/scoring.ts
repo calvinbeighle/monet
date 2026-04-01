@@ -3,11 +3,35 @@
 
 import type { Thread } from "../types";
 
+// Deadline detection phrases per Spec 03:
+// "Presence of explicit deadlines in message content - detected deadline phrases raise urgency"
+const DEADLINE_PATTERNS = [
+  /\bby\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i,
+  /\bby\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{1,2}/i,
+  /\bdeadline\b/i,
+  /\bdue\s+(date|by|on)\b/i,
+  /\beod\b/i,
+  /\bend\s+of\s+(day|week|month)\b/i,
+  /\basap\b/i,
+  /\burgent\s*:?\s*(deadline|by|before)\b/i,
+  /\bno\s+later\s+than\b/i,
+  /\bmust\s+(respond|reply|submit|complete|finish)\s+by\b/i,
+  /\btime[- ]?sensitive\b/i,
+  /\bexpir(es?|ing)\s+(on|by|in)\b/i,
+  /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/, // date patterns like 3/15/2026
+  /\b\d{4}-\d{2}-\d{2}\b/, // ISO date patterns
+];
+
+// Check message content for deadline phrases
+export function detectDeadline(text: string): boolean {
+  return DEADLINE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 // Urgency score (0.0 - 1.0) inputs per Spec 03:
 // - Time since last user reply (higher = more urgent)
 // - Sender importance (VIP flag)
 // - Thread age + unresolved status
-// - Explicit deadlines in content (future: NLP extraction)
+// - Explicit deadlines in message content
 export function computeUrgencyScore(thread: Thread, now: number = Date.now()): number {
   let score = 0;
 
@@ -46,6 +70,15 @@ export function computeUrgencyScore(thread: Thread, now: number = Date.now()): n
     score += 0.1;
   }
 
+  // Deadline detection per Spec 03: scan subject and message bodies for deadline phrases
+  const hasDeadlineInSubject = detectDeadline(thread.subject);
+  const hasDeadlineInBody = thread.messages.some(
+    (m) => detectDeadline(m.bodyPlain) || detectDeadline(m.bodyHtml),
+  );
+  if (hasDeadlineInSubject || hasDeadlineInBody) {
+    score += 0.15;
+  }
+
   return Math.min(Math.max(score, 0), 1.0);
 }
 
@@ -78,7 +111,9 @@ export function computeValueScore(thread: Thread): number {
     score += 0.15;
   }
 
-  // Keyword signals in subject (basic heuristic)
+  // Keyword signals in subject AND body per Spec 03:
+  // "Subject and body keyword signals - keywords associated with deals,
+  // commitments, or high-stakes topics raise value"
   const valuableKeywords = [
     "deal",
     "contract",
@@ -92,8 +127,12 @@ export function computeValueScore(thread: Thread): number {
     "payment",
   ];
   const subjectLower = thread.subject.toLowerCase();
-  const keywordMatch = valuableKeywords.some((kw) => subjectLower.includes(kw));
-  if (keywordMatch) {
+  const keywordInSubject = valuableKeywords.some((kw) => subjectLower.includes(kw));
+  const keywordInBody = thread.messages.some((m) => {
+    const bodyText = (m.bodyPlain || m.bodyHtml || "").toLowerCase();
+    return valuableKeywords.some((kw) => bodyText.includes(kw));
+  });
+  if (keywordInSubject || keywordInBody) {
     score += 0.15;
   }
 

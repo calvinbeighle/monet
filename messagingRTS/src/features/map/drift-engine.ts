@@ -232,7 +232,10 @@ export function driftTick(
     t.targetPosition = computeTargetPosition(t, zones, targetZone);
 
     // 4. Apply neglect-driven drift toward Lost zone
-    if (t.neglectDuration > 0 && t.lifecycleState !== "handled") {
+    // Per Spec 03: "Threads with high value but low urgency occupy stable positions
+    // in the monitor zone" - skip neglect drift for threads targeting the opportunities zone
+    const isStabilizedOpportunity = targetZone === "opportunities";
+    if (t.neglectDuration > 0 && t.lifecycleState !== "handled" && !isStabilizedOpportunity) {
       const neglectHours = t.neglectDuration / (1000 * 60 * 60);
       const lostCenter = getZoneCenter(zones, "lost");
       const driftMag = NEGLECT_DRIFT_RATE * Math.min(neglectHours, 48);

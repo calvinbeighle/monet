@@ -35,10 +35,11 @@ export function evaluateOpportunity(
     return { state: "expired", windowEnd };
   }
 
-  // Calculate position within window
-  const windowStart = windowEnd - DEFAULT_WINDOW_MS;
+  // Use stored start timestamp per Spec 07, fall back to derived value
+  const windowStart = thread.opportunityWindowStart ?? windowEnd - DEFAULT_WINDOW_MS;
   const elapsed = now - windowStart;
-  const halfWindow = DEFAULT_WINDOW_MS / 2;
+  const windowDuration = windowEnd - windowStart;
+  const halfWindow = windowDuration / 2;
 
   if (elapsed < halfWindow) {
     return { state: "ripe", windowEnd };
@@ -55,6 +56,7 @@ export function flagOpportunity(
   return {
     ...thread,
     opportunityState: "ripe",
+    opportunityWindowStart: now, // per Spec 07: store window open timestamp
     opportunityWindowEnd: now + windowDurationMs,
     lastModified: now,
   };

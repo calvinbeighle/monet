@@ -5,6 +5,7 @@ import {
   computeRiskTier,
   computeRiskScore,
   getLatencyThresholds,
+  detectDeadline,
 } from "./scoring";
 import { createThread } from "../types";
 import type { ContactEnrichment } from "../types";
@@ -66,6 +67,49 @@ describe("computeUrgencyScore", () => {
     const scoreRead = computeUrgencyScore(thread);
 
     expect(scoreUnread).toBeGreaterThan(scoreRead);
+  });
+
+  it("boosts urgency when message body contains deadline phrases", () => {
+    const now = Date.now();
+    const thread = createThread("t1", "Regular subject", "snippet");
+    thread.unread = false;
+    thread.firstMessageTimestamp = now - 1000;
+    thread.latestMessageTimestamp = now - 1000;
+    const scoreNoDeadline = computeUrgencyScore(thread, now);
+
+    thread.messages = [
+      {
+        id: "m1",
+        sender: "a@b.com",
+        recipients: [],
+        cc: [],
+        bcc: [],
+        timestamp: now,
+        bodyPlain: "Please submit the report by Friday EOD",
+        bodyHtml: "",
+        labelIds: [],
+        attachments: [],
+      },
+    ];
+    const scoreWithDeadline = computeUrgencyScore(thread, now);
+    expect(scoreWithDeadline).toBeGreaterThan(scoreNoDeadline);
+  });
+
+  it("detects deadline in subject line", () => {
+    const now = Date.now();
+    const thread = createThread("t1", "ASAP: Need your review", "snippet");
+    thread.unread = false;
+    thread.firstMessageTimestamp = now - 1000;
+    thread.latestMessageTimestamp = now - 1000;
+    const score = computeUrgencyScore(thread, now);
+
+    const thread2 = createThread("t2", "Regular email", "snippet");
+    thread2.unread = false;
+    thread2.firstMessageTimestamp = now - 1000;
+    thread2.latestMessageTimestamp = now - 1000;
+    const scoreNoDeadline = computeUrgencyScore(thread2, now);
+
+    expect(score).toBeGreaterThan(scoreNoDeadline);
   });
 
   it("caps urgency at 1.0", () => {
@@ -156,6 +200,29 @@ describe("computeValueScore", () => {
     const scoreValuable = computeValueScore(thread2);
 
     expect(scoreValuable).toBeGreaterThan(scoreRegular);
+  });
+
+  it("boosts value for valuable keywords in message body (Spec 03)", () => {
+    const thread = createThread("t1", "Regular email", "snippet");
+    thread.participants = [makeContact()];
+    const scoreNoBody = computeValueScore(thread);
+
+    thread.messages = [
+      {
+        id: "m1",
+        sender: "a@b.com",
+        recipients: [],
+        cc: [],
+        bcc: [],
+        timestamp: Date.now(),
+        bodyPlain: "We would like to discuss a partnership proposal with your team",
+        bodyHtml: "",
+        labelIds: [],
+        attachments: [],
+      },
+    ];
+    const scoreWithBody = computeValueScore(thread);
+    expect(scoreWithBody).toBeGreaterThan(scoreNoBody);
   });
 
   it("caps value at 1.0", () => {
@@ -294,6 +361,57 @@ describe("computeRiskScore", () => {
     for (let i = 1; i < scores.length; i++) {
       expect(scores[i] - scores[i - 1]).toBeLessThan(10);
     }
+  });
+});
+
+describe("detectDeadline", () => {
+  it("detects 'by Monday' style phrases", () => {
+    expect(detectDeadline("Please send this by Monday")).toBe(true);
+  });
+
+  it("detects 'deadline' keyword", () => {
+    expect(detectDeadline("The deadline for this project is next week")).toBe(true);
+  });
+
+  it("detects 'EOD' abbreviation", () => {
+    expect(detectDeadline("I need this EOD")).toBe(true);
+  });
+
+  it("detects 'ASAP' abbreviation", () => {
+    expect(detectDeadline("Please respond ASAP")).toBe(true);
+  });
+
+  it("detects 'end of week' phrases", () => {
+    expect(detectDeadline("Submit by end of week")).toBe(true);
+  });
+
+  it("detects 'due by' phrases", () => {
+    expect(detectDeadline("This is due by next Friday")).toBe(true);
+  });
+
+  it("detects date patterns", () => {
+    expect(detectDeadline("Complete before 3/15/2026")).toBe(true);
+    expect(detectDeadline("Due 2026-04-01")).toBe(true);
+  });
+
+  it("detects 'time-sensitive'", () => {
+    expect(detectDeadline("This is a time-sensitive matter")).toBe(true);
+  });
+
+  it("detects 'no later than'", () => {
+    expect(detectDeadline("Submit no later than 5pm")).toBe(true);
+  });
+
+  it("returns false for non-deadline text", () => {
+    expect(detectDeadline("Hey just checking in, how are things going?")).toBe(false);
+  });
+
+  it("detects 'by Jan 15' style month phrases", () => {
+    expect(detectDeadline("Please review by Jan 15")).toBe(true);
+  });
+
+  it("detects 'expires on' phrases", () => {
+    expect(detectDeadline("Your offer expires on March 1st")).toBe(true);
   });
 });
 

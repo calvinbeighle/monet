@@ -49,27 +49,43 @@ export function computeFrontHealth(
   return Math.round(Math.max(0, Math.min(100, health)));
 }
 
+// Thread type weights per Spec 07: "distribution of threads across risk tiers,
+// weighted by thread type". Tighter tolerance windows = higher weight because
+// a lost warm-intro is more damaging than a lost transactional thread.
+const THREAD_TYPE_RISK_WEIGHT: Record<Thread["threadType"], number> = {
+  internal: 1.5,
+  "warm-intro": 1.4,
+  "existing-relationship": 1.0,
+  "cold-outreach": 0.8,
+  transactional: 0.5,
+};
+
 function computeRiskLoad(threads: Thread[]): number {
   if (threads.length === 0) return 100;
 
-  let score = 0;
+  let weightedScore = 0;
+  let totalWeight = 0;
   for (const t of threads) {
+    const typeWeight = THREAD_TYPE_RISK_WEIGHT[t.threadType] ?? 1.0;
+    let tierScore: number;
     switch (t.riskTier) {
       case "safe":
-        score += 100;
+        tierScore = 100;
         break;
       case "elevated":
-        score += 60;
+        tierScore = 60;
         break;
       case "critical":
-        score += 20;
+        tierScore = 20;
         break;
       case "lost":
-        score += 0;
+        tierScore = 0;
         break;
     }
+    weightedScore += tierScore * typeWeight;
+    totalWeight += typeWeight;
   }
-  return score / threads.length;
+  return totalWeight > 0 ? weightedScore / totalWeight : 100;
 }
 
 function computeTrustAverage(records: TrustRecord[]): number {

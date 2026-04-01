@@ -204,6 +204,42 @@ describe("driftTick", () => {
     // Should have drifted closer to lost zone
     expect(finalDist).toBeLessThan(initialDist);
   });
+
+  it("does NOT apply neglect drift to high-value/low-urgency threads in opportunities zone (Spec 03)", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact({ relationshipScore: 100, vipFlag: true })];
+    thread.valueScore = 0.8;
+    thread.urgencyScore = 0.2;
+    thread.unread = false;
+    thread.neglectDuration = 24 * 60 * 60 * 1000; // 24 hours neglect
+    thread.lastUserReplyTimestamp = now - 24 * 60 * 60 * 1000;
+    thread.latestMessageTimestamp = now - 24 * 60 * 60 * 1000;
+    thread.firstMessageTimestamp = now - 48 * 60 * 60 * 1000;
+
+    // Place in opportunities zone
+    const oppCenter = getZoneCenter(zones, "opportunities");
+    thread.position = { ...oppCenter };
+    thread.targetPosition = { ...oppCenter };
+
+    const lostCenter = getZoneCenter(zones, "lost");
+
+    // Run many ticks
+    let current = [thread];
+    for (let i = 0; i < 20; i++) {
+      current = driftTick(current, zones, now);
+    }
+
+    const finalDistToLost = Math.hypot(
+      lostCenter.x - current[0].position.x,
+      lostCenter.y - current[0].position.y,
+    );
+    const initialDistToLost = Math.hypot(lostCenter.x - oppCenter.x, lostCenter.y - oppCenter.y);
+
+    // Should NOT have drifted closer to lost zone - stabilized in opportunities
+    expect(finalDistToLost).toBeGreaterThanOrEqual(initialDistToLost * 0.8);
+  });
 });
 
 describe("placeNewThread", () => {

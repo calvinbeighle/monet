@@ -63,6 +63,25 @@ describe("Opportunity system", () => {
       const result = evaluateOpportunity(thread);
       expect(result.state).toBe("expired");
     });
+
+    it("uses stored window start for custom duration windows (Spec 07)", () => {
+      const now = Date.now();
+      const thread = createThread("t1", "S", "s");
+      const customWindow = 2 * 60 * 60 * 1000; // 2 hours
+
+      // Flag with custom window
+      thread.opportunityState = "ripe";
+      thread.opportunityWindowStart = now;
+      thread.opportunityWindowEnd = now + customWindow;
+
+      // At 40% through window (48 min) - should be ripe (< 50%)
+      const result40 = evaluateOpportunity(thread, now + customWindow * 0.4);
+      expect(result40.state).toBe("ripe");
+
+      // At 60% through window (72 min) - should be fading (> 50%)
+      const result60 = evaluateOpportunity(thread, now + customWindow * 0.6);
+      expect(result60.state).toBe("fading");
+    });
   });
 
   describe("flagOpportunity", () => {
@@ -73,6 +92,24 @@ describe("Opportunity system", () => {
 
       expect(flagged.opportunityState).toBe("ripe");
       expect(flagged.opportunityWindowEnd).toBe(now + DEFAULT_WINDOW_MS);
+    });
+
+    it("stores opportunity window start timestamp (Spec 07)", () => {
+      const now = Date.now();
+      const thread = createThread("t1", "S", "s");
+      const flagged = flagOpportunity(thread, DEFAULT_WINDOW_MS, now);
+
+      expect(flagged.opportunityWindowStart).toBe(now);
+    });
+
+    it("uses custom window duration correctly with stored start", () => {
+      const now = Date.now();
+      const thread = createThread("t1", "S", "s");
+      const customWindow = 2 * 60 * 60 * 1000; // 2 hours
+      const flagged = flagOpportunity(thread, customWindow, now);
+
+      expect(flagged.opportunityWindowStart).toBe(now);
+      expect(flagged.opportunityWindowEnd).toBe(now + customWindow);
     });
   });
 

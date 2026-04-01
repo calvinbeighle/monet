@@ -176,6 +176,7 @@ describe("SyncEngine", () => {
         riskTier: "safe",
         riskTimerStart: Date.now(),
         opportunityState: "none",
+        opportunityWindowStart: null,
         opportunityWindowEnd: null,
         topicTags: [],
         visualState: "idle",

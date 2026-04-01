@@ -122,6 +122,7 @@ export interface Thread {
   riskTier: RiskTier;
   riskTimerStart: number; // timestamp when risk clock started
   opportunityState: OpportunityState;
+  opportunityWindowStart: number | null; // per Spec 07: window open timestamp
   opportunityWindowEnd: number | null;
 
   // Topic tags derived from subject and body per Spec 03
@@ -171,6 +172,7 @@ export function createThread(id: string, subject: string, snippet: string): Thre
     riskTier: "safe",
     riskTimerStart: now,
     opportunityState: "none",
+    opportunityWindowStart: null,
     opportunityWindowEnd: null,
 
     topicTags: [],
