@@ -63,6 +63,20 @@ export function createZoneLayout(): Map<ZoneId, Zone> {
     "base-handled",
   ];
 
+  // Per Spec 04: zones have configurable alert thresholds.
+  // at-risk and lost zones have maxThreads alerts to warn when threads accumulate.
+  const ZONE_ALERT_THRESHOLDS: Record<
+    ZoneId,
+    { minThreads: number | null; maxThreads: number | null }
+  > = {
+    "active-front": { minThreads: null, maxThreads: null },
+    opportunities: { minThreads: null, maxThreads: null },
+    "at-risk": { minThreads: null, maxThreads: 10 },
+    lost: { minThreads: null, maxThreads: 3 },
+    noise: { minThreads: null, maxThreads: null },
+    "base-handled": { minThreads: null, maxThreads: null },
+  };
+
   for (const id of zoneIds) {
     const def = ZONE_DEFINITIONS[id];
     const anchor = ZONE_ANCHORS[id];
@@ -73,7 +87,7 @@ export function createZoneLayout(): Map<ZoneId, Zone> {
       colorTint: def.colorTint,
       borderColor: def.borderColor,
       threadCount: 0,
-      alertThreshold: { minThreads: null, maxThreads: null },
+      alertThreshold: ZONE_ALERT_THRESHOLDS[id],
       alertState: "inactive",
       dynamicSizeWeight: 1.0,
     });
@@ -89,7 +103,13 @@ export function updateZoneSizes(
   threadCounts: Record<ZoneId, number>,
 ): void {
   const total = Object.values(threadCounts).reduce((sum, c) => sum + c, 0);
-  if (total === 0) return; // no threads, keep default sizes
+  if (total === 0) {
+    // Per Spec 04: all zones must show their thread count, including zero
+    for (const [id, zone] of zones) {
+      zone.threadCount = threadCounts[id] || 0;
+    }
+    return;
+  }
 
   for (const [id, zone] of zones) {
     const count = threadCounts[id] || 0;

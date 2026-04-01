@@ -5,6 +5,8 @@
 
 import { nangoProxy } from "../../lib/nango-client";
 import { useAuthStore } from "./auth-store";
+import { rateLimiter, getOperationName } from "../../lib/utils/rate-limiter";
+import type { ApiCallPriority } from "../../lib/utils/rate-limiter";
 
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
@@ -109,12 +111,28 @@ export function _resetProxyFn(): void {
   _proxyFn = nangoProxy;
 }
 
-async function gmailFetch(path: string, options: RequestInit = {}): Promise<Response> {
+async function gmailFetch(
+  path: string,
+  options: RequestInit = {},
+  priority: ApiCallPriority = "background-sync",
+): Promise<Response> {
+  const method = (options.method ?? "GET").toUpperCase();
+  const operation = getOperationName(path, method);
+
+  // Per Spec 01: never make API calls predicted to exceed quota
+  const check = rateLimiter.canProceed(operation, priority);
+  if (!check.allowed) {
+    throw new GmailApiError(`Rate limited: ${check.reason ?? "quota exceeded"}`, 429, true);
+  }
+
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       const response = await _proxyFn(path, options);
+
+      // Record usage on successful network call (regardless of HTTP status)
+      rateLimiter.recordUsage(operation);
 
       if (response.ok) return response;
 
@@ -132,6 +150,8 @@ async function gmailFetch(path: string, options: RequestInit = {}): Promise<Resp
         const waitMs = retryAfter
           ? parseInt(retryAfter, 10) * 1000
           : INITIAL_BACKOFF_MS * Math.pow(2, attempt);
+        // Inform rate limiter of the pause duration
+        rateLimiter.pauseFor(waitMs);
         await sleep(waitMs);
         continue;
       }
@@ -226,10 +246,11 @@ export async function sendReply(payload: SendReplyPayload): Promise<GmailMessage
 
   const raw = encodeEmail(headers, payload.body);
 
-  const resp = await gmailFetch("/messages/send", {
-    method: "POST",
-    body: JSON.stringify({ raw, threadId: payload.threadId }),
-  });
+  const resp = await gmailFetch(
+    "/messages/send",
+    { method: "POST", body: JSON.stringify({ raw, threadId: payload.threadId }) },
+    "user-action",
+  );
   return resp.json();
 }
 
@@ -251,10 +272,11 @@ export async function createDraft(payload: DraftPayload): Promise<{ id: string }
 
   const raw = encodeEmail(headers, payload.body);
 
-  const resp = await gmailFetch("/drafts", {
-    method: "POST",
-    body: JSON.stringify({ message: { raw, threadId: payload.threadId } }),
-  });
+  const resp = await gmailFetch(
+    "/drafts",
+    { method: "POST", body: JSON.stringify({ message: { raw, threadId: payload.threadId } }) },
+    "user-action",
+  );
   return resp.json();
 }
 
@@ -270,22 +292,24 @@ export async function updateDraft(draftId: string, payload: DraftPayload): Promi
 
   const raw = encodeEmail(headers, payload.body);
 
-  const resp = await gmailFetch(`/drafts/${encodeURIComponent(draftId)}`, {
-    method: "PUT",
-    body: JSON.stringify({ message: { raw, threadId: payload.threadId } }),
-  });
+  const resp = await gmailFetch(
+    `/drafts/${encodeURIComponent(draftId)}`,
+    { method: "PUT", body: JSON.stringify({ message: { raw, threadId: payload.threadId } }) },
+    "user-action",
+  );
   return resp.json();
 }
 
 export async function deleteDraft(draftId: string): Promise<void> {
-  await gmailFetch(`/drafts/${encodeURIComponent(draftId)}`, { method: "DELETE" });
+  await gmailFetch(`/drafts/${encodeURIComponent(draftId)}`, { method: "DELETE" }, "user-action");
 }
 
 export async function archiveThread(threadId: string): Promise<void> {
-  await gmailFetch(`/threads/${encodeURIComponent(threadId)}/modify`, {
-    method: "POST",
-    body: JSON.stringify({ removeLabelIds: ["INBOX"] }),
-  });
+  await gmailFetch(
+    `/threads/${encodeURIComponent(threadId)}/modify`,
+    { method: "POST", body: JSON.stringify({ removeLabelIds: ["INBOX"] }) },
+    "user-action",
+  );
 }
 
 export async function modifyThreadLabels(
@@ -296,10 +320,11 @@ export async function modifyThreadLabels(
   const body: Record<string, string[]> = {};
   if (addLabelIds.length > 0) body.addLabelIds = addLabelIds;
   if (removeLabelIds.length > 0) body.removeLabelIds = removeLabelIds;
-  await gmailFetch(`/threads/${encodeURIComponent(threadId)}/modify`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+  await gmailFetch(
+    `/threads/${encodeURIComponent(threadId)}/modify`,
+    { method: "POST", body: JSON.stringify(body) },
+    "user-action",
+  );
 }
 
 // --- Helpers for thread data extraction ---

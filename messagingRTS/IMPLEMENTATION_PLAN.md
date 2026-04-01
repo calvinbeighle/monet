@@ -2,7 +2,7 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 803 tests passing. Tags through v0.7.5.
+**Current state**: 826 tests passing. Tags through v0.7.6.
 
 **Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
@@ -317,7 +317,7 @@ These must be resolved before implementation begins:
 
 ## Cross-Cutting Concerns (address during relevant phases)
 
-- **Rate limiting**: Gmail API quota tracking, prioritize user actions over background sync (Phase 1)
+- [x] **Rate limiting**: Gmail API quota tracking, prioritize user actions over background sync (Phase 1)
 - **Error handling**: every Gmail failure surfaced to user, no silent drops (Phase 1)
 - **Accessibility**: keyboard navigation throughout, focus management, ARIA labels (Phase 2)
 - **Performance**: PixiJS object pooling for 500+ entities, IndexedDB batch writes (Phase 2)
@@ -504,3 +504,12 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Session summary wired: App.tsx reads live `sessionStats` from app store instead of hardcoded zeros. `netHealthChange` computed as `frontHealthScore - initialHealthScore`. `sessionDurationMs` computed live from `sessionStats.sessionStart`. Counters incremented in: outbound-actions.ts (reply: trust, opportunity capture, risk mitigation), batch-operations.ts (threadsHandled), deployment-confirmation.tsx (agentsDeployed), game-loop.ts (opportunitiesMissed, lostThreadCount).
 - determineChangeType fixed: sync-engine.ts now returns "label-change" for label deletions and non-UNREAD additions, "new-message" for UNREAD/INBOX additions. Previously both branches returned "new-message".
 - Test count: 803 total (21 new: 17 game-loop, 4 app-store), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Rate Limiting & Bug Fixes (2026-03-31)
+
+- Gmail API rate limiter (src/lib/utils/rate-limiter.ts): Sliding-window per-second tracking (250 units/s) and daily quota tracking (10,000 units conservative per-user limit). Operations cost-mapped: messages.send=100, threads.list=10, threads.get=5, history.list=2, etc. Three enforcement modes: (1) per-second overflow blocks with estimated wait time, (2) at 80% daily usage, background-sync reads are paused while user-action writes still proceed, (3) at daily exhaustion, enters read-only degraded mode (writes blocked, reads allowed). 429 responses trigger pauseFor() which blocks all calls for the server-indicated duration. getOperationName() maps Gmail API paths+methods to named operations. Injectable clock (\_setNow) for testing.
+- gmail-client.ts integration: gmailFetch() now checks rateLimiter.canProceed() before every API call and records usage after. All user-initiated operations (sendReply, createDraft, updateDraft, deleteDraft, archiveThread, modifyThreadLabels) pass priority="user-action". Background operations (thread list, detail fetch, history poll) default to "background-sync". 429 responses update both the retry backoff and the rate limiter pause.
+- Bug fix - zone alert thresholds: createZoneLayout() was initializing all zones with null alert thresholds, meaning evaluateZoneAlerts() could never fire. Fixed: at-risk zone now has maxThreads=10, lost zone has maxThreads=3.
+- Bug fix - arrow key first-press: findNextThreadInDirection() was selecting threads[0] (array order) when nothing was selected. Now accepts optional viewportCenter parameter and uses findNearestThread() to select the thread nearest to the viewport center per Spec 08.
+- Bug fix - empty zone threadCount: updateZoneSizes() returned early when total threads was 0, leaving stale threadCount values on zones. Now explicitly sets threadCount=0 for all zones in the zero-thread case per Spec 04.
+- Test count: 826 total (23 new rate limiter tests), all passing. Typecheck and lint clean.

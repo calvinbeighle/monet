@@ -21,3 +21,6 @@ export {
   computeRiskTier,
   getLatencyThresholds,
 } from "./scoring";
+
+export { rateLimiter, getOperationName } from "./rate-limiter";
+export type { ApiCallPriority } from "./rate-limiter";

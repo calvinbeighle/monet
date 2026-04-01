@@ -139,6 +139,7 @@ export function findNextThreadInDirection(
   currentId: string | null,
   direction: string,
   zoomLevel: ZoomLevel,
+  viewportCenter?: { x: number; y: number },
 ): string | null {
   // Only at operational or detail per Spec 08
   if (zoomLevel !== "operational" && zoomLevel !== "detail") return null;
@@ -146,8 +147,11 @@ export function findNextThreadInDirection(
   const dir = ARROW_DIRECTIONS[direction];
   if (!dir) return null;
 
-  // If nothing selected, find nearest to viewport center (caller provides center-positioned thread)
+  // Per Spec 08: first arrow key press selects thread nearest to viewport center
   if (!currentId) {
+    if (viewportCenter) {
+      return findNearestThread(threads, viewportCenter.x, viewportCenter.y);
+    }
     return threads.length > 0 ? threads[0].id : null;
   }
 
