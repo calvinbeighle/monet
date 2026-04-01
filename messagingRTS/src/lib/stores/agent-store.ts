@@ -16,6 +16,7 @@ import {
   resolveProposal,
   getCooldownRemaining,
 } from "../../features/agents/agent-manager";
+import { useThreadStore } from "./thread-store";
 
 const ALL_ROLES: AgentRole[] = [
   "closer",
@@ -125,6 +126,16 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set((state) => {
       const agent = state.agents.get(role);
       if (!agent) return state;
+      // Clear agent-occupied visual state on recalled threads per Spec 02
+      if (agent.threadIds.length > 0) {
+        const ts = useThreadStore.getState();
+        for (const tid of agent.threadIds) {
+          const thread = ts.getThread(tid);
+          if (thread && thread.visualState === "agent-occupied") {
+            ts.updateThread(tid, { visualState: "idle" });
+          }
+        }
+      }
       const updated = new Map(state.agents);
       updated.set(role, recallAgent(agent));
       return { agents: updated };

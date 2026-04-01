@@ -307,3 +307,145 @@ describe("onManualReclassify", () => {
     expect(computeTargetZone(reclassified)).toBe("opportunities");
   });
 });
+
+describe("driftTick - auto-lifecycle transitions", () => {
+  it("transitions waiting -> at-risk when riskTier crosses critical threshold", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.lifecycleState = "waiting";
+    thread.riskTier = "safe";
+    // cold-outreach: critical at 24h
+    thread.threadType = "cold-outreach";
+    // set timer 25 hours ago - past critical (24h) but before lost (48h)
+    thread.riskTimerStart = now - 25 * 60 * 60 * 1000;
+
+    const [updated] = driftTick([thread], zones, now);
+
+    expect(updated.riskTier).toBe("critical");
+    expect(updated.lifecycleState).toBe("at-risk");
+  });
+
+  it("records stateHistory entry with trigger 'risk-tier-critical' on waiting->at-risk", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.lifecycleState = "waiting";
+    thread.riskTier = "safe";
+    thread.threadType = "cold-outreach";
+    // 25h ago - past critical threshold (24h) for cold-outreach
+    thread.riskTimerStart = now - 25 * 60 * 60 * 1000;
+
+    const [updated] = driftTick([thread], zones, now);
+
+    const entry = updated.stateHistory.find((h) => h.trigger === "risk-tier-critical");
+    expect(entry).toBeDefined();
+    expect(entry?.from).toBe("waiting");
+    expect(entry?.to).toBe("at-risk");
+  });
+
+  it("transitions at-risk -> lost when riskTier crosses lost threshold", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.lifecycleState = "at-risk";
+    thread.riskTier = "critical";
+    // cold-outreach: lost at 48h
+    thread.threadType = "cold-outreach";
+    // set timer 49 hours ago - past lost (48h) threshold
+    thread.riskTimerStart = now - 49 * 60 * 60 * 1000;
+
+    const [updated] = driftTick([thread], zones, now);
+
+    expect(updated.riskTier).toBe("lost");
+    expect(updated.lifecycleState).toBe("lost");
+  });
+
+  it("records stateHistory entry with trigger 'risk-tier-lost' on at-risk->lost", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.lifecycleState = "at-risk";
+    thread.riskTier = "critical";
+    thread.threadType = "cold-outreach";
+    thread.riskTimerStart = now - 49 * 60 * 60 * 1000;
+
+    const [updated] = driftTick([thread], zones, now);
+
+    const entry = updated.stateHistory.find((h) => h.trigger === "risk-tier-lost");
+    expect(entry).toBeDefined();
+    expect(entry?.from).toBe("at-risk");
+    expect(entry?.to).toBe("lost");
+  });
+
+  it("does NOT update riskTier for handled threads", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.lifecycleState = "handled";
+    thread.riskTier = "safe";
+    thread.threadType = "cold-outreach";
+    // timer far in the past - would trigger critical/lost for a non-handled thread
+    thread.riskTimerStart = now - 72 * 60 * 60 * 1000;
+
+    const [updated] = driftTick([thread], zones, now);
+
+    // riskTier must remain unchanged for handled threads
+    expect(updated.riskTier).toBe("safe");
+    expect(updated.lifecycleState).toBe("handled");
+  });
+
+  it("does not re-trigger critical transition when riskTier is already critical", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.lifecycleState = "at-risk";
+    // already critical - prevRiskTier and new tier are both critical, no new transition
+    thread.riskTier = "critical";
+    thread.threadType = "cold-outreach";
+    thread.riskTimerStart = now - 25 * 60 * 60 * 1000; // stays critical
+    thread.stateHistory = [];
+
+    const [updated] = driftTick([thread], zones, now);
+
+    // No new stateHistory entries from the critical path
+    const criticalEntries = updated.stateHistory.filter((h) => h.trigger === "risk-tier-critical");
+    expect(criticalEntries).toHaveLength(0);
+  });
+
+  it("updates visualState to 'drifting' when thread has significant drift magnitude", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.position = { x: 100, y: 100 };
+    thread.targetPosition = { x: 2000, y: 600 };
+    thread.visualState = "idle";
+
+    const [updated] = driftTick([thread], zones);
+
+    expect(updated.visualState).toBe("drifting");
+  });
+
+  it("uses threadType-specific thresholds (warm-intro critical at 12h)", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.lifecycleState = "waiting";
+    thread.riskTier = "safe";
+    thread.threadType = "warm-intro";
+    // warm-intro: critical at 12h, set timer 13h ago
+    thread.riskTimerStart = now - 13 * 60 * 60 * 1000;
+
+    const [updated] = driftTick([thread], zones, now);
+
+    expect(updated.riskTier).toBe("critical");
+    expect(updated.lifecycleState).toBe("at-risk");
+  });
+});

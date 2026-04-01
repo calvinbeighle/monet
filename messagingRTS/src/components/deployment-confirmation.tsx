@@ -28,8 +28,13 @@ function startAgentWorkPhase(
     startWork(did);
   }
 
-  // Resolve thread objects for AI context
+  // Mark threads as agent-occupied per Spec 02 (gold ring indicator)
   const threadStore = useThreadStore.getState();
+  for (const tid of allThreadIds) {
+    threadStore.updateThread(tid, { visualState: "agent-occupied" });
+  }
+
+  // Resolve thread objects for AI context
   const threads = allThreadIds
     .map((id) => threadStore.getThread(id))
     .filter((t) => t !== undefined);
@@ -57,6 +62,16 @@ function startAgentWorkPhase(
       useAgentStore.getState().fail(agentRole);
       for (const did of deploymentIds) {
         failDeployment(did);
+      }
+    })
+    .finally(() => {
+      // Clear agent-occupied visual state per Spec 02
+      const ts = useThreadStore.getState();
+      for (const tid of allThreadIds) {
+        const thread = ts.getThread(tid);
+        if (thread && thread.visualState === "agent-occupied") {
+          ts.updateThread(tid, { visualState: "idle" });
+        }
       }
     });
 }

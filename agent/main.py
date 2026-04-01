@@ -32,7 +32,7 @@ app = FastAPI(title="Monet Agent Backend", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,6 +52,16 @@ from agent.trace_router import make_trace_router
 
 trace_router = make_trace_router(nango_mgr)
 app.include_router(trace_router, prefix="/api/trace")
+
+# PTY terminal server (WebSocket-based real terminal sessions)
+from agent.pty_server import make_pty_router
+
+app.include_router(make_pty_router(), prefix="/api/pty")
+
+# Chat server (clean Claude streaming without CLI chrome)
+from agent.chat_server import make_chat_router
+
+app.include_router(make_chat_router(), prefix="/api/chat")
 
 
 class RunRequest(BaseModel):

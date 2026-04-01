@@ -4,7 +4,8 @@
 
 import type { Thread, ZoneId } from "../../lib/types";
 import type { Zone } from "../../lib/types";
-import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
+import { computeUrgencyScore, computeValueScore, computeRiskTier } from "../../lib/utils/scoring";
+import { resolveTransition } from "../../lib/utils/thread-lifecycle";
 import { getZoneCenter, getRandomPositionInZone, getZoneAtPosition } from "./zone-layout";
 
 // Drift engine constants
@@ -88,6 +89,51 @@ export function driftTick(
     // 2. Update neglect duration
     const lastActivity = t.lastUserReplyTimestamp ?? t.latestMessageTimestamp;
     t.neglectDuration = now - lastActivity;
+
+    // 2b. Update risk tier from latency thresholds per Spec 07
+    const prevRiskTier = t.riskTier;
+    if (t.lifecycleState !== "handled") {
+      t.riskTier = computeRiskTier(t, now);
+    }
+
+    // 2c. Auto-transition lifecycle state based on risk tier changes per Spec 07/09
+    // waiting -> at-risk when critical threshold crossed
+    if (t.riskTier === "critical" && prevRiskTier !== "critical" && prevRiskTier !== "lost") {
+      const next = resolveTransition(t.lifecycleState, "time-threshold-waiting");
+      if (next) {
+        t.stateHistory = [
+          ...t.stateHistory,
+          { from: t.lifecycleState, to: next, timestamp: now, trigger: "risk-tier-critical" },
+        ];
+        t.lifecycleState = next;
+      }
+    }
+    // at-risk -> lost when lost threshold crossed
+    if (t.riskTier === "lost" && prevRiskTier !== "lost") {
+      const next = resolveTransition(t.lifecycleState, "time-threshold-lost");
+      if (next) {
+        t.stateHistory = [
+          ...t.stateHistory,
+          { from: t.lifecycleState, to: next, timestamp: now, trigger: "risk-tier-lost" },
+        ];
+        t.lifecycleState = next;
+      }
+    }
+
+    // 2d. Update visual state based on current conditions
+    if (t.visualState !== "archived" && t.visualState !== "agent-occupied") {
+      const driftMagnitude = Math.hypot(
+        t.targetPosition.x - t.position.x,
+        t.targetPosition.y - t.position.y,
+      );
+      if (driftMagnitude > 5) {
+        t.visualState = "drifting";
+      } else if (t.zone === "active-front" || t.unread) {
+        t.visualState = "active";
+      } else {
+        t.visualState = "idle";
+      }
+    }
 
     // 3. Compute target zone and position (soft boundary: zone follows position, not scores)
     // Thread's zone is determined by its actual position (line 129), not snapped here.

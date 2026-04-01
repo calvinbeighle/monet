@@ -16,6 +16,8 @@ import { NotificationArea } from "./components/notification-area";
 import { DeploymentConfirmation } from "./components/deployment-confirmation";
 import { ResultsOverlay } from "./components/results-overlay";
 import { BatchActionBar } from "./components/batch-action-bar";
+import { FilterPanel } from "./components/filter-panel";
+import { AlertList } from "./components/alert-list";
 import {
   loadPersistedThreads,
   loadPersistedActionQueue,
@@ -67,6 +69,8 @@ export function App() {
     sessionDurationMs: Date.now() - sessionStats.sessionStart,
   };
   const [summaryTrigger, setSummaryTrigger] = useState<HTMLElement | null>(null);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [showAlertList, setShowAlertList] = useState(false);
 
   const isCompact = viewportWidth > 0 && viewportWidth < RESPONSIVE_BREAKPOINT;
   const hasRightPanel = activePanel === "detail" || activePanel === "deployment-history";
@@ -195,6 +199,16 @@ export function App() {
     setActivePanel("deployment-history");
   };
 
+  const handleStatusBarFilterClick = () => {
+    setShowFilterPanel((prev) => !prev);
+    setShowAlertList(false);
+  };
+
+  const handleStatusBarAlertClick = () => {
+    setShowAlertList((prev) => !prev);
+    setShowFilterPanel(false);
+  };
+
   // Initializing state
   if (shellState === "initializing") {
     return (
@@ -287,7 +301,21 @@ export function App() {
         <StatusBar
           onSummaryClick={handleStatusBarSummaryClick}
           onHistoryClick={handleStatusBarHistoryClick}
+          onFilterClick={handleStatusBarFilterClick}
+          onAlertClick={handleStatusBarAlertClick}
         />
+        {/* Filter panel popover - anchored below status bar */}
+        {showFilterPanel && (
+          <div className="absolute left-4 top-10 z-40" data-testid="filter-panel-popover">
+            <FilterPanel onClose={() => setShowFilterPanel(false)} />
+          </div>
+        )}
+        {/* Alert list popover - anchored below status bar on right */}
+        {showAlertList && (
+          <div className="absolute right-4 top-10 z-40" data-testid="alert-list-popover">
+            <AlertList onClose={() => setShowAlertList(false)} />
+          </div>
+        )}
       </div>
 
       {/* Degraded mode banner */}

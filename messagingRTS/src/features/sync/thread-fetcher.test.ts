@@ -417,4 +417,42 @@ describe("performInitialLoad", () => {
     expect(result.threads).toHaveLength(0);
     expect(result.historyId).toBe("");
   });
+
+  it("fetches thread details with bounded concurrency (max 5 in-flight at once)", async () => {
+    // Build a list of 12 threads to ensure the concurrency limit is exercised
+    const THREAD_COUNT = 12;
+    const threadIds = Array.from({ length: THREAD_COUNT }, (_, i) => `t${i + 1}`);
+
+    const mockList = vi.fn().mockResolvedValue({
+      threads: threadIds.map((id) => ({ id, snippet: id, historyId: "100" })),
+      resultSizeEstimate: THREAD_COUNT,
+    });
+
+    let maxInFlight = 0;
+    let currentInFlight = 0;
+
+    // Each detail fetch tracks its own in-flight count and returns after a microtask
+    const mockDetail = vi.fn().mockImplementation((id: string) => {
+      currentInFlight++;
+      if (currentInFlight > maxInFlight) {
+        maxInFlight = currentInFlight;
+      }
+      return Promise.resolve(
+        makeGmailThreadDetail({ id, messages: [makeGmailMessage({ threadId: id })] }),
+      ).finally(() => {
+        currentInFlight--;
+      });
+    });
+
+    _setFetchFns(mockList, mockDetail);
+
+    await performInitialLoad(30);
+
+    // Must have fetched all threads
+    expect(mockDetail).toHaveBeenCalledTimes(THREAD_COUNT);
+    // Must never have exceeded the concurrency cap of 5
+    expect(maxInFlight).toBeLessThanOrEqual(5);
+    // Must have actually parallelised (more than 1 concurrent fetch observed)
+    expect(maxInFlight).toBeGreaterThan(1);
+  });
 });

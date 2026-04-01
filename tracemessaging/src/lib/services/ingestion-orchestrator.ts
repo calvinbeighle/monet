@@ -28,15 +28,8 @@ interface IngestionSource {
   timerId?: ReturnType<typeof setInterval>;
 }
 
+// MVP: Only Claude Code terminal sessions for now. Other sources deferred.
 const sources: IngestionSource[] = [
-  { name: "gmail", fetch: fetchGmailActivities, intervalMs: 30_000 },
-  { name: "arc-browser", fetch: fetchArcActivities, intervalMs: 60_000 },
-  {
-    name: "google-calendar",
-    fetch: fetchCalendarActivities,
-    intervalMs: 300_000,
-  },
-  { name: "git", fetch: fetchGitActivities, intervalMs: 300_000 },
   {
     name: "claude-code",
     fetch: fetchClaudeSessionActivities,

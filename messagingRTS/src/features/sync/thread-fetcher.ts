@@ -16,6 +16,27 @@ import { createThread } from "../../lib/types";
 import type { Thread, ThreadMessage, ContactEnrichment } from "../../lib/types";
 import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
 
+// Bounded concurrency: runs at most `limit` async tasks in parallel
+async function fetchWithConcurrencyLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await fn(items[i]);
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
 // --- Pure conversion functions ---
 
 // Convert a Gmail message to our internal ThreadMessage format.
@@ -184,8 +205,8 @@ export async function performInitialLoad(
     const entries: GmailThreadListEntry[] = listResponse.threads ?? [];
 
     // Fetch detail for each thread and convert progressively
-    // Use concurrent fetches with a concurrency limit to avoid rate limiting
-    const detailPromises = entries.map(async (entry) => {
+    // Bounded concurrency (max 5 parallel) to avoid Gmail API rate limiting
+    const pageThreads = await fetchWithConcurrencyLimit(entries, 5, async (entry) => {
       const detail = await _fetchThreadDetail(entry.id);
       const thread = convertGmailThread(detail);
 
@@ -198,8 +219,6 @@ export async function performInitialLoad(
       onThreadLoaded?.(thread);
       return thread;
     });
-
-    const pageThreads = await Promise.all(detailPromises);
     allThreads.push(...pageThreads);
 
     pageToken = listResponse.nextPageToken;
