@@ -23,7 +23,7 @@ import {
   flushPersist,
 } from "./features/sync/persistence-manager";
 import { startInitialLoad, startPolling, stopPolling } from "./features/sync/sync-engine";
-import { useThreadStore } from "./lib/stores";
+import { useThreadStore, useFilterStore } from "./lib/stores";
 import { useAgentStore } from "./lib/stores/agent-store";
 import { useAuthStore } from "./features/auth/auth-store";
 import type { AgentRole } from "./lib/types";
@@ -99,6 +99,9 @@ export function App() {
           console.info("[App] No Anthropic API key - agents will use simulated proposals");
         }
       }
+
+      // Step 0b: Restore persisted filter state (Spec 09 - filter persists across refresh)
+      useFilterStore.getState().loadPersistedFilter();
 
       // Step 1: Check Nango connection status
       await useAuthStore.getState().checkConnection();

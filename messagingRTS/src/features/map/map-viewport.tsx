@@ -8,8 +8,15 @@ import { createZoneLayout, updateZoneSizes } from "./zone-layout";
 import { driftTick } from "./drift-engine";
 import { evaluateClusters } from "./clustering";
 import type { Cluster } from "../../lib/types/cluster";
-import { useThreadStore, useAppStore, useAgentStore, useDeploymentStore } from "../../lib/stores";
+import {
+  useThreadStore,
+  useAppStore,
+  useAgentStore,
+  useDeploymentStore,
+  useFilterStore,
+} from "../../lib/stores";
 import { getZoneAtPosition } from "./zone-layout";
+import { getVisibleThreads } from "../../lib/stores/filter-store";
 import { AGENT_DEFINITIONS, type AgentRole } from "../../lib/types";
 import { useNavigationStore } from "../navigation/navigation-store";
 import {
@@ -75,6 +82,8 @@ export function MapViewport() {
   const threads = useThreadStore((s) => s.threads);
   const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
   const selectThread = useThreadStore((s) => s.selectThread);
+
+  const filter = useFilterStore((s) => s.filter);
 
   const camera = useNavigationStore((s) => s.camera);
   const searchActive = useNavigationStore((s) => s.searchActive);
@@ -211,17 +220,19 @@ export function MapViewport() {
     };
   }, []);
 
-  // Re-render when threads or selection changes
+  // Re-render when threads, selection, or filter changes
+  // Per Spec 09: filter only affects visibility - drift continues on ALL threads
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
 
     const threadArray = [...threads.values()];
+    const visibleThreads = getVisibleThreads(threadArray, filter);
     renderer.setSelectedThread(selectedThreadId);
     renderer.renderZones(zonesRef.current);
-    renderer.renderThreads(threadArray);
-    renderer.renderClusters(clustersRef.current, threadArray);
-  }, [threads, selectedThreadId]);
+    renderer.renderThreads(visibleThreads);
+    renderer.renderClusters(clustersRef.current, visibleThreads);
+  }, [threads, selectedThreadId, filter]);
 
   // Sync search highlighting to renderer
   useEffect(() => {
@@ -651,7 +662,8 @@ export function MapViewport() {
     renderer.animateTo(mapX, mapY, cam.zoom);
   }, []);
 
-  const threadArray = [...threads.values()];
+  // Minimap shows only visible (filtered) threads per Spec 09
+  const visibleThreadArray = getVisibleThreads([...threads.values()], filter);
 
   return (
     <div
@@ -673,7 +685,7 @@ export function MapViewport() {
         onClose={handleSearchClose}
       />
       <Minimap
-        threads={threadArray}
+        threads={visibleThreadArray}
         zones={zonesSnapshot}
         cameraX={camera.x}
         cameraY={camera.y}

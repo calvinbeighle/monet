@@ -17,3 +17,5 @@ export type {
   SearchState,
 } from "../../features/navigation/navigation-store";
 export { useSyncStore } from "./sync-store";
+export { useFilterStore } from "./filter-store";
+export type { ThreadFilter } from "./filter-store";
