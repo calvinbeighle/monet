@@ -10,8 +10,9 @@ export function Feed() {
   const loadMore = useCallback(async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;
+    // Add 10 cards in batch
     const promises = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 10; i++) {
       promises.push(addCard());
     }
     await Promise.all(promises);
@@ -26,6 +27,7 @@ export function Feed() {
       const index = Math.round(container.scrollTop / container.clientHeight);
       setActiveIndex(index);
 
+      // When within 3 cards of the end, load 10 more
       const totalCards = useFeedStore.getState().cards.length;
       if (index >= totalCards - 3) {
         loadMore();
@@ -51,16 +53,11 @@ export function Feed() {
         ))}
       </div>
 
-      {/* Minimal theme toggle */}
-      <div className="fixed bottom-5 right-5 z-50">
-        <span className="text-white/10 text-[10px]">dark</span>
-      </div>
-
-      {/* Add button */}
+      {/* Add button - top right */}
       <div className="fixed top-5 right-5 z-50">
         <button
           onClick={() => addCard()}
-          className="text-white/20 text-2xl hover:text-white/50 transition"
+          className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-md text-white text-2xl flex items-center justify-center hover:bg-white/25 transition"
         >
           +
         </button>

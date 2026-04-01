@@ -205,6 +205,38 @@ export function MapViewport() {
 
   // Drift engine tick - runs independently of rendering per Spec 10
   useEffect(() => {
+    // Per Spec 04: "If the count was already outside the threshold range at initialization,
+    // an alert fires immediately on load." Run one immediate evaluation before the interval.
+    {
+      const threadArray = [...useThreadStore.getState().threads.values()];
+      if (threadArray.length > 0) {
+        const counts: Record<ZoneId, number> = {
+          "active-front": 0,
+          opportunities: 0,
+          "at-risk": 0,
+          lost: 0,
+          noise: 0,
+          "base-handled": 0,
+        };
+        for (const t of threadArray) {
+          counts[t.zone]++;
+        }
+        updateZoneSizes(zonesRef.current, counts);
+        evaluateZoneAlerts(zonesRef.current);
+        setZonesSnapshot(new Map(zonesRef.current));
+
+        const now = Date.now();
+        const appState = useAppStore.getState();
+        const newAlerts = evaluateAlerts(
+          threadArray,
+          appState.mapAlerts,
+          now,
+          appState.streakInboxZero,
+        );
+        appState.setMapAlerts(newAlerts);
+      }
+    }
+
     driftIntervalRef.current = setInterval(() => {
       const threadArray = [...useThreadStore.getState().threads.values()];
       if (threadArray.length === 0) return;
@@ -272,13 +304,19 @@ export function MapViewport() {
       const clusterResult = evaluateClusters(gameResult.updatedThreads, clustersRef.current, now);
 
       // Trigger cluster migration animations per Spec 02 state transitions
-      // Threads joining a cluster animate toward the cluster centroid
-      for (const [threadId, newClusterId] of clusterResult.threadUpdates) {
-        if (newClusterId) {
-          const cluster = clusterResult.clusters.find((c) => c.id === newClusterId);
-          const thread = gameResult.updatedThreads.find((t) => t.id === threadId);
-          if (cluster && thread) {
-            setClusterMigration(threadId, cluster.centroid, thread.position, now);
+      // Threads joining a cluster animate toward the cluster centroid.
+      // Also write cluster membership back to thread store per Spec 09 -
+      // clusterMembership is a computed property that must stay current.
+      if (clusterResult.threadUpdates.size > 0) {
+        const threadStore = useThreadStore.getState();
+        for (const [threadId, newClusterId] of clusterResult.threadUpdates) {
+          threadStore.updateThread(threadId, { clusterMembership: newClusterId });
+          if (newClusterId) {
+            const cluster = clusterResult.clusters.find((c) => c.id === newClusterId);
+            const thread = gameResult.updatedThreads.find((t) => t.id === threadId);
+            if (cluster && thread) {
+              setClusterMigration(threadId, cluster.centroid, thread.position, now);
+            }
           }
         }
       }

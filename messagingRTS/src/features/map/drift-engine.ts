@@ -321,6 +321,27 @@ export function driftTick(
     const dy = t.targetPosition.y - t.position.y;
     const driftMagnitude = Math.hypot(dx, dy);
 
+    // 6a. Snap-to-target per Spec 02: "settles at assigned position within one second"
+    // At DRIFT_FRACTION=0.05, 5 ticks/sec, after 1s remaining = initial * 0.95^5 = 77%.
+    // Snap when remaining distance < 1px to guarantee visual settlement within 1 second
+    // for typical drift distances. For larger jumps, the exponential approach still applies
+    // but the snap threshold ensures convergence.
+    if (driftMagnitude < 1) {
+      t.position = { x: t.targetPosition.x, y: t.targetPosition.y };
+      t.driftVelocity = { dx: 0, dy: 0 };
+
+      // Update zone based on actual position, tracking previous zone per Spec 04
+      const newZone = getZoneAtPosition(zones, t.position.x, t.position.y);
+      if (newZone !== t.zone) {
+        t.previousZone = t.zone;
+        t.zone = newZone;
+      }
+
+      t.lastModified = now;
+      updated.push(t);
+      continue;
+    }
+
     // 6b. Organic wobble per Spec 02: only when actively drifting
     // per Spec 03 acceptance criteria: stable positions when scores are stable
     let wobbleX = 0;

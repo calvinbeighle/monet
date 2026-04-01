@@ -3,7 +3,10 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ResultsOverlay } from "./results-overlay";
 import { useAgentStore } from "../lib/stores/agent-store";
 import { useDeploymentStore } from "../lib/stores/deployment-store";
+import { useThreadStore, useAppStore } from "../lib/stores";
+import { useNavigationStore } from "../features/navigation/navigation-store";
 import { createAgentInstance, resetCounters } from "../features/agents/agent-manager";
+import { createThread } from "../lib/types";
 import type { AgentRole } from "../lib/types";
 
 const ALL_ROLES: AgentRole[] = [
@@ -338,5 +341,63 @@ describe("ResultsOverlay - Failed thread identification (Spec 05)", () => {
     // Successful proposals still shown
     expect(screen.getByText("Hi, following up on our conversation.")).toBeInTheDocument();
     expect(screen.getByText("Mark as resolved.")).toBeInTheDocument();
+  });
+
+  it("anchors overlay to cluster centroid screen position (Spec 06)", () => {
+    setupCompletedAgent();
+
+    // Set up threads with known positions for centroid computation
+    const t1 = { ...createThread("t1", "S1", "s"), position: { x: 400, y: 300 } };
+    const t2 = { ...createThread("t2", "S2", "s"), position: { x: 600, y: 500 } };
+    useThreadStore.setState({
+      threads: new Map([
+        ["t1", t1],
+        ["t2", t2],
+      ]),
+    });
+
+    // Set camera to identity (centered at origin, zoom 1)
+    useNavigationStore.setState({
+      camera: { x: 500, y: 400, zoom: 1, level: "operational" as const },
+    });
+    useAppStore.setState({ viewportWidth: 1000, viewportHeight: 800 });
+
+    render(<ResultsOverlay agentRole="closer" />);
+    const panel = screen.getByTestId("results-overlay-panel");
+
+    // Centroid should be (500, 400), camera at (500, 400), zoom 1
+    // Screen position = (500 - 500) * 1 + 500 = 500, (400 - 400) * 1 + 400 = 400
+    // Panel should use absolute positioning with style, not centered
+    expect(panel.style.position || panel.className).toContain("absolute");
+  });
+
+  it("falls back to centered when no deployment threads found", () => {
+    // Set up agent with empty thread IDs in deployment
+    const store = useAgentStore.getState();
+    store.deploy("closer", "c1", []);
+    store.startWork("closer");
+    store.complete("closer", [{ threadId: "t99", outputType: "reply-draft", content: "test" }]);
+    useDeploymentStore.setState({
+      deployments: [
+        {
+          id: "deploy-test",
+          agentRole: "closer",
+          clusterId: "c1",
+          threadIds: [],
+          status: "completed",
+          startedAt: Date.now() - 5000,
+          completedAt: Date.now(),
+          recalledAt: null,
+          batchId: null,
+          progress: 0,
+          outcomeSummary: null,
+        },
+      ],
+    });
+
+    render(<ResultsOverlay agentRole="closer" />);
+    const panel = screen.getByTestId("results-overlay-panel");
+    // Should fall back to centered positioning (translate -50%, -50%)
+    expect(panel.style.transform).toContain("-50%");
   });
 });

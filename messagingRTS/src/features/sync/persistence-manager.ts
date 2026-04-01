@@ -15,6 +15,7 @@ import {
 import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
 import { computeTargetZone, computeTargetPosition } from "../map/drift-engine";
 import { createZoneLayout, getZoneAtPosition } from "../map/zone-layout";
+import { evaluateClusters } from "../map/clustering";
 import type { Thread } from "../../lib/types";
 
 // Save interval: persist thread state every 5 seconds (avoids excessive IndexedDB writes
@@ -61,6 +62,16 @@ export async function loadPersistedThreads(): Promise<Thread[]> {
 
     return t;
   });
+
+  // Per Spec 09 Behavior 2: cluster membership must also be recomputed on restore.
+  // evaluateClusters produces fresh assignments from current thread state.
+  const clusterResult = evaluateClusters(reEvaluated, [], Date.now());
+  for (const [threadId, clusterId] of clusterResult.threadUpdates) {
+    const thread = reEvaluated.find((t) => t.id === threadId);
+    if (thread) {
+      thread.clusterMembership = clusterId;
+    }
+  }
 
   return reEvaluated;
 }

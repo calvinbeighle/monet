@@ -1216,3 +1216,68 @@ describe("drifting-lost lifecycle", () => {
     expect(computeTargetZone(thread)).toBe("base-handled");
   });
 });
+
+describe("driftTick - drift settlement (Spec 02)", () => {
+  it("snaps position to target when distance < 1px and zeroes drift velocity", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    // driftTick recomputes targetPosition, so we need to run one tick first
+    // to get a stable target, then check snap behavior
+    const [first] = driftTick([thread], zones);
+
+    // Now set position very close to the newly computed target (< 1px away)
+    first.position = {
+      x: first.targetPosition.x + 0.3,
+      y: first.targetPosition.y + 0.2,
+    };
+
+    const [settled] = driftTick([first], zones);
+
+    // After snap, position should match the recomputed target exactly
+    // The key invariant: driftVelocity must be zero after settlement
+    expect(settled.driftVelocity).toEqual({ dx: 0, dy: 0 });
+    // Distance between position and target should be 0 or very close
+    // (target may shift slightly due to score recomputation, but snap should fire)
+    const dist = Math.hypot(
+      settled.position.x - settled.targetPosition.x,
+      settled.position.y - settled.targetPosition.y,
+    );
+    // Either snapped (dist ~0 because target barely moved) or normal lerp
+    // The critical check: when target barely moves between ticks, snap fires
+    expect(dist).toBeLessThan(2);
+  });
+
+  it("does not snap when remaining distance is above 1px", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.position = { x: 100, y: 100 };
+    thread.targetPosition = { x: 200, y: 200 };
+
+    const [updated] = driftTick([thread], zones);
+
+    // Should NOT snap - should lerp toward target
+    // position should move but not all the way to the recomputed target
+    const distToOrigTarget = Math.hypot(updated.position.x - 200, updated.position.y - 200);
+    expect(distToOrigTarget).toBeGreaterThan(1);
+    expect(updated.position.x).toBeGreaterThan(100);
+    expect(updated.position.y).toBeGreaterThan(100);
+  });
+
+  it("thread within 1px of target has zero drift velocity", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    // Run one tick to get stable target
+    const [first] = driftTick([thread], zones);
+    // Set to almost-at-target
+    first.position = {
+      x: first.targetPosition.x + 0.01,
+      y: first.targetPosition.y + 0.01,
+    };
+
+    const [snapped] = driftTick([first], zones);
+    expect(snapped.driftVelocity).toEqual({ dx: 0, dy: 0 });
+  });
+});

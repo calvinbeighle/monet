@@ -141,6 +141,66 @@ describe("Persistence manager", () => {
       expect(loaded[0].zone).toBeDefined();
     });
 
+    it("recomputes cluster membership on restore (Spec 09)", async () => {
+      // Two threads sharing participants should be clustered together on restore
+      const t1 = {
+        ...createThread("t1", "Project Alpha", "snippet"),
+        participants: [
+          {
+            displayName: "Alice",
+            email: "alice@example.com",
+            organization: null,
+            vipFlag: false,
+            relationshipScore: 0.5,
+            responseHistory: { avgResponseTimeMs: 0, threadFrequency: 1 },
+          },
+          {
+            displayName: "Bob",
+            email: "bob@example.com",
+            organization: null,
+            vipFlag: false,
+            relationshipScore: 0.5,
+            responseHistory: { avgResponseTimeMs: 0, threadFrequency: 1 },
+          },
+        ],
+        clusterMembership: null,
+        position: { x: 200, y: 200 },
+        targetPosition: { x: 200, y: 200 },
+      };
+      const t2 = {
+        ...createThread("t2", "Project Alpha followup", "snippet"),
+        participants: [
+          {
+            displayName: "Alice",
+            email: "alice@example.com",
+            organization: null,
+            vipFlag: false,
+            relationshipScore: 0.5,
+            responseHistory: { avgResponseTimeMs: 0, threadFrequency: 1 },
+          },
+          {
+            displayName: "Bob",
+            email: "bob@example.com",
+            organization: null,
+            vipFlag: false,
+            relationshipScore: 0.5,
+            responseHistory: { avgResponseTimeMs: 0, threadFrequency: 1 },
+          },
+        ],
+        clusterMembership: null,
+        position: { x: 210, y: 210 },
+        targetPosition: { x: 210, y: 210 },
+      };
+      setMockStore([t1, t2]);
+
+      const loaded = await loadPersistedThreads();
+      // Both threads should now have cluster membership assigned
+      const memberships = loaded.map((t) => t.clusterMembership);
+      // They share participants, so evaluateClusters should cluster them
+      expect(memberships[0]).not.toBeNull();
+      expect(memberships[0]).toBe(memberships[1]);
+    });
+
     it("resets drift velocity to zero on restore (Spec 09)", async () => {
       const thread = {
         ...createThread("t1", "Subject", "Snippet"),

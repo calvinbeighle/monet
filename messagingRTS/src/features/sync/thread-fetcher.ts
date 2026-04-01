@@ -181,9 +181,14 @@ export function convertGmailThread(detail: GmailThreadDetail): Thread {
   // Set neglect duration based on latest message
   thread.neglectDuration = now - thread.latestMessageTimestamp;
 
-  // Derive topic tags from subject and body content per Spec 03
+  // Derive topic tags from subject and body content per Spec 03/11
+  // Spec says "derived from subject and body" - use full message body, not just snippet
   const subjectKeywords = extractKeywords(subject);
-  const bodyKeywords = extractKeywords(snippet);
+  const bodyText = sortedMessages
+    .map((m) => m.bodyPlain)
+    .filter(Boolean)
+    .join(" ");
+  const bodyKeywords = extractKeywords(bodyText);
   const tagSet = new Set([...subjectKeywords, ...bodyKeywords]);
   thread.topicTags = [...tagSet];
 

@@ -3,9 +3,11 @@
 // Does not auto-dismiss - user must act on all proposals or manually close.
 // After all proposals resolved: agent enters cooldown, deployment transitions to "resolved".
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAgentStore } from "../lib/stores/agent-store";
 import { useDeploymentStore } from "../lib/stores/deployment-store";
+import { useThreadStore, useAppStore } from "../lib/stores";
+import { useNavigationStore } from "../features/navigation/navigation-store";
 import { AGENT_DEFINITIONS } from "../lib/types";
 import type { AgentRole, AgentProposal } from "../lib/types";
 
@@ -150,6 +152,40 @@ export function ResultsOverlay({
   const beginCooldown = useAgentStore((s) => s.beginCooldown);
   const resolveDeployment = useDeploymentStore((s) => s.resolveDeployment);
   const getCompletedDeployment = useDeploymentStore((s) => s.getCompletedDeploymentForRole);
+  const threads = useThreadStore((s) => s.threads);
+  const camera = useNavigationStore((s) => s.camera);
+  const viewportWidth = useAppStore((s) => s.viewportWidth);
+  const viewportHeight = useAppStore((s) => s.viewportHeight);
+
+  // Compute screen position from cluster centroid per Spec 06:
+  // "an actionable overlay appears anchored to the cluster"
+  const anchorPos = useMemo(() => {
+    const deployment = getCompletedDeployment(agentRole);
+    if (!deployment) return null;
+    const threadIds = deployment.threadIds;
+    if (threadIds.length === 0) return null;
+
+    // Compute centroid from member thread positions
+    let sumX = 0,
+      sumY = 0,
+      count = 0;
+    for (const tid of threadIds) {
+      const t = threads.get(tid);
+      if (t) {
+        sumX += t.position.x;
+        sumY += t.position.y;
+        count++;
+      }
+    }
+    if (count === 0) return null;
+    const worldX = sumX / count;
+    const worldY = sumY / count;
+
+    // World-to-screen transform (inverse of screenToMap)
+    const screenX = (worldX - camera.x) * camera.zoom + viewportWidth / 2;
+    const screenY = (worldY - camera.y) * camera.zoom + viewportHeight / 2;
+    return { x: screenX, y: screenY };
+  }, [agentRole, getCompletedDeployment, threads, camera, viewportWidth, viewportHeight]);
 
   if (
     !agent ||
@@ -176,13 +212,23 @@ export function ResultsOverlay({
     beginCooldown(agentRole);
   };
 
+  // Clamp anchor position to keep overlay visible within viewport
+  const clampedAnchor = anchorPos
+    ? {
+        x: Math.max(200, Math.min(anchorPos.x, viewportWidth - 200)),
+        y: Math.max(40, Math.min(anchorPos.y, viewportHeight - 200)),
+      }
+    : null;
+
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/40"
-      data-testid="results-overlay"
-    >
+    <div className="fixed inset-0 z-40" data-testid="results-overlay">
       <div
-        className="w-96 max-h-[80vh] flex flex-col rounded-lg border border-gray-700 bg-[#14142a] shadow-xl"
+        className="w-96 max-h-[80vh] flex flex-col rounded-lg border border-gray-700 bg-[#14142a] shadow-xl absolute"
+        style={
+          clampedAnchor
+            ? { left: clampedAnchor.x, top: clampedAnchor.y, transform: "translate(-50%, 0)" }
+            : { left: "50%", top: "50%", transform: "translate(-50%, -50%)" }
+        }
         data-testid="results-overlay-panel"
       >
         {/* Header */}

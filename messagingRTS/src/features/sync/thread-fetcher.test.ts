@@ -286,7 +286,7 @@ describe("convertGmailThread", () => {
     expect(thread.subject).toBe("(no subject)");
   });
 
-  it("derives topicTags from subject and snippet", () => {
+  it("derives topicTags from subject and message body per Spec 03/11", () => {
     const detail = makeGmailThreadDetail({
       messages: [
         makeGmailMessage({
@@ -299,7 +299,10 @@ describe("convertGmailThread", () => {
               { name: "Subject", value: "Re: Quarterly review planning" },
             ],
             mimeType: "text/plain",
-            body: { data: btoa("content"), size: 7 },
+            body: {
+              data: btoa("Meeting about quarterly review results and budget allocation"),
+              size: 50,
+            },
           },
         }),
       ],
@@ -307,13 +310,43 @@ describe("convertGmailThread", () => {
     const thread = convertGmailThread(detail);
     expect(thread.topicTags).toBeInstanceOf(Array);
     expect(thread.topicTags.length).toBeGreaterThan(0);
-    // Should contain keywords from subject (stop words like "re" filtered out)
+    // Should contain keywords from subject
     expect(thread.topicTags).toContain("quarterly");
     expect(thread.topicTags).toContain("review");
     expect(thread.topicTags).toContain("planning");
+    // Should also contain keywords from body (not just snippet)
+    expect(thread.topicTags).toContain("budget");
+    expect(thread.topicTags).toContain("allocation");
   });
 
-  it("deduplicates topicTags across subject and snippet", () => {
+  it("extracts topicTags from full message body, not just snippet", () => {
+    // Body contains a keyword "infrastructure" that is NOT in the snippet
+    const bodyContent = "We need to discuss the infrastructure migration timeline";
+    const detail = makeGmailThreadDetail({
+      messages: [
+        makeGmailMessage({
+          id: "msg-1",
+          snippet: "Short preview only",
+          payload: {
+            headers: [
+              { name: "From", value: "test@example.com" },
+              { name: "To", value: "bob@example.com" },
+              { name: "Subject", value: "Project update" },
+            ],
+            mimeType: "text/plain",
+            body: { data: btoa(bodyContent), size: bodyContent.length },
+          },
+        }),
+      ],
+    });
+    const thread = convertGmailThread(detail);
+    // "infrastructure" is only in the body, not in snippet or subject
+    expect(thread.topicTags).toContain("infrastructure");
+    expect(thread.topicTags).toContain("migration");
+    expect(thread.topicTags).toContain("timeline");
+  });
+
+  it("deduplicates topicTags across subject and body", () => {
     const detail = makeGmailThreadDetail({
       messages: [
         makeGmailMessage({
@@ -326,13 +359,13 @@ describe("convertGmailThread", () => {
               { name: "Subject", value: "Quarterly review" },
             ],
             mimeType: "text/plain",
-            body: { data: btoa("content"), size: 7 },
+            body: { data: btoa("quarterly review plan details"), size: 30 },
           },
         }),
       ],
     });
     const thread = convertGmailThread(detail);
-    // "quarterly" and "review" appear in both subject and snippet - should be deduplicated
+    // "quarterly" and "review" appear in both subject and body - should be deduplicated
     const quarterlyCount = thread.topicTags.filter((t) => t === "quarterly").length;
     expect(quarterlyCount).toBe(1);
   });
