@@ -192,4 +192,26 @@ describe("AlertList", () => {
 
     expect(screen.getByText("System alert")).toBeInTheDocument();
   });
+
+  it("has aria-modal attribute", () => {
+    render(<AlertList onClose={() => {}} />);
+    const panel = screen.getByTestId("alert-list");
+    expect(panel).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("Escape key calls onClose", () => {
+    const onClose = vi.fn();
+    render(<AlertList onClose={onClose} />);
+    const panel = screen.getByTestId("alert-list");
+    fireEvent.keyDown(panel, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("Tab key traps focus within the panel", () => {
+    render(<AlertList onClose={() => {}} />);
+    const panel = screen.getByTestId("alert-list");
+    const tabEvent = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    const prevented = !panel.dispatchEvent(tabEvent);
+    expect(prevented).toBe(true);
+  });
 });

@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 876 tests passing. Tags through v0.7.8.
+**Current state**: 896 tests passing. Tags through v0.7.8.
 
 **Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (complete - drag-to-deploy, confirmation, recall, quick-deploy, batch deployment).
 
-**Next priorities**: Performance profiling, accessibility (ARIA), responsive polish, integration testing.
+**Next priorities**: Performance profiling, integration testing.
 
 ---
 
@@ -319,9 +319,9 @@ These must be resolved before implementation begins:
 
 - [x] **Rate limiting**: Gmail API quota tracking, prioritize user actions over background sync (Phase 1)
 - [x] **Error handling**: every Gmail failure surfaced to user, no silent drops (Phase 1)
-- **Accessibility**: keyboard navigation throughout, focus management, ARIA labels (Phase 2)
-- **Performance**: PixiJS object pooling for 500+ entities, IndexedDB batch writes (Phase 2)
-- **Responsive layout**: panels collapse at narrow viewports (Phase 2)
+- [x] **Accessibility**: keyboard navigation throughout, focus management, ARIA labels (Phase 2)
+- [x] **Performance**: PixiJS object pooling for 500+ entities, IndexedDB batch writes (Phase 2)
+- [x] **Responsive layout**: panels collapse at narrow viewports (Phase 2)
 - [x] **Filter system**: show/hide threads by zone, label, sender, urgency; hidden threads still drift and can resurface on at-risk/lost transition (Phase 2)
 - [x] **Batch operations**: multi-select threads, bulk actions (mark handled, move zone, apply label, assign agent) (Phase 2)
 - [x] **Game mechanics runtime wiring**: front health, opportunity ticking, trust decay, streak evaluation, session stats all connected to drift tick loop and outbound actions (Spec 07)
@@ -537,3 +537,16 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Daily quota exhaustion notification (Spec 01): gmail-client now surfaces a critical notification to the user when rate limiter enters daily-exhausted read-only mode.
 - Alert-list test type fix: Local MapAlert type replaced with imported type from game-mechanics.ts; message field added to makeAlert helper.
 - Test count: 876 total (18 new: 1 game-loop timezone, 8 map-renderer, 3 detail-panel trust, 2 gmail-client quota, 4 misc), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Accessibility & Responsive Layout (2026-04-01)
+
+- Shell-level Tab cycling (Spec 12 Section 12): handleGlobalKeyDown in App.tsx now intercepts Tab/Shift+Tab to programmatically cycle focus between four zones in order: status-bar -> map viewport -> agent dock -> right panel (if open) -> status-bar. When search overlay is active (checked via useNavigationStore.getState().searchActive), Tab is not intercepted at shell level since search overlay traps focus internally.
+- Focus indicators (Spec 12 Section 12): All four focus zone wrapper divs now have `focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/60` classes. This replaces the previous invisible focus state (tabIndex={0} with no outline).
+- Search overlay focus trap (Spec 12 Section 6): Tab key within search overlay now cycles between the search input and close button. handleKeyDown moved from input to overlay div to capture Tab at container level. role="search" and aria-label added.
+- Filter panel focus trap (Spec 12 Section 12): New ref, useEffect for auto-focus on mount, onKeyDown handler trapping Tab within the panel and closing on Escape. Added aria-modal="true" and tabIndex={-1} for programmatic focus.
+- Alert list focus trap (Spec 12 Section 12): Same pattern as filter panel - auto-focus on mount, Tab trap, Escape to close. Added aria-modal="true" and tabIndex={-1}.
+- Session summary modal ARIA (Spec 12 Section 10): Added role="dialog", aria-modal="true", aria-label="Session summary" to modal container. Focus trap was already implemented.
+- Zone wrapper ARIA: All four zone divs (status-bar, map-viewport, agent-dock, right-panel) now have role="region" and aria-label attributes for screen reader landmark navigation.
+- Escape behavior enhanced: Escape now closes filter panel and alert list popovers (returning focus to status bar) before checking right panel closure.
+- Agent dock compact form (Spec 12 Section 11): AgentDock now accepts isCompact prop. Below RESPONSIVE_BREAKPOINT (768px), dock height reduces from h-16 to h-10, agent entries show only color dot and optional count badge (no name, no status label), with full info available via title tooltip. All entries remain interactive (draggable, recallable) in compact form.
+- Test count: 896 total (20 new: 6 Tab cycling, 2 ARIA attributes, 1 Escape behavior, 2 responsive dock, 2 session-summary ARIA, 3 filter-panel a11y, 4 alert-list a11y), all passing. Typecheck and lint clean.

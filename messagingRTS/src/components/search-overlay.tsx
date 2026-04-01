@@ -33,6 +33,8 @@ export function SearchOverlay({
     }
   }, [searchActive]);
 
+  const overlayRef = useRef<HTMLDivElement>(null);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -44,6 +46,19 @@ export function SearchOverlay({
           onCyclePrevious();
         } else {
           onCycleNext();
+        }
+      } else if (e.key === "Tab") {
+        // Trap focus within search overlay per Spec 12 Section 6
+        e.preventDefault();
+        const focusable = overlayRef.current?.querySelectorAll(
+          'input, button, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable && focusable.length > 0) {
+          const elements = Array.from(focusable) as HTMLElement[];
+          const currentIdx = elements.indexOf(document.activeElement as HTMLElement);
+          const direction = e.shiftKey ? -1 : 1;
+          const nextIdx = (currentIdx + direction + elements.length) % elements.length;
+          elements[nextIdx].focus();
         }
       }
     },
@@ -68,8 +83,12 @@ export function SearchOverlay({
 
   return (
     <div
+      ref={overlayRef}
       className="absolute top-0 left-0 right-0 z-20 flex items-center gap-2 bg-black/80 px-4 py-2 backdrop-blur-sm border-b border-white/10"
       data-testid="search-overlay"
+      role="search"
+      aria-label="Search threads"
+      onKeyDown={handleKeyDown}
     >
       <svg
         className="w-4 h-4 text-white/50 shrink-0"
@@ -89,7 +108,6 @@ export function SearchOverlay({
         type="text"
         value={searchQuery}
         onChange={handleChange}
-        onKeyDown={handleKeyDown}
         placeholder="Search threads by keyword, sender, or label..."
         className="flex-1 bg-transparent text-white text-sm outline-none placeholder-white/30"
         data-testid="search-input"

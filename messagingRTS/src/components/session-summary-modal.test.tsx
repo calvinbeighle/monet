@@ -63,4 +63,17 @@ describe("SessionSummaryModal", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(useAppStore.getState().activePanel).toBe("none");
   });
+
+  it("has role=dialog and aria-modal=true", () => {
+    render(<SessionSummaryModal data={mockData} triggeredFrom={null} />);
+    const modal = screen.getByTestId("session-summary-modal");
+    expect(modal).toHaveAttribute("role", "dialog");
+    expect(modal).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("has aria-label on the modal", () => {
+    render(<SessionSummaryModal data={mockData} triggeredFrom={null} />);
+    const modal = screen.getByTestId("session-summary-modal");
+    expect(modal).toHaveAttribute("aria-label", "Session summary");
+  });
 });

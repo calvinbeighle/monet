@@ -62,7 +62,11 @@ const STATUS_STYLE: Record<AgentStatus, string> = {
   cooldown: "text-gray-500",
 };
 
-export function AgentDock() {
+interface AgentDockProps {
+  isCompact?: boolean;
+}
+
+export function AgentDock({ isCompact = false }: AgentDockProps) {
   const agents = useAgentStore((s) => s.agents);
   const dragState = useDeploymentStore((s) => s.dragState);
   const startDrag = useDeploymentStore((s) => s.startDrag);
@@ -108,7 +112,7 @@ export function AgentDock() {
 
   return (
     <div
-      className="flex h-16 w-full items-center gap-3 overflow-x-auto border-t border-gray-800 bg-[#0e0e1a] px-4"
+      className={`flex w-full items-center gap-3 overflow-x-auto border-t border-gray-800 bg-[#0e0e1a] px-4 ${isCompact ? "h-10" : "h-16"}`}
       data-testid="agent-dock"
     >
       {agentRoles.map((role) => {
@@ -121,6 +125,38 @@ export function AgentDock() {
 
         // Dim the color dot when cooling down
         const dotOpacity = status === "cooldown" ? "opacity-40" : "";
+
+        // Compact form per Spec 12 Section 11: reduced visual detail, still interactive
+        if (isCompact) {
+          return (
+            <div
+              key={role}
+              className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1 transition-colors select-none ${
+                isDragging
+                  ? "border-dashed border-gray-600 bg-[#0a0a16] opacity-40"
+                  : status === "idle"
+                    ? "border-gray-700 bg-[#14142a] hover:border-gray-500 cursor-grab"
+                    : status === "cooldown"
+                      ? "border-gray-800 bg-[#10101e] cursor-not-allowed"
+                      : "border-blue-800/50 bg-[#14142a] cursor-default"
+              }`}
+              data-testid={`agent-${role}`}
+              title={`${def.name} - ${STATUS_LABEL[status]}${canDrag ? " - drag to deploy" : ""}`}
+              onMouseDown={canDrag ? (e) => handleMouseDown(role, e) : undefined}
+            >
+              <div
+                className={`h-2.5 w-2.5 rounded-full ${dotOpacity}`}
+                style={{ backgroundColor: colorHex }}
+              />
+              {agent && agent.threadIds.length > 0 && (
+                <span className="text-[9px] text-blue-300" data-testid={`agent-${role}-count`}>
+                  {agent.threadIds.length}
+                </span>
+              )}
+              {(status === "deployed" || status === "working") && <RecallButton role={role} />}
+            </div>
+          );
+        }
 
         return (
           <div

@@ -109,4 +109,34 @@ describe("FilterPanel", () => {
     const panel = screen.getByTestId("filter-panel");
     expect(panel).toHaveAttribute("role", "dialog");
   });
+
+  it("has aria-modal attribute", () => {
+    render(<FilterPanel onClose={() => {}} />);
+    const panel = screen.getByTestId("filter-panel");
+    expect(panel).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("has aria-label for the dialog", () => {
+    render(<FilterPanel onClose={() => {}} />);
+    const panel = screen.getByTestId("filter-panel");
+    expect(panel).toHaveAttribute("aria-label", "Thread filters");
+  });
+
+  it("Escape key calls onClose", () => {
+    const onClose = vi.fn();
+    render(<FilterPanel onClose={onClose} />);
+    const panel = screen.getByTestId("filter-panel");
+    fireEvent.keyDown(panel, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("Tab key traps focus within the panel", () => {
+    render(<FilterPanel onClose={() => {}} />);
+    const panel = screen.getByTestId("filter-panel");
+    // Tab should not propagate outside the panel
+    const tabEvent = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    const prevented = !panel.dispatchEvent(tabEvent);
+    // The event should be prevented (focus trapped)
+    expect(prevented).toBe(true);
+  });
 });

@@ -32,6 +32,7 @@ import { useAuthStore } from "./features/auth/auth-store";
 import type { AgentRole } from "./lib/types";
 import { initClaudeClient, isClaudeClientConfigured } from "./features/agents/claude-client";
 import { getAnthropicApiKey } from "./features/agents/ai-backend";
+import { useNavigationStore } from "./features/navigation/navigation-store";
 
 // Session idle auto-trigger per Spec 07: auto-present summary after no interaction
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes of inactivity
@@ -198,13 +199,50 @@ export function App() {
     };
   }, [shellState, setShellState]);
 
-  // Focus zone keyboard navigation (Tab cycles through zones per Spec 12)
+  // Focus zone keyboard navigation (Tab cycles through zones per Spec 12 Section 12)
+  // Tab order: status-bar -> map -> agent-dock -> right-panel (if open) -> status-bar
   const handleGlobalKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Session summary modal traps all focus
+      // Session summary modal traps all focus internally
       if (activePanel === "session-summary") return;
 
+      // Search overlay intercepts full tab cycle per Spec 12 Section 6
+      if (useNavigationStore.getState().searchActive) return;
+
+      if (e.key === "Tab") {
+        // Build zone cycle order per Spec 12 Section 12
+        const zones: Array<{ id: string; ref: React.RefObject<HTMLDivElement | null> }> = [
+          { id: "status-bar", ref: statusBarRef },
+          { id: "map", ref: mapRef },
+          { id: "agent-dock", ref: dockRef },
+        ];
+        if (hasRightPanel) {
+          zones.push({ id: "right-panel", ref: rightPanelRef });
+        }
+
+        const currentIdx = zones.findIndex((z) => z.id === focusZone);
+        if (currentIdx === -1) return; // Focus not in a known zone, let browser handle
+
+        e.preventDefault();
+        const direction = e.shiftKey ? -1 : 1;
+        const nextIdx = (currentIdx + direction + zones.length) % zones.length;
+        const nextZone = zones[nextIdx];
+        setFocusZone(nextZone.id as typeof focusZone);
+        nextZone.ref.current?.focus();
+      }
+
       if (e.key === "Escape") {
+        // Close filter/alert popovers first
+        if (showFilterPanel) {
+          setShowFilterPanel(false);
+          statusBarRef.current?.focus();
+          return;
+        }
+        if (showAlertList) {
+          setShowAlertList(false);
+          statusBarRef.current?.focus();
+          return;
+        }
         // Close right panel if focused there
         if (focusZone === "right-panel" && hasRightPanel) {
           setActivePanel("none");
@@ -213,7 +251,15 @@ export function App() {
         }
       }
     },
-    [activePanel, focusZone, hasRightPanel, setActivePanel, setFocusZone],
+    [
+      activePanel,
+      focusZone,
+      hasRightPanel,
+      setActivePanel,
+      setFocusZone,
+      showFilterPanel,
+      showAlertList,
+    ],
   );
 
   useEffect(() => {
@@ -328,6 +374,9 @@ export function App() {
         tabIndex={0}
         onFocus={() => setFocusZone("status-bar")}
         data-testid="status-bar-zone"
+        role="region"
+        aria-label="Status bar"
+        className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/60 focus-visible:outline-offset-[-2px]"
       >
         <StatusBar
           onSummaryClick={handleStatusBarSummaryClick}
@@ -367,10 +416,12 @@ export function App() {
         {/* Map viewport - fills remaining space */}
         <div
           ref={mapRef}
-          className="relative flex-1 overflow-hidden"
+          className="relative flex-1 overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/60 focus-visible:outline-offset-[-2px]"
           tabIndex={0}
           onFocus={() => setFocusZone("map")}
           data-testid="map-viewport-zone"
+          role="region"
+          aria-label="Map viewport"
         >
           <MapViewport />
 
@@ -384,8 +435,10 @@ export function App() {
             ref={rightPanelRef}
             tabIndex={0}
             onFocus={() => setFocusZone("right-panel")}
-            className={isCompact ? "absolute right-0 top-0 z-30 h-full" : ""}
+            className={`focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/60 focus-visible:outline-offset-[-2px] ${isCompact ? "absolute right-0 top-0 z-30 h-full" : ""}`}
             data-testid="right-panel-zone"
+            role="region"
+            aria-label="Detail panel"
           >
             {activePanel === "detail" && <DetailPanel />}
             {activePanel === "deployment-history" && <DeploymentHistoryPanel />}
@@ -399,8 +452,11 @@ export function App() {
         tabIndex={0}
         onFocus={() => setFocusZone("agent-dock")}
         data-testid="agent-dock-zone"
+        role="region"
+        aria-label="Agent dock"
+        className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/60 focus-visible:outline-offset-[-2px]"
       >
-        <AgentDock />
+        <AgentDock isCompact={isCompact} />
       </div>
 
       {/* Session summary modal - full-screen overlay */}

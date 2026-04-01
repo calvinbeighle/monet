@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { useAppStore } from "./lib/stores/app-store";
@@ -208,6 +208,147 @@ describe("Focus zones", () => {
     renderApp();
     fireEvent.focus(screen.getByTestId("agent-dock-zone"));
     expect(useAppStore.getState().focusZone).toBe("agent-dock");
+  });
+});
+
+describe("Accessibility - Tab cycling between focus zones (Spec 12 Section 12)", () => {
+  beforeEach(() => {
+    resetStores();
+    useAppStore.setState({ shellState: "active" });
+  });
+
+  it("Tab from status-bar moves focus to map viewport", () => {
+    renderApp();
+    act(() => {
+      useAppStore.setState({ focusZone: "status-bar" });
+    });
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(useAppStore.getState().focusZone).toBe("map");
+  });
+
+  it("Tab from map moves focus to agent-dock", () => {
+    renderApp();
+    act(() => {
+      useAppStore.setState({ focusZone: "map" });
+    });
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(useAppStore.getState().focusZone).toBe("agent-dock");
+  });
+
+  it("Tab from agent-dock wraps to status-bar when no right panel open", () => {
+    renderApp();
+    act(() => {
+      useAppStore.setState({ focusZone: "agent-dock" });
+    });
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(useAppStore.getState().focusZone).toBe("status-bar");
+  });
+
+  it("Tab from agent-dock moves to right-panel when detail panel is open", () => {
+    const thread = createThread("t1", "Test", "Preview");
+    useThreadStore.setState({ threads: new Map([["t1", thread]]) });
+    useAppStore.setState({ selectedThreadId: "t1", activePanel: "detail" });
+    renderApp();
+    act(() => {
+      useAppStore.setState({ focusZone: "agent-dock" });
+    });
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(useAppStore.getState().focusZone).toBe("right-panel");
+  });
+
+  it("Shift+Tab from map moves focus back to status-bar", () => {
+    renderApp();
+    act(() => {
+      useAppStore.setState({ focusZone: "map" });
+    });
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+    expect(useAppStore.getState().focusZone).toBe("status-bar");
+  });
+
+  it("Shift+Tab from status-bar wraps to agent-dock when no right panel", () => {
+    renderApp();
+    act(() => {
+      useAppStore.setState({ focusZone: "status-bar" });
+    });
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+    expect(useAppStore.getState().focusZone).toBe("agent-dock");
+  });
+});
+
+describe("Accessibility - ARIA attributes (Spec 12 Section 12)", () => {
+  beforeEach(() => {
+    resetStores();
+    useAppStore.setState({ shellState: "active" });
+  });
+
+  it("focus zone containers have region role and aria-label", () => {
+    renderApp();
+    const statusBar = screen.getByTestId("status-bar-zone");
+    expect(statusBar).toHaveAttribute("role", "region");
+    expect(statusBar).toHaveAttribute("aria-label", "Status bar");
+
+    const mapZone = screen.getByTestId("map-viewport-zone");
+    expect(mapZone).toHaveAttribute("role", "region");
+    expect(mapZone).toHaveAttribute("aria-label", "Map viewport");
+
+    const dockZone = screen.getByTestId("agent-dock-zone");
+    expect(dockZone).toHaveAttribute("role", "region");
+    expect(dockZone).toHaveAttribute("aria-label", "Agent dock");
+  });
+
+  it("right panel zone has region role and aria-label when open", () => {
+    const thread = createThread("t1", "Test", "Preview");
+    useThreadStore.setState({ threads: new Map([["t1", thread]]) });
+    useAppStore.setState({ selectedThreadId: "t1", activePanel: "detail" });
+    renderApp();
+    const rightPanel = screen.getByTestId("right-panel-zone");
+    expect(rightPanel).toHaveAttribute("role", "region");
+    expect(rightPanel).toHaveAttribute("aria-label", "Detail panel");
+  });
+});
+
+describe("Accessibility - Escape behavior (Spec 12 Section 12)", () => {
+  beforeEach(() => {
+    resetStores();
+    useAppStore.setState({ shellState: "active" });
+  });
+
+  it("Escape closes right panel when focus is in right-panel zone", () => {
+    const thread = createThread("t1", "Test", "Preview");
+    useThreadStore.setState({ threads: new Map([["t1", thread]]) });
+    useAppStore.setState({ selectedThreadId: "t1", activePanel: "detail" });
+    renderApp();
+    act(() => {
+      useAppStore.setState({ focusZone: "right-panel" });
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(useAppStore.getState().activePanel).toBe("none");
+    expect(useAppStore.getState().focusZone).toBe("map");
+  });
+});
+
+describe("Responsive - Agent dock compact form (Spec 12 Section 11)", () => {
+  beforeEach(() => {
+    resetStores();
+    useAppStore.setState({ shellState: "active" });
+  });
+
+  it("agent dock has compact height below responsive breakpoint", () => {
+    renderApp();
+    act(() => {
+      useAppStore.setState({ viewportWidth: 600 });
+    });
+    const dock = screen.getByTestId("agent-dock");
+    expect(dock.className).toContain("h-10");
+  });
+
+  it("agent dock has full height above responsive breakpoint", () => {
+    renderApp();
+    act(() => {
+      useAppStore.setState({ viewportWidth: 1024 });
+    });
+    const dock = screen.getByTestId("agent-dock");
+    expect(dock.className).toContain("h-16");
   });
 });
 

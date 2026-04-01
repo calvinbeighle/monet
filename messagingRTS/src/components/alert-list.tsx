@@ -1,6 +1,7 @@
 // Alert list panel per Spec 07 - shows map alerts with dismiss/acknowledge
 // Triggered by clicking the alert badge in the status bar
 
+import { useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "../lib/stores";
 
 const ALERT_TYPE_LABELS: Record<string, string> = {
@@ -22,6 +23,37 @@ interface AlertListProps {
 }
 
 export function AlertList({ onClose }: AlertListProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Focus panel on mount per Spec 12 Section 12
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
+  // Trap focus within panel and handle Escape per Spec 12
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        const focusable = panelRef.current?.querySelectorAll(
+          'input, button, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable && focusable.length > 0) {
+          const elements = Array.from(focusable) as HTMLElement[];
+          const currentIdx = elements.indexOf(document.activeElement as HTMLElement);
+          const direction = e.shiftKey ? -1 : 1;
+          const nextIdx = (currentIdx + direction + elements.length) % elements.length;
+          elements[nextIdx].focus();
+        }
+      }
+    },
+    [onClose],
+  );
+
   const mapAlerts = useAppStore((s) => s.mapAlerts);
   const acknowledgeMapAlert = useAppStore((s) => s.acknowledgeMapAlert);
 
@@ -31,10 +63,14 @@ export function AlertList({ onClose }: AlertListProps) {
 
   return (
     <div
+      ref={panelRef}
       className="w-80 rounded-lg border border-gray-700 bg-[#14142a] p-4 shadow-xl"
       data-testid="alert-list"
       role="dialog"
+      aria-modal="true"
       aria-label="Map alerts"
+      tabIndex={-1}
+      onKeyDown={handleKeyDown}
     >
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-medium text-gray-200">

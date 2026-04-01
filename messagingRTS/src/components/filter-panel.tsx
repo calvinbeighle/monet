@@ -2,6 +2,7 @@
 // Accessible from status bar, shows zone/label/sender/urgency filters
 // Filter store already handles persistence and escape hatch for at-risk/lost threads
 
+import { useRef, useEffect, useCallback } from "react";
 import { useFilterStore } from "../lib/stores/filter-store";
 import type { ZoneId } from "../lib/types";
 
@@ -28,6 +29,37 @@ interface FilterPanelProps {
 }
 
 export function FilterPanel({ onClose }: FilterPanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Focus panel on mount per Spec 12 Section 12
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
+
+  // Trap focus within panel and handle Escape per Spec 12
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        const focusable = panelRef.current?.querySelectorAll(
+          'input, button, [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable && focusable.length > 0) {
+          const elements = Array.from(focusable) as HTMLElement[];
+          const currentIdx = elements.indexOf(document.activeElement as HTMLElement);
+          const direction = e.shiftKey ? -1 : 1;
+          const nextIdx = (currentIdx + direction + elements.length) % elements.length;
+          elements[nextIdx].focus();
+        }
+      }
+    },
+    [onClose],
+  );
+
   const filter = useFilterStore((s) => s.filter);
   const toggleZoneFilter = useFilterStore((s) => s.toggleZoneFilter);
   const toggleLabelFilter = useFilterStore((s) => s.toggleLabelFilter);
@@ -61,10 +93,14 @@ export function FilterPanel({ onClose }: FilterPanelProps) {
 
   return (
     <div
+      ref={panelRef}
       className="w-72 rounded-lg border border-gray-700 bg-[#14142a] p-4 shadow-xl"
       data-testid="filter-panel"
       role="dialog"
+      aria-modal="true"
       aria-label="Thread filters"
+      tabIndex={-1}
+      onKeyDown={handleKeyDown}
     >
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-medium text-gray-200">Filters</h3>

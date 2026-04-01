@@ -75,6 +75,9 @@ export function SessionSummaryModal({ data, triggeredFrom }: SessionSummaryModal
         ref={modalRef}
         className="w-96 rounded-lg border border-gray-700 bg-[#0e0e1a] p-6 shadow-xl"
         tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Session summary"
         data-testid="session-summary-modal"
       >
         <div className="mb-4 flex items-center justify-between">
