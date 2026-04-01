@@ -65,6 +65,29 @@ describe("SessionSummaryModal", () => {
     expect(useAppStore.getState().activePanel).toBe("none");
   });
 
+  it("resets session stats on close per Spec 07 Section 13", () => {
+    useAppStore.setState({
+      activePanel: "session-summary",
+      sessionStats: {
+        threadsHandled: 10,
+        opportunitiesCaptured: 5,
+        opportunitiesMissed: 2,
+        risksMitigated: 3,
+        agentsDeployed: 1,
+        lostThreadCount: 4,
+        netHealthChange: 12,
+        sessionStart: Date.now() - 3600000,
+      },
+    });
+    render(<SessionSummaryModal data={mockData} triggeredFrom={null} />);
+    fireEvent.click(screen.getByTestId("session-summary-close"));
+    const stats = useAppStore.getState().sessionStats;
+    expect(stats.threadsHandled).toBe(0);
+    expect(stats.opportunitiesCaptured).toBe(0);
+    expect(stats.lostThreadCount).toBe(0);
+    expect(stats.agentsDeployed).toBe(0);
+  });
+
   it("has role=dialog and aria-modal=true", () => {
     render(<SessionSummaryModal data={mockData} triggeredFrom={null} />);
     const modal = screen.getByTestId("session-summary-modal");

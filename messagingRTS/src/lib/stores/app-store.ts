@@ -68,6 +68,7 @@ interface AppStore {
   setSelectedThread: (threadId: string | null) => void;
   setTrustRecords: (records: Record<string, TrustRecord>) => void;
   updateSessionStats: (delta: Partial<SessionStats>) => void;
+  resetSessionStats: () => void;
   setQuotaExhausted: (exhausted: boolean) => void;
   addNotification: (
     notification: Omit<ShellNotification, "id" | "dismissed" | "createdAt">,
@@ -130,6 +131,20 @@ export const useAppStore = create<AppStore>((set) => ({
   updateSessionStats: (delta) =>
     set((state) => ({
       sessionStats: { ...state.sessionStats, ...delta },
+    })),
+  resetSessionStats: () =>
+    set((state) => ({
+      sessionStats: {
+        threadsHandled: 0,
+        opportunitiesCaptured: 0,
+        opportunitiesMissed: 0,
+        risksMitigated: 0,
+        agentsDeployed: 0,
+        lostThreadCount: 0,
+        netHealthChange: 0,
+        sessionStart: Date.now(),
+      },
+      initialHealthScore: state.frontHealthScore,
     })),
   setQuotaExhausted: (quotaExhausted) => set({ quotaExhausted }),
   setSelectedThread: (threadId) =>

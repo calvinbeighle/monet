@@ -24,10 +24,13 @@ interface SessionSummaryModalProps {
 
 export function SessionSummaryModal({ data, triggeredFrom }: SessionSummaryModalProps) {
   const setActivePanel = useAppStore((s) => s.setActivePanel);
+  const resetSessionStats = useAppStore((s) => s.resetSessionStats);
   const modalRef = useRef<HTMLDivElement>(null);
 
   const handleClose = () => {
     setActivePanel("none");
+    // Per Spec 07 Section 13: after dismissal, a new session begins with counters reset
+    resetSessionStats();
     triggeredFrom?.focus();
   };
 

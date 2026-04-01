@@ -211,9 +211,9 @@ describe("Gmail client (Nango proxy)", () => {
   });
 
   describe("daily quota exhaustion notification", () => {
-    it("adds critical notification when canProceed returns daily quota exhausted", async () => {
-      // Reset app store notifications
-      useAppStore.setState({ notifications: [] });
+    it("adds critical notification and sets quotaExhausted when canProceed returns daily quota exhausted", async () => {
+      // Reset app store notifications and quota flag
+      useAppStore.setState({ notifications: [], quotaExhausted: false });
 
       // Spy on rateLimiter.canProceed to simulate daily quota exhausted state.
       // gmail-client imports the same rateLimiter singleton so the spy takes effect.
@@ -232,8 +232,35 @@ describe("Gmail client (Nango proxy)", () => {
         const criticalNotification = notifications.find((n) => n.severity === "critical");
         expect(criticalNotification).toBeDefined();
         expect(criticalNotification!.message).toContain("daily quota exhausted");
+
+        // The quotaExhausted flag should be set per Spec 01 rate limiting
+        expect(useAppStore.getState().quotaExhausted).toBe(true);
       } finally {
         canProceedSpy.mockRestore();
+      }
+    });
+
+    it("clears quotaExhausted when day rolls and API call succeeds", async () => {
+      // Start with quota exhausted
+      useAppStore.setState({ quotaExhausted: true });
+
+      // Mock rateLimiter.getStatus to report no longer exhausted (day rolled)
+      const getStatusSpy = vi.spyOn(rateLimiter, "getStatus").mockReturnValue({
+        dailyUsagePercent: 0,
+        isExhausted: false,
+        isPaused: false,
+      });
+
+      const proxy = createMockProxy([
+        { ok: true, json: async () => ({ threads: [] }) } as Partial<Response>,
+      ]);
+      _setProxyFn(proxy);
+
+      try {
+        await fetchThreadList();
+        expect(useAppStore.getState().quotaExhausted).toBe(false);
+      } finally {
+        getStatusSpy.mockRestore();
       }
     });
 

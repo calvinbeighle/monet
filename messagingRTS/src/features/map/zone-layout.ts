@@ -111,6 +111,9 @@ export function updateZoneSizes(
     return;
   }
 
+  // Smooth transition speed per Spec 04: boundaries move smoothly, not jump
+  const ZONE_LERP_SPEED = 0.08;
+
   for (const [id, zone] of zones) {
     const count = threadCounts[id] || 0;
     // Scale factor: min 0.6 (never disappear), max 1.5 (never dominate)
@@ -119,7 +122,16 @@ export function updateZoneSizes(
     const scale = 0.6 + proportion * 5.4; // maps 0->0.6, ~0.17->1.5
     zone.dynamicSizeWeight = Math.min(Math.max(scale, 0.6), 1.5);
     zone.threadCount = count;
-    zone.boundary = makeBoundary(ZONE_ANCHORS[id], zone.dynamicSizeWeight);
+    const target = makeBoundary(ZONE_ANCHORS[id], zone.dynamicSizeWeight);
+    // Smooth lerp toward target boundary per Spec 04 Section 6
+    const prev = zone.boundary;
+    zone.boundary = {
+      minX: prev.minX + (target.minX - prev.minX) * ZONE_LERP_SPEED,
+      minY: prev.minY + (target.minY - prev.minY) * ZONE_LERP_SPEED,
+      maxX: prev.maxX + (target.maxX - prev.maxX) * ZONE_LERP_SPEED,
+      maxY: prev.maxY + (target.maxY - prev.maxY) * ZONE_LERP_SPEED,
+      points: target.points,
+    };
   }
 }
 

@@ -130,6 +130,7 @@ async function gmailFetch(
           "Gmail daily quota exhausted. Sending, drafting, and archiving are disabled until the quota resets.",
         severity: "critical",
       });
+      useAppStore.getState().setQuotaExhausted(true);
     }
     throw new GmailApiError(`Rate limited: ${check.reason ?? "quota exceeded"}`, 429, true);
   }
@@ -142,6 +143,11 @@ async function gmailFetch(
 
       // Record usage on successful network call (regardless of HTTP status)
       rateLimiter.recordUsage(operation);
+
+      // Clear quota exhaustion flag if day has rolled (rate limiter resets daily)
+      if (useAppStore.getState().quotaExhausted && !rateLimiter.getStatus().isExhausted) {
+        useAppStore.getState().setQuotaExhausted(false);
+      }
 
       if (response.ok) return response;
 

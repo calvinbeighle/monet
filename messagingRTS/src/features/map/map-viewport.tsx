@@ -4,8 +4,8 @@
 
 import { useRef, useEffect, useCallback, useState } from "react";
 import { MapRenderer } from "./map-renderer";
-import { createZoneLayout, updateZoneSizes } from "./zone-layout";
-import { driftTick, onManualReclassify } from "./drift-engine";
+import { createZoneLayout, updateZoneSizes, evaluateZoneAlerts } from "./zone-layout";
+import { driftTick, onManualReclassify, setClusterMigration } from "./drift-engine";
 import { evaluateClusters, excludeFromCluster } from "./clustering";
 import type { Cluster } from "../../lib/types/cluster";
 import {
@@ -222,6 +222,8 @@ export function MapViewport() {
         counts[t.zone]++;
       }
       updateZoneSizes(zonesRef.current, counts);
+      // Evaluate zone alerts per Spec 04 Section 7
+      evaluateZoneAlerts(zonesRef.current);
       setZonesSnapshot(new Map(zonesRef.current));
 
       // Record positioning tick timestamp per Spec 10
@@ -265,6 +267,19 @@ export function MapViewport() {
 
       // Evaluate clusters per Spec 11 - runs alongside drift tick
       const clusterResult = evaluateClusters(gameResult.updatedThreads, clustersRef.current, now);
+
+      // Trigger cluster migration animations per Spec 02 state transitions
+      // Threads joining a cluster animate toward the cluster centroid
+      for (const [threadId, newClusterId] of clusterResult.threadUpdates) {
+        if (newClusterId) {
+          const cluster = clusterResult.clusters.find((c) => c.id === newClusterId);
+          const thread = gameResult.updatedThreads.find((t) => t.id === threadId);
+          if (cluster && thread) {
+            setClusterMigration(threadId, cluster.centroid, thread.position, now);
+          }
+        }
+      }
+
       clustersRef.current = clusterResult.clusters;
 
       // Evaluate map alerts per Spec 07 - runs alongside drift tick

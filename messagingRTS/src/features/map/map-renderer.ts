@@ -385,9 +385,13 @@ export class MapRenderer {
       this.smoothedUrgency.set(thread.id, smoothed);
 
       // Urgency pulse per Spec 02 (uses smoothed value for gradual fade-out)
+      // Archived threads do not pulse per Spec 02 state transitions
+      const isArchived = thread.visualState === "archived";
       const pulseRate =
         URGENCY_PULSE_BASE_RATE + smoothed * (URGENCY_PULSE_MAX_RATE - URGENCY_PULSE_BASE_RATE);
-      const pulse = 1.0 + Math.sin(this.pulseTime * pulseRate * Math.PI * 2) * 0.15 * smoothed;
+      const pulse = isArchived
+        ? 1.0
+        : 1.0 + Math.sin(this.pulseTime * pulseRate * Math.PI * 2) * 0.15 * smoothed;
 
       // Draw the thread entity
       const r = radius * pulse;
@@ -637,7 +641,9 @@ export class MapRenderer {
           label.style.align = "center";
           this.clusterLabels.set(cluster.id, label);
         }
-        label.text = `${cluster.memberThreadIds.length}`;
+        // Show descriptive cluster label with count per Spec 02
+        const clusterDesc = cluster.label || `${cluster.memberThreadIds.length}`;
+        label.text = `${clusterDesc} (${cluster.memberThreadIds.length})`;
         label.position.set(
           cluster.centroid.x - label.width / 2,
           cluster.centroid.y - label.height / 2,

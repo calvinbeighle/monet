@@ -10,6 +10,7 @@ import { useAgentStore } from "../lib/stores/agent-store";
 import { useThreadStore } from "../lib/stores/thread-store";
 import { useAppStore } from "../lib/stores";
 import { processAgentWork } from "../features/agents/ai-backend";
+import { createAgentCompletedAlert } from "../features/game-mechanics/map-alerts";
 
 // Shared logic: after travel delay, start AI work and complete/fail deployment records
 function startAgentWorkPhase(
@@ -56,6 +57,11 @@ function startAgentWorkPhase(
       for (const did of deploymentIds) {
         completeDeployment(did);
       }
+
+      // Fire agent-completed map alert per Spec 07 Section 12
+      const appState = useAppStore.getState();
+      const alert = createAgentCompletedAlert(agentRole, allThreadIds.length);
+      appState.setMapAlerts([...appState.mapAlerts, alert]);
     })
     .catch((err) => {
       console.error(`[DeploymentConfirmation] ${agentRole} fatal error:`, err);
