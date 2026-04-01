@@ -48,6 +48,7 @@ export class MapRenderer {
 
   // Selection and search state (set by viewport, used during render)
   private selectedThreadId: string | null = null;
+  private batchSelectedIds: Set<string> = new Set();
   private searchHighlightIds: Set<string> = new Set();
   private searchActive = false;
 
@@ -58,7 +59,15 @@ export class MapRenderer {
   // Dirty flagging - cache of last-rendered state per thread
   private threadRenderCache: Map<
     string,
-    { x: number; y: number; urgency: number; value: number; visualState: string; selected: boolean }
+    {
+      x: number;
+      y: number;
+      urgency: number;
+      value: number;
+      visualState: string;
+      selected: boolean;
+      batchSelected: boolean;
+    }
   > = new Map();
 
   // Animation state
@@ -255,6 +264,7 @@ export class MapRenderer {
         value: thread.valueScore,
         visualState: thread.visualState,
         selected: thread.id === this.selectedThreadId,
+        batchSelected: this.batchSelectedIds.has(thread.id),
       };
       const cached = this.threadRenderCache.get(thread.id);
       if (
@@ -265,7 +275,8 @@ export class MapRenderer {
         cached.urgency === cacheKey.urgency &&
         cached.value === cacheKey.value &&
         cached.visualState === cacheKey.visualState &&
-        cached.selected === cacheKey.selected
+        cached.selected === cacheKey.selected &&
+        cached.batchSelected === cacheKey.batchSelected
       ) {
         g.visible = true;
         continue;
@@ -313,6 +324,12 @@ export class MapRenderer {
       if (thread.visualState === "agent-occupied") {
         g.circle(thread.position.x, thread.position.y, r + 4);
         g.stroke({ color: 0xffd700 as ColorSource, width: 2, alpha: 0.7 });
+      }
+
+      // Batch selection ring per Spec 09 (distinct from single selection)
+      if (this.batchSelectedIds.has(thread.id)) {
+        g.circle(thread.position.x, thread.position.y, r + 6);
+        g.stroke({ color: 0x00ccff as ColorSource, width: 2, alpha: 0.8 });
       }
 
       // Selection ring per Spec 08
@@ -643,6 +660,10 @@ export class MapRenderer {
   // Selection and search state (driven by viewport)
   setSelectedThread(id: string | null): void {
     this.selectedThreadId = id;
+  }
+
+  setBatchSelectedIds(ids: Set<string>): void {
+    this.batchSelectedIds = ids;
   }
 
   setSearchHighlight(ids: string[], active: boolean): void {

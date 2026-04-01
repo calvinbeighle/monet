@@ -15,6 +15,7 @@ import { SessionSummaryModal, type SessionSummaryData } from "./components/sessi
 import { NotificationArea } from "./components/notification-area";
 import { DeploymentConfirmation } from "./components/deployment-confirmation";
 import { ResultsOverlay } from "./components/results-overlay";
+import { BatchActionBar } from "./components/batch-action-bar";
 import {
   loadPersistedThreads,
   loadPersistedActionQueue,
@@ -295,6 +296,9 @@ export function App() {
           Gmail unreachable - showing cached data. Sync status: {syncStatus}
         </div>
       )}
+
+      {/* Batch action bar - visible when threads are multi-selected per Spec 09 */}
+      <BatchActionBar />
 
       {/* Main content area: map viewport + optional right panel */}
       <div className="relative flex flex-1 overflow-hidden">

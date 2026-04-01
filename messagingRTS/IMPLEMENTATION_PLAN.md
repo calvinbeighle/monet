@@ -8,7 +8,7 @@ Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (complete - drag-to-deploy, confirmation, recall, quick-deploy, batch deployment).
 
-**Next priorities**: Cross-cutting concerns (filter system, batch operations, accessibility, performance optimization, responsive layout).
+**Next priorities**: Cross-cutting concerns (accessibility, performance optimization, responsive layout).
 
 ---
 
@@ -322,8 +322,8 @@ These must be resolved before implementation begins:
 - **Accessibility**: keyboard navigation throughout, focus management, ARIA labels (Phase 2)
 - **Performance**: PixiJS object pooling for 500+ entities, IndexedDB batch writes (Phase 2)
 - **Responsive layout**: panels collapse at narrow viewports (Phase 2)
-- **Filter system**: show/hide threads by zone, label, sender, urgency; hidden threads still drift and can resurface on at-risk/lost transition (Phase 2)
-- **Batch operations**: multi-select threads, bulk actions (mark handled, move zone, apply label, assign agent) (Phase 2)
+- [x] **Filter system**: show/hide threads by zone, label, sender, urgency; hidden threads still drift and can resurface on at-risk/lost transition (Phase 2)
+- [x] **Batch operations**: multi-select threads, bulk actions (mark handled, move zone, apply label, assign agent) (Phase 2)
 
 ---
 
@@ -480,3 +480,14 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - map-viewport.tsx: Added hitTestCluster function (distance to centroid). Ctrl+click toggles cluster selection. Agent drop with pre-selected clusters builds BatchTarget array and shows batch confirmation. Non-Ctrl clicks clear cluster selection.
 - ConfirmationState extended with optional batchTargets: Array<BatchTarget> for batch mode. Dialog shows batch badge, cluster list with per-cluster thread counts, total counts.
 - Test count: 702 total (13 new: 8 deployment-store batch, 3 deployment-confirmation batch, 2 cluster selection), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Filter System & Batch Operations (2026-03-31)
+
+- Filter store (src/lib/stores/filter-store.ts): Zustand store with localStorage persistence. Four filter dimensions per Spec 09: zone, Gmail label, sender email/domain, urgency score range. Pure functions (isFilterActive, shouldHideThread, getVisibleThreads) exported for use outside React. At-risk/lost threads always surface regardless of filter (escape hatch per Spec 09). Toggle actions for each dimension. 48 tests.
+- Filter integration: map-viewport.tsx renders only visible (filtered) threads. Minimap shows filtered threads. App.tsx restores persisted filter on init. Filter store re-exported from stores/index.ts barrel.
+- Batch operations (src/features/sync/batch-operations.ts): Orchestration layer for four batch actions per Spec 09: batchMarkHandled (lifecycle transition + Gmail archive), batchMoveToZone (zone + userOverrideZone flag), batchApplyLabel (optimistic + Gmail API), batchAssignAgent (deployment confirmation flow). Each thread transitions independently. Selection cleared after every action. Offline queueing for Gmail operations.
+- Thread store (thread-store.ts): Already had selectedThreadIds (Set), toggleBatchSelect, clearBatchSelection from prior implementation. Selection is distinct from thread state per Spec 09.
+- Map viewport batch selection: Shift+click toggles thread in batch selection set. Normal click clears batch selection. Click on empty space clears both selections.
+- Batch action bar (src/components/batch-action-bar.tsx): Toolbar visible when selectedThreadIds.size > 0. Actions: Mark Handled, Move to Zone (dropdown), Apply Label (text input), Assign Agent (dropdown), Clear. ARIA toolbar role, descriptive aria-labels.
+- Map renderer: batch-selected threads get cyan ring (0x00ccff) distinct from white single-selection ring. Dirty flag cache includes batchSelected state.
+- Test count: 782 total (32 new batch operation tests), all passing. Typecheck and lint clean.

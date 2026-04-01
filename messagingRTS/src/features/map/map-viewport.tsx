@@ -81,6 +81,7 @@ export function MapViewport() {
 
   const threads = useThreadStore((s) => s.threads);
   const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
+  const selectedThreadIds = useThreadStore((s) => s.selectedThreadIds);
   const selectThread = useThreadStore((s) => s.selectThread);
 
   const filter = useFilterStore((s) => s.filter);
@@ -220,7 +221,7 @@ export function MapViewport() {
     };
   }, []);
 
-  // Re-render when threads, selection, or filter changes
+  // Re-render when threads, selection, batch selection, or filter changes
   // Per Spec 09: filter only affects visibility - drift continues on ALL threads
   useEffect(() => {
     const renderer = rendererRef.current;
@@ -229,10 +230,11 @@ export function MapViewport() {
     const threadArray = [...threads.values()];
     const visibleThreads = getVisibleThreads(threadArray, filter);
     renderer.setSelectedThread(selectedThreadId);
+    renderer.setBatchSelectedIds(selectedThreadIds);
     renderer.renderZones(zonesRef.current);
     renderer.renderThreads(visibleThreads);
     renderer.renderClusters(clustersRef.current, visibleThreads);
-  }, [threads, selectedThreadId, filter]);
+  }, [threads, selectedThreadId, selectedThreadIds, filter]);
 
   // Sync search highlighting to renderer
   useEffect(() => {
@@ -418,6 +420,12 @@ export function MapViewport() {
       }
 
       if (hitId) {
+        // Shift+click: batch selection per Spec 09 Batch Operations
+        if (e.shiftKey) {
+          useThreadStore.getState().toggleBatchSelect(hitId);
+          return;
+        }
+
         const zoomLevel = cam.level;
         if (zoomLevel === "strategic") {
           // At strategic zoom, click cluster dot -> zoom to tactical per Spec 08
@@ -428,6 +436,10 @@ export function MapViewport() {
           }
         } else {
           // Single click -> select per Spec 08
+          // Clear batch selection on normal click
+          if (useThreadStore.getState().selectedThreadIds.size > 0) {
+            useThreadStore.getState().clearBatchSelection();
+          }
           selectThread(hitId);
           useNavigationStore.getState().openDetailPanel();
         }
@@ -435,6 +447,10 @@ export function MapViewport() {
         // Click empty space -> clear selection per Spec 08
         selectThread(null);
         useNavigationStore.getState().closeDetailPanel();
+        // Also clear batch selection
+        if (useThreadStore.getState().selectedThreadIds.size > 0) {
+          useThreadStore.getState().clearBatchSelection();
+        }
       }
     },
     [selectThread],
