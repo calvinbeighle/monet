@@ -80,6 +80,10 @@ export type Workstream = {
   summary: WorkstreamSummary | null;
   confidence: number; // AI clustering confidence 0-1
   rationale: string; // AI explanation for why these activities are grouped
+
+  // Visual (xAI Imagine generated)
+  imageUrl: string | null; // cached AI-generated image URL for feed card background
+  imageGeneratedAt: number | null; // when the image was last generated
 };
 
 export function createWorkstream(
@@ -107,5 +111,7 @@ export function createWorkstream(
     summary: fields?.summary ?? null,
     confidence: fields?.confidence ?? 0,
     rationale: fields?.rationale ?? "",
+    imageUrl: fields?.imageUrl ?? null,
+    imageGeneratedAt: fields?.imageGeneratedAt ?? null,
   };
 }

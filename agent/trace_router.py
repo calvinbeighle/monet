@@ -24,6 +24,8 @@ import anthropic
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+import httpx
+
 from agent.nango import nango_proxy_request
 
 # Global rate limiter for Claude AI calls (max 3 concurrent)
@@ -31,6 +33,11 @@ _ai_semaphore = asyncio.Semaphore(3)
 _ai_client: anthropic.AsyncAnthropic | None = None
 
 AI_MODEL = os.environ.get("TRACE_AI_MODEL", "claude-sonnet-4-6")
+
+# xAI Imagine API for image generation
+XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
+XAI_IMAGINE_URL = "https://api.x.ai/v1/images/generations"
+XAI_IMAGINE_MODEL = os.environ.get("XAI_IMAGINE_MODEL", "grok-2-image")
 
 
 def _get_ai_client() -> anthropic.AsyncAnthropic:
@@ -1308,6 +1315,79 @@ Respond with this exact JSON structure:
             return JSONResponse({"error": "parse_error"}, status_code=502)
         except Exception as e:
             logger.exception("AI summarize unexpected error: %s", e)
+            return JSONResponse(
+                {"error": "internal", "message": str(e)}, status_code=500
+            )
+
+    # --- xAI Imagine: AI-generated images for workstream cards ---
+
+    @router.post("/imagine/generate")
+    async def imagine_generate(request: Request):
+        """Generate an image via xAI Imagine API for a workstream card background.
+
+        Expects JSON body: { prompt: string, workstreamId: string }
+        Returns: { url: string, workstreamId: string }
+        """
+        if not XAI_API_KEY:
+            return JSONResponse(
+                {"error": "xai_not_configured", "message": "XAI_API_KEY not set"},
+                status_code=503,
+            )
+
+        try:
+            body = await request.json()
+            prompt = body.get("prompt", "")
+            workstream_id = body.get("workstreamId", "")
+
+            if not prompt:
+                return JSONResponse({"error": "missing_prompt"}, status_code=400)
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    XAI_IMAGINE_URL,
+                    headers={
+                        "Authorization": f"Bearer {XAI_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": XAI_IMAGINE_MODEL,
+                        "prompt": prompt,
+                        "n": 1,
+                    },
+                )
+                resp.raise_for_status()
+                result = resp.json()
+
+            # xAI returns data[].url or data[].b64_json
+            images = result.get("data", [])
+            if not images:
+                return JSONResponse({"error": "no_image_returned"}, status_code=502)
+
+            image_data = images[0]
+            image_url = image_data.get("url", "")
+            b64 = image_data.get("b64_json", "")
+
+            return JSONResponse(
+                {
+                    "workstreamId": workstream_id,
+                    "url": image_url,
+                    "b64_json": b64,
+                    "generatedAt": int(time.time() * 1000),
+                }
+            )
+
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "xAI Imagine API error: %s %s",
+                e.response.status_code,
+                e.response.text[:500],
+            )
+            return JSONResponse(
+                {"error": "xai_api_error", "message": str(e)},
+                status_code=e.response.status_code,
+            )
+        except Exception as e:
+            logger.exception("xAI Imagine unexpected error: %s", e)
             return JSONResponse(
                 {"error": "internal", "message": str(e)}, status_code=500
             )

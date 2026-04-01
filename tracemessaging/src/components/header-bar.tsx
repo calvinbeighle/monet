@@ -1,14 +1,14 @@
-import { useAppStore } from "../lib/stores";
-import { useWorkstreamStore } from "../lib/stores";
-import { useActivityStore } from "../lib/stores";
-import type { ConnectivityStatus } from "../lib/types";
+import { useAppStore } from "@/lib/stores";
+import { useWorkstreamStore } from "@/lib/stores";
+import { useActivityStore } from "@/lib/stores";
+import type { ConnectivityStatus } from "@/lib/types";
 
 function SyncIndicator({ status }: { status: ConnectivityStatus }) {
   const colors: Record<ConnectivityStatus, string> = {
-    connected: "bg-green-500",
-    syncing: "bg-yellow-500 animate-pulse",
-    error: "bg-red-500",
-    offline: "bg-gray-500",
+    connected: "bg-[var(--urgency-low)]",
+    syncing: "bg-[var(--urgency-medium)] animate-pulse",
+    error: "bg-[var(--urgency-high)]",
+    offline: "bg-[rgba(255,255,255,0.2)]",
   };
 
   const labels: Record<ConnectivityStatus, string> = {
@@ -19,7 +19,10 @@ function SyncIndicator({ status }: { status: ConnectivityStatus }) {
   };
 
   return (
-    <div className="flex items-center gap-1.5 text-[0.7rem] uppercase tracking-widest text-[rgba(255,255,255,0.3)]">
+    <div
+      className="flex items-center gap-1.5 text-[0.75rem] uppercase tracking-widest text-[var(--text-tertiary)]"
+      style={{ fontFamily: "var(--font-body)" }}
+    >
       <div className={`h-1.5 w-1.5 rounded-full ${colors[status]}`} />
       {labels[status]}
     </div>
@@ -32,21 +35,29 @@ export function HeaderBar() {
   const setSearchQuery = useAppStore((s) => s.setSearchQuery);
   const currentRoute = useAppStore((s) => s.currentRoute);
   const navigate = useAppStore((s) => s.navigate);
-  const activeCount = useWorkstreamStore(
-    (s) => s.getActiveWorkstreams().length,
-  );
-  const unassignedCount = useActivityStore(
-    (s) => s.getUnassignedActivities().length,
-  );
+  const workstreams = useWorkstreamStore((s) => s.workstreams);
+  const activities = useActivityStore((s) => s.activities);
+
+  const activeCount = [...workstreams.values()].filter(
+    (ws) => ws.status === "active",
+  ).length;
+  const unassignedCount = [...activities.values()].filter(
+    (a) => a.workstreamId === null,
+  ).length;
 
   return (
-    <header className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-[rgba(255,255,255,0.06)] bg-[#0a0a0b] px-8 backdrop-blur-xl">
-      <div className="flex items-center gap-6">
+    <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-root)] px-6 backdrop-blur-xl sm:px-8">
+      <div className="flex items-center gap-5">
         <button
           onClick={() => navigate({ view: "timeline" })}
-          className="cursor-pointer border-none bg-transparent font-serif text-[1.4rem] font-normal tracking-tight text-[rgba(255,255,255,0.92)]"
+          className="cursor-pointer border-none bg-transparent tracking-tight text-[var(--text-primary)]"
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: "1.3rem",
+            fontStyle: "italic",
+          }}
         >
-          trace<span className="text-[#c8f06a]">.</span>
+          trace<span style={{ color: "var(--text-tertiary)" }}>.</span>
         </button>
         <SyncIndicator status={syncStatus} />
       </div>
@@ -55,33 +66,38 @@ export function HeaderBar() {
         {currentRoute.view === "timeline" && (
           <input
             type="text"
-            className="w-56 rounded-md border border-[rgba(255,255,255,0.06)] bg-[#111113] px-3 py-1.5 font-mono text-[0.75rem] text-[rgba(255,255,255,0.55)] outline-none transition-colors placeholder:text-[rgba(255,255,255,0.3)] focus:border-[rgba(255,255,255,0.12)]"
-            placeholder="Search workstreams..."
+            className="w-48 rounded-sm border border-[var(--border-subtle)] bg-[var(--bg-card)] px-3 py-1.5 text-[0.8rem] text-[var(--text-secondary)] outline-none transition-colors placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-hover)]"
+            style={{ fontFamily: "var(--font-body)" }}
+            placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         )}
 
-        <div className="flex gap-5 text-[0.7rem] uppercase tracking-wider">
-          <span className="text-[rgba(255,255,255,0.3)]">
-            <strong className="font-medium text-[rgba(255,255,255,0.55)]">
+        <div
+          className="flex gap-4 text-[0.75rem] uppercase tracking-wider"
+          style={{ fontFamily: "var(--font-body)" }}
+        >
+          <span className="text-[var(--text-tertiary)]">
+            <strong className="font-semibold text-[var(--text-secondary)]">
               {activeCount}
             </strong>{" "}
             active
           </span>
           {unassignedCount > 0 && (
-            <span className="text-[rgba(255,255,255,0.3)]">
-              <strong className="font-medium text-[rgba(255,255,255,0.55)]">
+            <span className="text-[var(--text-tertiary)]">
+              <strong className="font-semibold text-[var(--text-secondary)]">
                 {unassignedCount}
               </strong>{" "}
-              unassigned
+              triage
             </span>
           )}
         </div>
 
         <button
           onClick={() => navigate({ view: "settings" })}
-          className="cursor-pointer border-none bg-transparent text-[0.8rem] text-[rgba(255,255,255,0.3)] transition-colors hover:text-[rgba(255,255,255,0.55)]"
+          className="cursor-pointer border-none bg-transparent text-[0.85rem] text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-secondary)]"
+          style={{ fontFamily: "var(--font-body)" }}
         >
           settings
         </button>

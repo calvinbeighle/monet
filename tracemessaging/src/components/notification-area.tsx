@@ -25,9 +25,9 @@ export function NotificationArea() {
   if (visible.length === 0) return null;
 
   const typeStyles = {
-    info: "border-[rgba(107,197,255,0.3)] bg-[rgba(107,197,255,0.08)]",
-    warning: "border-[rgba(255,184,108,0.3)] bg-[rgba(255,184,108,0.08)]",
-    error: "border-[rgba(255,107,107,0.3)] bg-[rgba(255,107,107,0.08)]",
+    info: "border-[rgba(255,255,255,0.15)] bg-[rgba(255,255,255,0.04)]",
+    warning: "border-[rgba(180,130,0,0.3)] bg-[rgba(180,130,0,0.06)]",
+    error: "border-[rgba(180,0,0,0.3)] bg-[rgba(180,0,0,0.06)]",
   };
 
   return (
@@ -35,13 +35,14 @@ export function NotificationArea() {
       {visible.map((n) => (
         <div
           key={n.id}
-          className={`flex items-center gap-3 rounded-md border px-4 py-2.5 font-mono text-[0.78rem] text-[rgba(255,255,255,0.7)] shadow-lg ${typeStyles[n.type]}`}
+          className={`flex items-center gap-3 rounded-sm border px-4 py-2.5 text-[0.85rem] text-[var(--text-secondary)] shadow-lg ${typeStyles[n.type]}`}
+          style={{ fontFamily: "var(--font-body)" }}
         >
           <span className="flex-1">{n.message}</span>
           {n.dismissable && (
             <button
               onClick={() => dismissNotification(n.id)}
-              className="cursor-pointer border-none bg-transparent text-[rgba(255,255,255,0.3)] transition-colors hover:text-[rgba(255,255,255,0.7)]"
+              className="cursor-pointer border-none bg-transparent text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-secondary)]"
             >
               x
             </button>

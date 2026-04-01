@@ -31,3 +31,10 @@ export {
   refreshStaleSummaries,
   stopSummaryService,
 } from "./ai-summary";
+
+export {
+  requestImage,
+  needsImageRefresh,
+  refreshStaleImages,
+  stopImagineService,
+} from "./imagine-service";

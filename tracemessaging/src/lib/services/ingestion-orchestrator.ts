@@ -19,6 +19,7 @@ import {
   refreshStaleSummaries,
   stopSummaryService,
 } from "./ai-summary";
+import { refreshStaleImages, stopImagineService } from "./imagine-service";
 
 interface IngestionSource {
   name: SourceType;
@@ -130,6 +131,9 @@ export function startIngestion(): void {
         initialDetectionDone = true; // Still allow linking to proceed
       }
 
+      // Generate images for all detected workstreams
+      refreshStaleImages();
+
       // Start periodic detection (every 5 minutes)
       startDetection();
 
@@ -142,6 +146,8 @@ export function startIngestion(): void {
               err,
             ),
           );
+          // Also refresh stale workstream images
+          refreshStaleImages();
         },
         5 * 60 * 1000,
       );
@@ -165,6 +171,7 @@ export function stopIngestion(): void {
   }
   stopDetection();
   stopSummaryService();
+  stopImagineService();
   if (summaryRefreshTimer) {
     clearInterval(summaryRefreshTimer);
     summaryRefreshTimer = null;
