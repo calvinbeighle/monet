@@ -223,6 +223,8 @@ class TestConnectSession:
         assert session is not None
         assert session.token == "session-token-123"
         assert session.provider == "gmail"
+        # Connect UI is at connect.nango.dev, not the API base URL
+        assert "connect.nango.dev" in session.url
         assert "google-mail" in session.url
         assert "gmail-default" in session.url
         assert "session-token-123" in session.url

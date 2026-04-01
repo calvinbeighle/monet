@@ -103,6 +103,7 @@ export interface AgentInstance {
   completedAt: number | null;
   cooldownExpiry: number | null;
   proposals: AgentProposal[];
+  failedThreadIds: string[];
   approvedCount: number;
   rejectedCount: number;
 }

@@ -52,7 +52,7 @@ function startAgentWorkPhase(
         console.info(`[DeploymentConfirmation] ${agentRole} used simulated proposals`);
       }
 
-      useAgentStore.getState().complete(agentRole, result.proposals);
+      useAgentStore.getState().complete(agentRole, result.proposals, result.failedThreadIds);
       for (const did of deploymentIds) {
         completeDeployment(did);
       }

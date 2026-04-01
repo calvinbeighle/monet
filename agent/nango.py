@@ -249,8 +249,8 @@ class NangoManager:
             if resp.status_code == 200 or resp.status_code == 201:
                 data = resp.json()
                 token = data.get("data", {}).get("token", data.get("token", ""))
-                # Nango connect UI URL with session token
-                url = f"{self._base_url}/oauth/connect/{provider_info['config_key']}?connection_id={provider_info['connection_id']}&connect_session_token={token}"
+                # Nango connect UI is at connect.nango.dev, not the API base URL
+                url = f"https://connect.nango.dev/pub/provider/{provider_info['config_key']}?connection_id={provider_info['connection_id']}&connect_session_token={token}"
                 return ConnectSession(
                     url=url,
                     token=token,

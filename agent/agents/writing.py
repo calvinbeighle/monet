@@ -214,7 +214,26 @@ class WritingAgent(BaseAgent):
             connection_id=_DOCS_CONNECTION_ID,
         )
         resp.raise_for_status()
-        return resp.text
+
+        # Parse the deeply nested Docs API response into clean plain text
+        doc = resp.json()
+        title = doc.get("title", "")
+        plain_text_parts = []
+        for block in doc.get("body", {}).get("content", []):
+            paragraph = block.get("paragraph", {})
+            for element in paragraph.get("elements", []):
+                text_run = element.get("textRun", {})
+                content = text_run.get("content", "")
+                if content:
+                    plain_text_parts.append(content)
+        plain_text = "".join(plain_text_parts)
+        return json.dumps(
+            {
+                "document_id": document_id,
+                "title": title,
+                "content": plain_text,
+            }
+        )
 
     def _tool_create_document(self, params: dict) -> str:
         """Create a new Google Doc via Nango proxy."""
@@ -253,7 +272,14 @@ class WritingAgent(BaseAgent):
             )
             update_resp.raise_for_status()
 
-        return resp.text
+        title = params.get("title", "")
+        return json.dumps(
+            {
+                "documentId": doc_id,
+                "title": title,
+                "message": "Document created and content inserted successfully.",
+            }
+        )
 
     def _tool_edit_document(self, params: dict) -> str:
         """Edit an existing Google Doc via Nango proxy using batchUpdate."""
@@ -328,13 +354,16 @@ class WritingAgent(BaseAgent):
         query = params["query"]
         max_results = params.get("max_results", 10)
 
+        # Escape single quotes to prevent Drive API query injection (400 errors)
+        escaped_query = query.replace("'", "\\'")
+
         resp = nango_proxy_request(
             method="GET",
             path="drive/v3/files",
             provider_config_key=_DRIVE_CONFIG_KEY,
             connection_id=_DRIVE_CONNECTION_ID,
             params={
-                "q": f"mimeType='application/vnd.google-apps.document' and fullText contains '{query}'",
+                "q": f"mimeType='application/vnd.google-apps.document' and fullText contains '{escaped_query}'",
                 "pageSize": max_results,
                 "orderBy": "relevance",
                 "fields": "files(id,name,modifiedTime,description)",

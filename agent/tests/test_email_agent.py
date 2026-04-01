@@ -60,34 +60,129 @@ class TestEmailAgent:
 
     @patch("agent.nango.httpx.request")
     def test_execute_list_inbox(self, mock_request):
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"messages": [{"id": "1", "subject": "Test"}]})
-        mock_response.raise_for_status = MagicMock()
-        mock_request.return_value = mock_response
+        """list_inbox batch-fetches metadata so the AI gets subject, from, date."""
+        # First call: messages.list returning only stubs
+        list_response = MagicMock()
+        list_response.status_code = 200
+        list_response.raise_for_status = MagicMock()
+        list_response.json.return_value = {
+            "messages": [{"id": "msg1", "threadId": "t1"}]
+        }
+
+        # Second call: metadata fetch for msg1
+        meta_response = MagicMock()
+        meta_response.status_code = 200
+        meta_response.raise_for_status = MagicMock()
+        meta_response.json.return_value = {
+            "id": "msg1",
+            "threadId": "t1",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "alice@example.com"},
+                    {"name": "Subject", "value": "Hello there"},
+                    {"name": "Date", "value": "Mon, 30 Mar 2026 10:00:00 +0000"},
+                ]
+            },
+        }
+
+        mock_request.side_effect = [list_response, meta_response]
 
         result = self.agent.execute_tool("list_inbox", {"max_results": 5})
-        assert "messages" in result
-        mock_request.assert_called_once()
-        call_kwargs = mock_request.call_args
-        assert call_kwargs[1]["method"] == "GET"
-        assert "/proxy/gmail/v1/users/me/messages" in call_kwargs[1]["url"]
-        assert call_kwargs[1]["headers"]["Connection-Id"] is not None
-        assert call_kwargs[1]["headers"]["Provider-Config-Key"] == "google-mail"
+        data = json.loads(result)
+        assert "messages" in data
+        assert len(data["messages"]) == 1
+        msg = data["messages"][0]
+        assert msg["id"] == "msg1"
+        assert msg["subject"] == "Hello there"
+        assert msg["from"] == "alice@example.com"
+        assert msg["date"] == "Mon, 30 Mar 2026 10:00:00 +0000"
+
+        # First call must be the messages.list
+        first_call = mock_request.call_args_list[0][1]
+        assert first_call["method"] == "GET"
+        assert "/proxy/gmail/v1/users/me/messages" in first_call["url"]
+        assert first_call["headers"]["Connection-Id"] is not None
+        assert first_call["headers"]["Provider-Config-Key"] == "google-mail"
+
+        # Second call must be the metadata fetch for msg1
+        second_call = mock_request.call_args_list[1][1]
+        assert "/proxy/gmail/v1/users/me/messages/msg1" in second_call["url"]
+        assert second_call["params"]["format"] == "metadata"
 
     @patch("agent.nango.httpx.request")
-    def test_execute_read_email(self, mock_request):
+    def test_execute_read_email_simple_body(self, mock_request):
+        """read_email decodes base64url body from payload.body.data for simple messages."""
+        body_text = "Hello, this is the email body."
+        encoded = base64.urlsafe_b64encode(body_text.encode()).decode()
+
         mock_response = MagicMock()
-        mock_response.text = json.dumps(
-            {"id": "msg1", "subject": "Test", "body": "Hello"}
-        )
         mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "id": "msg1",
+            "threadId": "t1",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "alice@example.com"},
+                    {"name": "To", "value": "me@example.com"},
+                    {"name": "Subject", "value": "Test Subject"},
+                    {"name": "Date", "value": "Mon, 30 Mar 2026 10:00:00 +0000"},
+                ],
+                "body": {"data": encoded},
+            },
+        }
         mock_request.return_value = mock_response
 
         result = self.agent.execute_tool("read_email", {"message_id": "msg1"})
-        assert "msg1" in result
         assert (
             "/proxy/gmail/v1/users/me/messages/msg1" in mock_request.call_args[1]["url"]
         )
+
+        data = json.loads(result)
+        assert data["message_id"] == "msg1"
+        assert data["thread_id"] == "t1"
+        assert data["subject"] == "Test Subject"
+        assert data["from"] == "alice@example.com"
+        assert data["to"] == "me@example.com"
+        assert data["date"] == "Mon, 30 Mar 2026 10:00:00 +0000"
+        assert data["body"] == body_text
+
+    @patch("agent.nango.httpx.request")
+    def test_execute_read_email_multipart_body(self, mock_request):
+        """read_email decodes base64url body from payload.parts for multipart messages."""
+        body_text = "Multipart plain text body."
+        encoded = base64.urlsafe_b64encode(body_text.encode()).decode()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "id": "msg2",
+            "threadId": "t2",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "bob@example.com"},
+                    {"name": "To", "value": "me@example.com"},
+                    {"name": "Subject", "value": "Multipart"},
+                    {"name": "Date", "value": "Tue, 31 Mar 2026 09:00:00 +0000"},
+                ],
+                "parts": [
+                    {"mimeType": "text/plain", "body": {"data": encoded}},
+                    {
+                        "mimeType": "text/html",
+                        "body": {
+                            "data": base64.urlsafe_b64encode(b"<b>html</b>").decode()
+                        },
+                    },
+                ],
+            },
+        }
+        mock_request.return_value = mock_response
+
+        result = self.agent.execute_tool("read_email", {"message_id": "msg2"})
+        data = json.loads(result)
+        assert data["message_id"] == "msg2"
+        assert data["subject"] == "Multipart"
+        # Should prefer text/plain part
+        assert data["body"] == body_text
 
     @patch("agent.nango.httpx.request")
     def test_execute_send_email(self, mock_request):
@@ -261,16 +356,65 @@ class TestEmailAgent:
         assert "Reply content" in decoded
 
     @patch("agent.nango.httpx.request")
+    def test_send_email_reply_message_id_before_subject(self, mock_request):
+        """Bug 3 fix: orig_subject must be initialized before the loop.
+
+        If Message-Id header comes before Subject in the Gmail response, the
+        old code would assign orig_subject only inside the Subject branch, but
+        subject re-formatting happened inside the Message-Id branch iteration,
+        causing a potential UnboundLocalError or using a stale value from a
+        previous loop iteration. The fix initializes orig_subject = None before
+        the loop and applies the Re: prefix after the loop completes.
+        """
+        orig_response = MagicMock()
+        orig_response.status_code = 200
+        orig_response.json.return_value = {
+            "threadId": "thread_order",
+            "payload": {
+                "headers": [
+                    # Message-Id appears FIRST - this triggered the bug
+                    {"name": "Message-Id", "value": "<first@mail.example.com>"},
+                    {"name": "Subject", "value": "Order Matters"},
+                ],
+            },
+        }
+        orig_response.raise_for_status = MagicMock()
+
+        send_response = MagicMock()
+        send_response.text = json.dumps({"status": "sent"})
+        send_response.raise_for_status = MagicMock()
+
+        mock_request.side_effect = [orig_response, send_response]
+
+        # Should not raise UnboundLocalError or produce wrong subject
+        self.agent.execute_tool(
+            "send_email",
+            {
+                "to": "test@example.com",
+                "subject": "anything",
+                "body": "body text",
+                "reply_to_message_id": "orig_msg_order",
+            },
+        )
+        send_call = mock_request.call_args_list[1][1]
+        decoded = base64.urlsafe_b64decode(send_call["json"]["raw"]).decode("utf-8")
+        assert "In-Reply-To: <first@mail.example.com>" in decoded
+        # subject should have been updated to Re: Order Matters
+        assert "Subject: Re: Order Matters" in decoded
+
+    @patch("agent.nango.httpx.request")
     def test_execute_list_inbox_unread_only(self, mock_request):
         """list_inbox with unread_only=True adds is:unread to query."""
         mock_response = MagicMock()
-        mock_response.text = json.dumps({"messages": []})
+        mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"messages": []}
         mock_request.return_value = mock_response
 
         self.agent.execute_tool("list_inbox", {"unread_only": True})
-        call_params = mock_request.call_args[1]["params"]
-        assert "is:unread" in call_params["q"]
+        # Only one call (the messages.list) since no messages to fetch metadata for
+        first_call = mock_request.call_args_list[0][1]
+        assert "is:unread" in first_call["params"]["q"]
 
     @patch("agent.nango.httpx.request")
     def test_execute_tool_handles_http_error(self, mock_request):
@@ -284,12 +428,13 @@ class TestEmailAgent:
     def test_proxy_headers_format(self, mock_request):
         """All requests must include Connection-Id and Provider-Config-Key headers."""
         mock_response = MagicMock()
-        mock_response.text = json.dumps({"messages": []})
+        mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"messages": []}
         mock_request.return_value = mock_response
 
         self.agent.execute_tool("list_inbox", {})
-        headers = mock_request.call_args[1]["headers"]
+        headers = mock_request.call_args_list[0][1]["headers"]
         assert "Connection-Id" in headers
         assert "Provider-Config-Key" in headers
         assert headers["Provider-Config-Key"] == "google-mail"

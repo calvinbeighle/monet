@@ -100,14 +100,29 @@ class TestWritingAgent:
     @patch("agent.nango.httpx.request")
     def test_execute_read_document(self, mock_request):
         mock_response = MagicMock()
-        mock_response.text = json.dumps(
-            {"documentId": "doc1", "title": "Test", "body": {"content": "Hello world"}}
-        )
+        # Docs API returns deeply nested structure; agent should extract plain text
+        mock_response.json.return_value = {
+            "documentId": "doc1",
+            "title": "Test",
+            "body": {
+                "content": [
+                    {
+                        "paragraph": {
+                            "elements": [{"textRun": {"content": "Hello world"}}]
+                        }
+                    }
+                ]
+            },
+        }
         mock_response.raise_for_status = MagicMock()
         mock_request.return_value = mock_response
 
         result = self.agent.execute_tool("read_document", {"document_id": "doc1"})
-        assert "doc1" in result
+        parsed = json.loads(result)
+        # Should return clean JSON with document_id, title, and plain text content
+        assert parsed["document_id"] == "doc1"
+        assert parsed["title"] == "Test"
+        assert "Hello world" in parsed["content"]
         assert "/proxy/v1/documents/doc1" in mock_request.call_args[1]["url"]
         assert (
             mock_request.call_args[1]["headers"]["Provider-Config-Key"] == "google-docs"
@@ -131,7 +146,11 @@ class TestWritingAgent:
             "create_document",
             {"title": "My Doc", "content": "Document body text"},
         )
-        assert "new_doc" in result
+        parsed = json.loads(result)
+        # Should return clean JSON confirming creation and content insert
+        assert parsed["documentId"] == "new_doc"
+        assert parsed["title"] == "My Doc"
+        assert "message" in parsed
         # First call: POST to create document
         first_call = mock_request.call_args_list[0][1]
         assert first_call["method"] == "POST"

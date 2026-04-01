@@ -8,6 +8,7 @@ GitHub API paths are relative to https://api.github.com (the base_url
 configured for the github provider in Nango).
 """
 
+import base64
 import json
 import logging
 import os
@@ -337,7 +338,19 @@ class CodeAgent(BaseAgent):
             params={"ref": ref},
         )
         resp.raise_for_status()
-        return resp.text
+        data = resp.json()
+        # GitHub returns file content as base64-encoded string
+        raw = data.get("content", "")
+        # GitHub includes newlines in the base64 string; strip them before decoding
+        decoded = base64.b64decode(raw.replace("\n", "")).decode("utf-8")
+        return json.dumps(
+            {
+                "path": data.get("path", path),
+                "content": decoded,
+                "sha": data.get("sha"),
+                "size": data.get("size"),
+            }
+        )
 
     def _tool_post_review(self, params: dict) -> str:
         repo = params["repo"]
@@ -388,21 +401,83 @@ class CodeAgent(BaseAgent):
         return resp.text
 
     def _tool_push_code(self, params: dict) -> str:
-        repo = params["repo"]
+        """Push files using GitHub's Git Data API.
 
-        resp = nango_proxy_request(
-            method="POST",
-            path=f"repos/{repo}/git/commits",
-            provider_config_key=_PROVIDER_CONFIG_KEY,
-            connection_id=_CONNECTION_ID,
+        The GitHub API does not accept files directly in a commit payload.
+        The correct multi-step flow is:
+        1. Resolve the branch ref to get the current commit SHA.
+        2. Get that commit's tree SHA.
+        3. Create a blob for each file.
+        4. Create a new tree referencing those blobs.
+        5. Create a new commit pointing at the new tree.
+        6. Update the branch ref to point at the new commit.
+        """
+        repo = params["repo"]
+        branch = params["branch"]
+        message = params["message"]
+        files = params["files"]
+
+        def _req(method, path, **kwargs):
+            resp = nango_proxy_request(
+                method=method,
+                path=path,
+                provider_config_key=_PROVIDER_CONFIG_KEY,
+                connection_id=_CONNECTION_ID,
+                **kwargs,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+        # Step 1: Get the current commit SHA for the branch
+        ref_data = _req("GET", f"repos/{repo}/git/ref/heads/{branch}")
+        parent_sha = ref_data["object"]["sha"]
+
+        # Step 2: Get the tree SHA from that commit
+        commit_data = _req("GET", f"repos/{repo}/git/commits/{parent_sha}")
+        base_tree_sha = commit_data["tree"]["sha"]
+
+        # Step 3: Create a blob for each file
+        tree_entries = []
+        for f in files:
+            blob = _req(
+                "POST",
+                f"repos/{repo}/git/blobs",
+                json_body={"content": f["content"], "encoding": "utf-8"},
+            )
+            tree_entries.append(
+                {
+                    "path": f["path"],
+                    "mode": "100644",
+                    "type": "blob",
+                    "sha": blob["sha"],
+                }
+            )
+
+        # Step 4: Create a new tree
+        new_tree = _req(
+            "POST",
+            f"repos/{repo}/git/trees",
+            json_body={"base_tree": base_tree_sha, "tree": tree_entries},
+        )
+
+        # Step 5: Create a new commit
+        new_commit = _req(
+            "POST",
+            f"repos/{repo}/git/commits",
             json_body={
-                "branch": params["branch"],
-                "files": params["files"],
-                "message": params["message"],
+                "message": message,
+                "tree": new_tree["sha"],
+                "parents": [parent_sha],
             },
         )
-        resp.raise_for_status()
-        return resp.text
+
+        # Step 6: Update the branch ref
+        update_data = _req(
+            "PATCH",
+            f"repos/{repo}/git/refs/heads/{branch}",
+            json_body={"sha": new_commit["sha"]},
+        )
+        return json.dumps(update_data)
 
     def _tool_create_branch(self, params: dict) -> str:
         """Create a branch by resolving the source ref to a SHA first.
@@ -440,17 +515,40 @@ class CodeAgent(BaseAgent):
     def _tool_write_file(self, params: dict) -> str:
         repo = params["repo"]
         path = params["path"]
+        branch = params.get("branch", "main")
+
+        # GitHub requires the current file SHA when updating an existing file.
+        # Attempt to fetch it; a 404 means this is a new file.
+        existing_sha = None
+        get_resp = nango_proxy_request(
+            method="GET",
+            path=f"repos/{repo}/contents/{path}",
+            provider_config_key=_PROVIDER_CONFIG_KEY,
+            connection_id=_CONNECTION_ID,
+            params={"ref": branch},
+        )
+        if get_resp.status_code == 200:
+            existing_sha = get_resp.json().get("sha")
+
+        # GitHub requires content to be base64-encoded
+        encoded_content = base64.b64encode(params["content"].encode("utf-8")).decode(
+            "ascii"
+        )
+
+        json_body = {
+            "message": params["message"],
+            "content": encoded_content,
+            "branch": branch,
+        }
+        if existing_sha:
+            json_body["sha"] = existing_sha
 
         resp = nango_proxy_request(
             method="PUT",
             path=f"repos/{repo}/contents/{path}",
             provider_config_key=_PROVIDER_CONFIG_KEY,
             connection_id=_CONNECTION_ID,
-            json_body={
-                "content": params["content"],
-                "message": params["message"],
-                "branch": params.get("branch", "main"),
-            },
+            json_body=json_body,
         )
         resp.raise_for_status()
         return resp.text

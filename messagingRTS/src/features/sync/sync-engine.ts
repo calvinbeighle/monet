@@ -232,7 +232,7 @@ async function fetchAllHistoryChanges(startHistoryId: string): Promise<ThreadCha
           for (const labelChange of entry.labelsRemoved) {
             events.push({
               threadId: labelChange.message.threadId,
-              changeType: "label-change",
+              changeType: determineChangeType(labelChange.labelIds ?? [], "deleted"),
               historyId,
               timestamp: Date.now(),
             });
@@ -256,8 +256,21 @@ async function fetchAllHistoryChanges(startHistoryId: string): Promise<ThreadCha
   return deduplicateEvents(events);
 }
 
+// Exported for testing only
+export function _determineChangeType(
+  labelIds: string[],
+  action: "added" | "deleted",
+): ThreadChangeType {
+  return determineChangeType(labelIds, action);
+}
+
 function determineChangeType(labelIds: string[], action: "added" | "deleted"): ThreadChangeType {
-  // Label-change events: labels are added or removed without new content
+  // When UNREAD is removed, the thread was marked as read
+  if (action === "deleted" && labelIds.includes("UNREAD")) {
+    return "read-state-change";
+  }
+
+  // All other label removals are generic label changes
   if (action === "deleted") {
     return "label-change";
   }

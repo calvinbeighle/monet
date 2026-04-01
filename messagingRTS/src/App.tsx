@@ -47,17 +47,23 @@ export function App() {
   const setFocusZone = useAppStore((s) => s.setFocusZone);
   const viewportWidth = useAppStore((s) => s.viewportWidth);
   const syncStatus = useAppStore((s) => s.syncStatus);
+  const authState = useAuthStore((s) => s.authState);
 
   // Find agent roles with completed status (for results overlay)
   const agents = useAgentStore((s) => s.agents);
   const completedAgentRole: AgentRole | null = (() => {
     for (const [role, agent] of agents) {
-      if (agent.status === "completed" && agent.proposals.length > 0) {
+      if (
+        agent.status === "completed" &&
+        (agent.proposals.length > 0 || agent.failedThreadIds.length > 0)
+      ) {
         return role;
       }
     }
     return null;
   })();
+  const completedAgentFailedThreadIds: string[] =
+    completedAgentRole != null ? (agents.get(completedAgentRole)?.failedThreadIds ?? []) : [];
 
   // Session summary wired to live stats per Spec 07
   const sessionStats = useAppStore((s) => s.sessionStats);
@@ -409,6 +415,24 @@ export function App() {
         </div>
       )}
 
+      {/* Reauthentication-required banner - shown when Gmail 401 is received mid-session */}
+      {authState === "reauthentication-required" && (
+        <div
+          className="flex items-center justify-between bg-red-900/40 px-4 py-2 text-xs text-red-300"
+          data-testid="reauth-banner"
+          role="alert"
+        >
+          <span>Gmail connection lost. Reconnect to resume syncing.</span>
+          <button
+            onClick={() => useAuthStore.getState().startAuth()}
+            className="ml-4 rounded bg-red-700/60 px-3 py-1 text-xs text-red-100 hover:bg-red-600/70"
+            data-testid="reconnect-gmail-btn"
+          >
+            Reconnect Gmail
+          </button>
+        </div>
+      )}
+
       {/* Batch action bar - visible when threads are multi-selected per Spec 09 */}
       <BatchActionBar />
 
@@ -469,7 +493,12 @@ export function App() {
       <DeploymentConfirmation />
 
       {/* Results overlay - shows proposals after agent completion, no auto-dismiss */}
-      {completedAgentRole && <ResultsOverlay agentRole={completedAgentRole} />}
+      {completedAgentRole && (
+        <ResultsOverlay
+          agentRole={completedAgentRole}
+          failedThreadIds={completedAgentFailedThreadIds}
+        />
+      )}
     </div>
   );
 }

@@ -36,6 +36,7 @@ interface AgentStore {
   complete: (
     role: AgentRole,
     proposals: Array<{ threadId: string; outputType: string; content: string }>,
+    failedThreadIds?: string[],
   ) => void;
   fail: (role: AgentRole) => void;
   beginCooldown: (role: AgentRole) => void;
@@ -79,12 +80,12 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       return { agents: updated };
     }),
 
-  complete: (role, proposals) =>
+  complete: (role, proposals, failedThreadIds = []) =>
     set((state) => {
       const agent = state.agents.get(role);
       if (!agent) return state;
       const updated = new Map(state.agents);
-      updated.set(role, completeAgent(agent, proposals));
+      updated.set(role, completeAgent(agent, proposals, failedThreadIds));
       return { agents: updated };
     }),
 

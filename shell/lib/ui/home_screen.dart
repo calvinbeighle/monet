@@ -29,7 +29,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _summary;
   bool _loading = true;
-  String? _error;
   Timer? _refreshTimer;
 
   @override
@@ -56,14 +55,12 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _summary = data;
           _loading = false;
-          _error = null;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = e.toString();
         });
       }
     }

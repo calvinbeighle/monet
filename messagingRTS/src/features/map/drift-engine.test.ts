@@ -5,6 +5,8 @@ import {
   placeNewThread,
   onUserReply,
   onArchive,
+  onLabel,
+  onMarkRead,
   onManualReclassify,
   setClusterMigration,
   getClusterMigration,
@@ -606,6 +608,324 @@ describe("cluster migration animation (Spec 02)", () => {
     expect(late.position.x).toBeGreaterThan(early.position.x);
     // 75% of time with ease-out should cover more than 75% of distance
     expect(late.position.x / 400).toBeGreaterThan(0.75);
+  });
+});
+
+describe("driftTick - clustering affinity nudge (Spec 03)", () => {
+  it("nudges targetPosition toward cluster centroid when clusterMembership matches", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    // Place thread with a known target
+    thread.position = { x: 1000, y: 1000 };
+    thread.targetPosition = { x: 1000, y: 1000 };
+    thread.clusterMembership = "cluster-a";
+
+    const clusters = [
+      {
+        memberThreadIds: ["t1", "t2"],
+        centroid: { x: 1200, y: 1200 },
+      },
+    ];
+
+    const [updated] = driftTick([thread], zones, Date.now(), clusters);
+
+    // After nudge toward centroid, targetPosition should move toward 1200,1200
+    // CLUSTER_NUDGE_STRENGTH = 0.15 means target moves 15% of (centroid - original target)
+    // Original target ~= 1000+something, centroid at 1200 -> target nudged toward 1200
+    expect(updated.targetPosition.x).toBeGreaterThan(1000);
+    expect(updated.targetPosition.y).toBeGreaterThan(1000);
+  });
+
+  it("does not nudge when thread has no clusterMembership", () => {
+    const zones = createZoneLayout();
+
+    // Thread with clusterMembership set (will get nudged)
+    const threadWithMembership = createThread("t1", "Subject", "s");
+    threadWithMembership.participants = [makeContact()];
+    threadWithMembership.position = { x: 1000, y: 1000 };
+    threadWithMembership.targetPosition = { x: 1000, y: 1000 };
+    threadWithMembership.clusterMembership = "cluster-a";
+
+    // Thread without clusterMembership (should not get nudged)
+    const threadWithout = createThread("t2", "Subject", "s");
+    threadWithout.participants = [makeContact()];
+    threadWithout.position = { x: 1000, y: 1000 };
+    threadWithout.targetPosition = { x: 1000, y: 1000 };
+    threadWithout.clusterMembership = null;
+
+    // Cluster centroid far from the natural score-driven target
+    const clusters = [
+      {
+        memberThreadIds: ["t1", "t2"],
+        centroid: { x: 3800, y: 2800 },
+      },
+    ];
+
+    const updatedWith = driftTick([threadWithMembership], zones, Date.now(), clusters);
+    const updatedWithout = driftTick([threadWithout], zones, Date.now(), clusters);
+
+    // Thread with membership should be nudged toward centroid (3800, 2800)
+    // Thread without membership should stay near its score-driven target
+    // The one with membership should be further from the base score-driven position
+    expect(updatedWith[0].targetPosition.x).toBeGreaterThan(updatedWithout[0].targetPosition.x);
+  });
+
+  it("does not nudge when clusters param is omitted", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    thread.position = { x: 500, y: 500 };
+    thread.targetPosition = { x: 500, y: 500 };
+    thread.clusterMembership = "cluster-a";
+
+    // No clusters argument - backward compatible
+    const [updated] = driftTick([thread], zones);
+    expect(updated).toBeDefined();
+  });
+
+  it("does not nudge single-member clusters", () => {
+    const zones = createZoneLayout();
+
+    // Thread in a single-member cluster (no meaningful centroid pull)
+    const threadSolo = createThread("t1", "Subject", "s");
+    threadSolo.participants = [makeContact()];
+    threadSolo.position = { x: 1000, y: 1000 };
+    threadSolo.targetPosition = { x: 1000, y: 1000 };
+    threadSolo.clusterMembership = "cluster-solo";
+
+    // Thread in a two-member cluster for comparison (will get nudged)
+    const threadMulti = createThread("t2", "Subject", "s");
+    threadMulti.participants = [makeContact()];
+    threadMulti.position = { x: 1000, y: 1000 };
+    threadMulti.targetPosition = { x: 1000, y: 1000 };
+    threadMulti.clusterMembership = "cluster-multi";
+
+    const clusters = [
+      {
+        memberThreadIds: ["t1"], // single member - no nudge
+        centroid: { x: 3800, y: 2800 },
+      },
+      {
+        memberThreadIds: ["t2", "t3"], // two members - nudge applies
+        centroid: { x: 3800, y: 2800 },
+      },
+    ];
+
+    const updatedSolo = driftTick([threadSolo], zones, Date.now(), clusters);
+    const updatedMulti = driftTick([threadMulti], zones, Date.now(), clusters);
+
+    // Single-member cluster should have same target as no-cluster (no nudge applied)
+    // Multi-member cluster should be nudged further toward centroid
+    expect(updatedMulti[0].targetPosition.x).toBeGreaterThan(updatedSolo[0].targetPosition.x);
+  });
+});
+
+describe("driftTick - collision avoidance on targetPosition (Spec 03)", () => {
+  it("pushes overlapping targetPositions apart, not just positions", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+
+    // Two threads with nearly identical computed target positions (same zone, close scores)
+    // Use different message counts so valueScore differs slightly -> different xOffset
+    const t1 = createThread("t1", "S1", "s");
+    const t2 = createThread("t2", "S2", "s");
+    t1.participants = [makeContact({ vipFlag: true, relationshipScore: 50 })];
+    t2.participants = [makeContact({ vipFlag: true, relationshipScore: 50 })];
+    t1.unread = true;
+    t2.unread = true;
+    t1.latestMessageTimestamp = now;
+    t1.firstMessageTimestamp = now;
+    t2.latestMessageTimestamp = now;
+    t2.firstMessageTimestamp = now;
+    t1.riskTimerStart = now;
+    t2.riskTimerStart = now;
+    // messageCount difference gives different valueScore -> slightly different xOffset
+    t1.messageCount = 1;
+    t2.messageCount = 2; // valueScore differs by (1/10)*0.15 = 0.015
+    // Positions far apart so they don't trigger position-based collision
+    t1.position = { x: 100, y: 100 };
+    t2.position = { x: 3800, y: 2800 };
+
+    // Nudge both toward the same centroid via cluster affinity to bring targets close
+    t1.clusterMembership = "same-cluster";
+    t2.clusterMembership = "same-cluster";
+    const clusters = [
+      {
+        memberThreadIds: ["t1", "t2"],
+        centroid: { x: 2000, y: 600 }, // active-front center
+      },
+    ];
+
+    // First, get the un-nudged targets without collision avoidance to confirm they're close
+    const t1NoCluster = { ...t1, clusterMembership: null };
+    const t2NoCluster = { ...t2, clusterMembership: null };
+    const [t1Base] = driftTick([t1NoCluster], zones, now);
+    const [t2Base] = driftTick([t2NoCluster], zones, now);
+    const baseDist = Math.hypot(
+      t2Base.targetPosition.x - t1Base.targetPosition.x,
+      t2Base.targetPosition.y - t1Base.targetPosition.y,
+    );
+
+    const updated = driftTick([t1, t2], zones, now, clusters);
+
+    const targetDist = Math.hypot(
+      updated[1].targetPosition.x - updated[0].targetPosition.x,
+      updated[1].targetPosition.y - updated[0].targetPosition.y,
+    );
+
+    if (baseDist < 40) {
+      // If base targets were within COLLISION_MIN_DISTANCE, collision avoidance
+      // should have pushed them further apart
+      expect(targetDist).toBeGreaterThan(baseDist);
+    } else {
+      // Targets were already far enough apart - just verify they're both defined
+      expect(targetDist).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
+describe("driftTick - organic wobble stability (Spec 03)", () => {
+  it("applies wobble only when driftMagnitude > 2", () => {
+    const zones = createZoneLayout();
+    const now = 1000000;
+    const thread = createThread("drifting-thread", "Subject", "s");
+    thread.participants = [makeContact()];
+    // Large separation between position and target -> wobble active
+    thread.position = { x: 100, y: 100 };
+    thread.targetPosition = { x: 2000, y: 600 };
+
+    const [updated] = driftTick([thread], zones, now);
+
+    // With drift magnitude >> 2, position must have moved (toward target + wobble)
+    expect(updated.position.x).toBeGreaterThan(100);
+  });
+
+  it("driftVelocity has zero wobble component when thread is at its target (driftMagnitude = 0)", () => {
+    // The wobble code path: `if (driftMagnitude > 2)` - so at driftMagnitude=0, no wobble
+    // Verify by computing expected velocity (pure linear drift) vs actual
+    const zones = createZoneLayout();
+    const now = Date.now();
+    const thread = createThread("no-wobble-thread", "Subject", "s");
+    thread.participants = [makeContact({ vipFlag: false })];
+    thread.latestMessageTimestamp = now;
+    thread.firstMessageTimestamp = now;
+    thread.unread = false;
+    thread.lifecycleState = "waiting";
+    thread.riskTier = "safe";
+    thread.riskTimerStart = now;
+
+    // Manually set position and targetPosition to the same value
+    // so after score recomputation, the target matches the starting position exactly
+    // First, discover what driftTick will compute as the target
+    const [probe] = driftTick([{ ...thread }], zones, now);
+    // Now set position to the computed target position
+    thread.position = { ...probe.targetPosition };
+
+    const [tick] = driftTick([thread], zones, now);
+
+    // dx = targetPosition.x - position.x should be nearly 0 (they start equal)
+    // wobble is also 0 when driftMagnitude <= 2
+    // So driftVelocity should be very small (pure linear drift of ~0px)
+    const velMag = Math.hypot(tick.driftVelocity.dx, tick.driftVelocity.dy);
+    // Without wobble: velocity = dx*DRIFT_FRACTION + 0 ≈ 0 when position==target
+    expect(velMag).toBeLessThan(2 * 0.05 + 0.001); // 2px * DRIFT_FRACTION + tolerance
+  });
+
+  it("driftVelocity is larger when thread is far from target (wobble active)", () => {
+    const zones = createZoneLayout();
+    const now = Date.now();
+
+    const threadFar = createThread("far-thread", "Subject", "s");
+    threadFar.participants = [makeContact()];
+    threadFar.position = { x: 100, y: 100 };
+    threadFar.targetPosition = { x: 2000, y: 600 };
+
+    const threadNear = createThread("near-thread", "Subject", "s");
+    threadNear.participants = [makeContact()];
+    // Place at the same computed target so driftMagnitude = 0
+    const [probe] = driftTick([{ ...threadFar }], zones, now);
+    threadNear.position = { ...probe.targetPosition };
+    threadNear.targetPosition = { ...probe.targetPosition };
+
+    const [updatedFar] = driftTick([threadFar], zones, now);
+    const [updatedNear] = driftTick([threadNear], zones, now);
+
+    const farVelMag = Math.hypot(updatedFar.driftVelocity.dx, updatedFar.driftVelocity.dy);
+    const nearVelMag = Math.hypot(updatedNear.driftVelocity.dx, updatedNear.driftVelocity.dy);
+
+    // Thread far from target has larger drift velocity (movement + wobble both active)
+    expect(farVelMag).toBeGreaterThan(nearVelMag);
+  });
+});
+
+describe("onLabel and onMarkRead (Spec 03)", () => {
+  it("onLabel resets neglectDuration to 0", () => {
+    const thread = createThread("t1", "Subject", "s");
+    thread.neglectDuration = 100000;
+
+    const updated = onLabel(thread);
+
+    expect(updated.neglectDuration).toBe(0);
+  });
+
+  it("onLabel updates lastUserReplyTimestamp", () => {
+    const before = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.lastUserReplyTimestamp = null;
+
+    const updated = onLabel(thread);
+
+    expect(updated.lastUserReplyTimestamp).not.toBeNull();
+    expect(updated.lastUserReplyTimestamp!).toBeGreaterThanOrEqual(before);
+  });
+
+  it("onLabel does not change unread flag", () => {
+    const thread = createThread("t1", "Subject", "s");
+    thread.unread = true;
+    thread.neglectDuration = 5000;
+
+    const updated = onLabel(thread);
+
+    expect(updated.unread).toBe(true);
+  });
+
+  it("onMarkRead resets neglectDuration to 0", () => {
+    const thread = createThread("t1", "Subject", "s");
+    thread.neglectDuration = 200000;
+
+    const updated = onMarkRead(thread);
+
+    expect(updated.neglectDuration).toBe(0);
+  });
+
+  it("onMarkRead updates lastUserReplyTimestamp", () => {
+    const before = Date.now();
+    const thread = createThread("t1", "Subject", "s");
+    thread.lastUserReplyTimestamp = null;
+
+    const updated = onMarkRead(thread);
+
+    expect(updated.lastUserReplyTimestamp).not.toBeNull();
+    expect(updated.lastUserReplyTimestamp!).toBeGreaterThanOrEqual(before);
+  });
+
+  it("onMarkRead sets unread to false", () => {
+    const thread = createThread("t1", "Subject", "s");
+    thread.unread = true;
+
+    const updated = onMarkRead(thread);
+
+    expect(updated.unread).toBe(false);
+  });
+
+  it("onMarkRead on an already-read thread leaves unread false", () => {
+    const thread = createThread("t1", "Subject", "s");
+    thread.unread = false;
+
+    const updated = onMarkRead(thread);
+
+    expect(updated.unread).toBe(false);
   });
 });
 

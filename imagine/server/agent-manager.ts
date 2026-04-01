@@ -205,6 +205,18 @@ export class AgentManager extends EventEmitter {
           cwd: "/tmp",
           permissionMode: "bypassPermissions",
           abortController: abort,
+          allowedTools: [
+            "Read",
+            "Write",
+            "Edit",
+            "Bash",
+            "Glob",
+            "Grep",
+            "WebSearch",
+            "WebFetch",
+            "Agent",
+            "NotebookEdit",
+          ],
         },
       });
 

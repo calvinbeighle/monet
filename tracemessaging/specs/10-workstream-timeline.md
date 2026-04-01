@@ -47,6 +47,32 @@ The home screen is a full-viewport vertical swipe feed of workstreams. One works
 
 9. **Empty state**: Cinematic onboarding - full-screen dark card with staggered source connection progress (each source gets a line item with checkmark animation as it connects).
 
+## ANTI-PATTERNS (DO NOT BUILD)
+
+- DO NOT build a scrollable list of small cards. This is NOT an inbox.
+- DO NOT use `max-w-[800px]` centered content. Cards must be FULL VIEWPORT.
+- DO NOT show an empty state with "No workstreams yet" and small text. Show a cinematic loading/onboarding experience.
+- DO NOT put all workstreams visible at once. ONE workstream per screen, scroll-snap between them.
+
+## CSS Implementation Requirements
+
+The feed container MUST use:
+
+```css
+scroll-snap-type: y mandatory;
+height: 100vh; /* or calc(100vh - header height) */
+overflow-y: scroll;
+```
+
+Each card MUST use:
+
+```css
+scroll-snap-align: start;
+height: 100vh; /* or calc(100vh - header height) */
+```
+
+This is non-negotiable. The entire UX depends on one-card-per-screen snap scrolling.
+
 ## Acceptance Criteria
 
 - Each workstream occupies the full viewport height with scroll-snap
@@ -59,3 +85,4 @@ The home screen is a full-viewport vertical swipe feed of workstreams. One works
 - Keyboard navigation works (J/K/Enter/A/R)
 - Stale workstreams appear de-emphasized at end of feed
 - Dark theme with urgency color coding (red/amber/green/blue)
+- When fixtures load, workstreams appear immediately - no empty state unless truly zero data

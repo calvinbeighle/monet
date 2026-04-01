@@ -36,6 +36,7 @@ export function createAgentInstance(role: AgentRole): AgentInstance {
     completedAt: null,
     cooldownExpiry: null,
     proposals: [],
+    failedThreadIds: [],
     approvedCount: 0,
     rejectedCount: 0,
   };
@@ -96,6 +97,7 @@ export function startWorking(agent: AgentInstance, now: number = Date.now()): Ag
 export function completeAgent(
   agent: AgentInstance,
   proposals: Array<{ threadId: string; outputType: string; content: string }>,
+  failedThreadIds: string[] = [],
   now: number = Date.now(),
 ): AgentInstance {
   if (agent.status !== "working") {
@@ -118,6 +120,7 @@ export function completeAgent(
     status: "completed",
     completedAt: now,
     proposals: agentProposals,
+    failedThreadIds,
   };
 }
 

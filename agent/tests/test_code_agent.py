@@ -105,17 +105,39 @@ class TestCodeAgent:
 
     @patch("agent.nango.httpx.request")
     def test_execute_read_file(self, mock_request):
+        """read_file should decode base64 content and return clean JSON."""
+        import base64 as _b64
+
+        raw_content = "print('hello')"
+        encoded = _b64.b64encode(raw_content.encode()).decode()
         mock_response = MagicMock()
         mock_response.text = json.dumps(
-            {"content": "cHJpbnQoJ2hlbGxvJyk=", "encoding": "base64"}
+            {
+                "content": encoded,
+                "encoding": "base64",
+                "sha": "abc123",
+                "size": len(raw_content),
+                "path": "src/main.py",
+            }
         )
+        mock_response.json.return_value = {
+            "content": encoded,
+            "encoding": "base64",
+            "sha": "abc123",
+            "size": len(raw_content),
+            "path": "src/main.py",
+        }
         mock_response.raise_for_status = MagicMock()
         mock_request.return_value = mock_response
 
         result = self.agent.execute_tool(
             "read_file", {"repo": "owner/repo", "path": "src/main.py"}
         )
-        assert "content" in result
+        parsed = json.loads(result)
+        # Content must be decoded from base64, not the raw base64 string
+        assert parsed["content"] == raw_content
+        assert parsed["sha"] == "abc123"
+        assert parsed["path"] == "src/main.py"
         assert (
             "/proxy/repos/owner/repo/contents/src/main.py"
             in mock_request.call_args[1]["url"]
@@ -181,11 +203,17 @@ class TestCodeAgent:
         assert second_call["json"]["ref"] == "refs/heads/feature-x"
 
     @patch("agent.nango.httpx.request")
-    def test_execute_write_file(self, mock_request):
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"content": {"sha": "abc123"}})
-        mock_response.raise_for_status = MagicMock()
-        mock_request.return_value = mock_response
+    def test_execute_write_file_new_file(self, mock_request):
+        """write_file on a new file (404 on GET) should PUT without sha."""
+        get_response = MagicMock()
+        get_response.status_code = 404
+        get_response.raise_for_status = MagicMock()
+
+        put_response = MagicMock()
+        put_response.text = json.dumps({"content": {"sha": "newsha"}})
+        put_response.raise_for_status = MagicMock()
+
+        mock_request.side_effect = [get_response, put_response]
 
         result = self.agent.execute_tool(
             "write_file",
@@ -193,17 +221,80 @@ class TestCodeAgent:
                 "repo": "owner/repo",
                 "path": "README.md",
                 "content": "# Hello",
+                "message": "Add readme",
+            },
+        )
+        assert "sha" in result
+        assert mock_request.call_count == 2
+        put_call = mock_request.call_args_list[1][1]
+        # New file - sha must NOT be in the body
+        assert "sha" not in put_call["json"]
+        # Content must be base64-encoded
+        import base64 as _b64
+
+        assert put_call["json"]["content"] == _b64.b64encode(b"# Hello").decode("ascii")
+
+    @patch("agent.nango.httpx.request")
+    def test_execute_write_file_existing_file(self, mock_request):
+        """write_file on an existing file (200 on GET) must include the current sha."""
+        get_response = MagicMock()
+        get_response.status_code = 200
+        get_response.json.return_value = {"sha": "existingsha456"}
+        get_response.raise_for_status = MagicMock()
+
+        put_response = MagicMock()
+        put_response.text = json.dumps({"content": {"sha": "updatedsha"}})
+        put_response.raise_for_status = MagicMock()
+
+        mock_request.side_effect = [get_response, put_response]
+
+        result = self.agent.execute_tool(
+            "write_file",
+            {
+                "repo": "owner/repo",
+                "path": "README.md",
+                "content": "# Updated",
                 "message": "Update readme",
             },
         )
         assert "sha" in result
+        put_call = mock_request.call_args_list[1][1]
+        # Existing file - sha MUST be in the body
+        assert put_call["json"]["sha"] == "existingsha456"
 
     @patch("agent.nango.httpx.request")
     def test_execute_push_code(self, mock_request):
-        mock_response = MagicMock()
-        mock_response.text = json.dumps({"sha": "def456"})
-        mock_response.raise_for_status = MagicMock()
-        mock_request.return_value = mock_response
+        """push_code uses the 6-step GitHub Git Data API flow."""
+
+        def make_json_mock(data):
+            m = MagicMock()
+            m.json.return_value = data
+            m.raise_for_status = MagicMock()
+            return m
+
+        # Step 1: GET ref
+        ref_resp = make_json_mock({"object": {"sha": "parentsha"}})
+        # Step 2: GET commit
+        commit_resp = make_json_mock({"tree": {"sha": "basetreesha"}})
+        # Step 3: POST blob (one file)
+        blob_resp = make_json_mock({"sha": "blobsha"})
+        # Step 4: POST tree
+        tree_resp = make_json_mock({"sha": "newtreesha"})
+        # Step 5: POST commit
+        new_commit_resp = make_json_mock({"sha": "newcommitsha"})
+        # Step 6: PATCH ref
+        update_ref_resp = make_json_mock(
+            {"ref": "refs/heads/feature-x", "object": {"sha": "newcommitsha"}}
+        )
+
+        mock_request.side_effect = [
+            ref_resp,
+            commit_resp,
+            blob_resp,
+            tree_resp,
+            new_commit_resp,
+            update_ref_resp,
+        ]
 
         result = self.agent.execute_tool(
             "push_code",
@@ -214,7 +305,36 @@ class TestCodeAgent:
                 "message": "Add main",
             },
         )
-        assert "def456" in result
+        assert "newcommitsha" in result
+        # 6 HTTP calls total: get ref, get commit, create blob, create tree, create commit, update ref
+        assert mock_request.call_count == 6
+
+        calls = mock_request.call_args_list
+        # Step 1: GET ref
+        assert "git/ref/heads/feature-x" in calls[0][1]["url"]
+        assert calls[0][1]["method"] == "GET"
+        # Step 2: GET commit using parent SHA
+        assert "git/commits/parentsha" in calls[1][1]["url"]
+        assert calls[1][1]["method"] == "GET"
+        # Step 3: POST blob
+        assert "git/blobs" in calls[2][1]["url"]
+        assert calls[2][1]["method"] == "POST"
+        assert calls[2][1]["json"]["encoding"] == "utf-8"
+        # Step 4: POST tree with base_tree and entries
+        assert "git/trees" in calls[3][1]["url"]
+        tree_body = calls[3][1]["json"]
+        assert tree_body["base_tree"] == "basetreesha"
+        assert tree_body["tree"][0]["sha"] == "blobsha"
+        assert tree_body["tree"][0]["mode"] == "100644"
+        # Step 5: POST commit with correct parents and tree
+        assert "git/commits" in calls[4][1]["url"]
+        commit_body = calls[4][1]["json"]
+        assert commit_body["parents"] == ["parentsha"]
+        assert commit_body["tree"] == "newtreesha"
+        # Step 6: PATCH ref
+        assert "git/refs/heads/feature-x" in calls[5][1]["url"]
+        assert calls[5][1]["method"] == "PATCH"
+        assert calls[5][1]["json"]["sha"] == "newcommitsha"
 
     @patch("agent.nango.httpx.request")
     def test_execute_tool_handles_error(self, mock_request):

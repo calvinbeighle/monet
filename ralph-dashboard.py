@@ -146,12 +146,12 @@ def parse_events(filepath):
     meaningful = [t for t in thinking_lines if not t.startswith("I'll") or len(t) > 50]
 
     return {
-        "thinking": meaningful[-3:] if meaningful else [],
+        "thinking": meaningful[-8:] if meaningful else [],
         "tokens": total_input + total_output,
         "tool_calls": sum(tool_counts.values()),
-        "files_written": list(dict.fromkeys(files_written[-8:])),
-        "files_edited": list(dict.fromkeys(files_edited[-8:])),
-        "bash_cmds": bash_cmds[-5:],
+        "files_written": list(dict.fromkeys(files_written[-15:])),
+        "files_edited": list(dict.fromkeys(files_edited[-15:])),
+        "bash_cmds": bash_cmds[-10:],
         "subagents": f"{subagent_done}/{subagent_total}",
         "last_modified": datetime.fromtimestamp(os.path.getmtime(filepath)).strftime(
             "%H:%M:%S"
@@ -225,7 +225,7 @@ def render_card(d):
 
     # Commands run
     cmds_html = ""
-    for cmd in ev.get("bash_cmds", [])[-3:]:
+    for cmd in ev.get("bash_cmds", []):
         cmds_html += f'<div class="cmd">$ {_esc(cmd)}</div>'
 
     # Commits
@@ -283,8 +283,8 @@ HTML = """<!DOCTYPE html>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-    background: #0a0a0f;
-    color: #c8c8d0;
+    background: #000;
+    color: #999;
     font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 13px;
     padding: 24px;
@@ -304,8 +304,8 @@ h1 span { color: #333; }
     gap: 12px;
 }
 .card {
-    background: #101018;
-    border: 1px solid #1a1a28;
+    background: #0a0a0a;
+    border: 1px solid #1a1a1a;
     border-radius: 4px;
     padding: 14px 16px;
 }
@@ -315,18 +315,18 @@ h1 span { color: #333; }
     align-items: center;
     margin-bottom: 14px;
     padding-bottom: 10px;
-    border-bottom: 1px solid #161622;
+    border-bottom: 1px solid #1a1a1a;
 }
 .left { display: flex; align-items: center; gap: 8px; }
 .right { display: flex; gap: 12px; align-items: center; }
 .dot {
     width: 6px; height: 6px;
     border-radius: 50%;
-    background: #4ade80;
+    background: #fff;
     animation: pulse 2s ease-in-out infinite;
 }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-.name { color: #e0e0e8; font-size: 14px; font-weight: 600; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+.name { color: #fff; font-size: 14px; font-weight: 600; }
 .meta { color: #555; font-size: 11px; }
 .meta.dim { color: #333; }
 .section { margin-bottom: 10px; }
@@ -338,20 +338,17 @@ h1 span { color: #333; }
     margin-bottom: 4px;
 }
 .thinking {
-    background: #0c0c14;
+    background: #050505;
     border-radius: 3px;
     padding: 8px 10px;
-    max-height: 120px;
-    overflow: hidden;
+    max-height: none;
+    overflow: visible;
 }
 .thinking-line {
-    color: #a0a0b0;
+    color: #ccc;
     font-size: 12px;
     line-height: 1.5;
     margin-bottom: 4px;
-}
-.thinking-line:last-child {
-    color: #d0d0d8;
 }
 .files {
     display: flex;
@@ -363,10 +360,10 @@ h1 span { color: #333; }
     padding: 2px 6px;
     border-radius: 3px;
 }
-.file.new { background: #1a2e1a; color: #4ade80; }
-.file.edit { background: #2e2a1a; color: #f59e0b; }
+.file.new { background: #1a1a1a; color: #bbb; }
+.file.edit { background: #151515; color: #888; }
 .cmd {
-    color: #888;
+    color: #666;
     font-size: 11px;
     padding: 2px 0;
     overflow: hidden;
@@ -375,14 +372,14 @@ h1 span { color: #333; }
 }
 .commit {
     font-size: 11px;
-    color: #666;
+    color: #555;
     padding: 1px 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.commit:first-child { color: #a0a0b0; }
-.muted { color: #333; font-size: 11px; }
+.commit:first-child { color: #999; }
+.muted { color: #555; font-size: 11px; }
 .empty {
     color: #333;
     text-align: center;

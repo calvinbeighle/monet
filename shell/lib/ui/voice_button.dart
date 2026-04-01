@@ -132,6 +132,7 @@ class VoiceButtonState extends State<VoiceButton>
         return;
       }
 
+      if (!mounted) return;
       final client = context.read<AgentClient>();
       final text = await client.transcribeAudio(bytes.toList(), 'recording.wav');
 

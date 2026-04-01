@@ -197,7 +197,7 @@ export function MapViewport() {
       if (threadArray.length === 0) return;
 
       const now = Date.now();
-      const updated = driftTick(threadArray, zonesRef.current, now);
+      const updated = driftTick(threadArray, zonesRef.current, now, clustersRef.current);
 
       // Update zone sizes based on thread distribution
       const counts: Record<ZoneId, number> = {

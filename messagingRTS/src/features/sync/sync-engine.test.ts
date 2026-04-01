@@ -14,6 +14,7 @@ import {
   _setConsecutivePollFailures,
   _setEngineFetchFns,
   _resetEngineFetchFns,
+  _determineChangeType,
 } from "./sync-engine";
 import { useSyncStore } from "../../lib/stores/sync-store";
 import { useThreadStore } from "../../lib/stores";
@@ -674,6 +675,103 @@ describe("SyncEngine", () => {
       _setConsecutivePollFailures(0);
       expect(_getConsecutivePollFailures()).toBe(0);
       expect(getRetryInterval()).toBe(useSyncStore.getState().pollIntervalMs);
+    });
+  });
+
+  describe("read-state-change events (Spec 10)", () => {
+    describe("_determineChangeType", () => {
+      it("returns read-state-change when UNREAD is removed (action=deleted)", () => {
+        expect(_determineChangeType(["UNREAD"], "deleted")).toBe("read-state-change");
+      });
+
+      it("returns read-state-change when UNREAD is among multiple removed labels", () => {
+        expect(_determineChangeType(["UNREAD", "INBOX"], "deleted")).toBe("read-state-change");
+      });
+
+      it("returns label-change when non-UNREAD labels are removed", () => {
+        expect(_determineChangeType(["STARRED"], "deleted")).toBe("label-change");
+      });
+
+      it("returns label-change when INBOX alone is removed (action=deleted)", () => {
+        expect(_determineChangeType(["INBOX"], "deleted")).toBe("label-change");
+      });
+
+      it("returns new-message when UNREAD is added (action=added)", () => {
+        expect(_determineChangeType(["UNREAD"], "added")).toBe("new-message");
+      });
+
+      it("returns new-message when only INBOX is added (action=added)", () => {
+        expect(_determineChangeType(["INBOX"], "added")).toBe("new-message");
+      });
+
+      it("returns label-change for other added labels", () => {
+        expect(_determineChangeType(["STARRED"], "added")).toBe("label-change");
+      });
+
+      it("returns label-change for empty label list with action=deleted", () => {
+        expect(_determineChangeType([], "deleted")).toBe("label-change");
+      });
+    });
+
+    it("incremental sync processes labelsRemoved UNREAD event as read-state-change", async () => {
+      useSyncStore.setState({ lastHistoryId: "100", syncMode: "incremental" });
+
+      // Existing thread that is unread
+      const { createThread } = await import("../../lib/types");
+      const thread = createThread("t-read", "Was Unread", "snippet");
+      thread.unread = true;
+      useThreadStore.getState().setThread(thread);
+
+      const mockFetchHistory = vi.fn().mockResolvedValue({
+        history: [
+          {
+            id: "201",
+            labelsRemoved: [
+              {
+                message: { id: "msg-t-read", threadId: "t-read" },
+                labelIds: ["UNREAD"],
+              },
+            ],
+          },
+        ],
+        historyId: "201",
+      } as GmailHistoryResponse);
+
+      // Thread detail returns the thread as now-read (no UNREAD label)
+      const mockFetchDetail = vi.fn().mockResolvedValue({
+        id: "t-read",
+        historyId: "201",
+        messages: [
+          {
+            id: "msg-t-read",
+            threadId: "t-read",
+            labelIds: ["INBOX"], // UNREAD removed
+            snippet: "now read",
+            internalDate: String(Date.now()),
+            payload: {
+              headers: [
+                { name: "From", value: "sender@example.com" },
+                { name: "To", value: "me@example.com" },
+                { name: "Subject", value: "Was Unread" },
+              ],
+              mimeType: "text/plain",
+              body: { data: btoa("body"), size: 4 },
+            },
+          },
+        ],
+      });
+
+      _setEngineFetchFns({
+        fetchHistoryChanges: mockFetchHistory,
+        fetchThreadDetail: mockFetchDetail,
+      });
+
+      await performIncrementalSync();
+
+      expect(mockFetchHistory).toHaveBeenCalled();
+      // Thread detail should have been fetched to apply the read-state-change
+      expect(mockFetchDetail).toHaveBeenCalledWith("t-read");
+      expect(useSyncStore.getState().connectivityStatus).toBe("connected");
     });
   });
 });

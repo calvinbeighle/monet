@@ -96,7 +96,6 @@ class ChatPatternState extends State<ChatPattern> {
 
   @override
   Widget build(BuildContext context) {
-    final c = MonetColors.of(context);
     return Column(
       children: [
         Expanded(

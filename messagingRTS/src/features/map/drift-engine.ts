@@ -125,13 +125,24 @@ export function computeTargetPosition(
   };
 }
 
+// Cluster member info for affinity nudge per Spec 03
+export interface ClusterInfo {
+  memberThreadIds: string[];
+  centroid: { x: number; y: number };
+}
+
+// Affinity nudge strength - how much cluster-mates pull toward each other
+const CLUSTER_NUDGE_STRENGTH = 0.15;
+
 // Single tick of the drift engine per Spec 03
 // Order: re-evaluate scores -> update neglect -> compute targets ->
-//        apply neglect drift -> smooth movement -> collision avoidance
+//        clustering nudge -> collision avoidance on targets ->
+//        smooth movement -> update zones
 export function driftTick(
   threads: Thread[],
   zones: Map<ZoneId, Zone>,
   now: number = Date.now(),
+  clusters?: ClusterInfo[],
 ): Thread[] {
   if (threads.length === 0) return threads;
 
@@ -214,6 +225,20 @@ export function driftTick(
       }
     }
 
+    // 4b. Clustering affinity nudge per Spec 03 Section 2:
+    // After target positions are computed, nudge cluster-mates toward each other
+    if (clusters && clusters.length > 0 && t.clusterMembership) {
+      const myCluster = clusters.find((c) => c.memberThreadIds.includes(t.id));
+      if (myCluster && myCluster.memberThreadIds.length > 1) {
+        const nudgeDx = myCluster.centroid.x - t.targetPosition.x;
+        const nudgeDy = myCluster.centroid.y - t.targetPosition.y;
+        t.targetPosition = {
+          x: t.targetPosition.x + nudgeDx * CLUSTER_NUDGE_STRENGTH,
+          y: t.targetPosition.y + nudgeDy * CLUSTER_NUDGE_STRENGTH,
+        };
+      }
+    }
+
     // 5. Cluster migration animation: override position if migration is active
     const migration = clusterMigrations.get(t.id);
     if (migration) {
@@ -252,12 +277,18 @@ export function driftTick(
     // 6. Smooth movement: actual position approaches target by fixed fraction
     const dx = t.targetPosition.x - t.position.x;
     const dy = t.targetPosition.y - t.position.y;
+    const driftMagnitude = Math.hypot(dx, dy);
 
-    // 6b. Organic wobble per Spec 02: sine-wave perpendicular noise per thread
-    const hash = threadHash(t.id);
-    const wobblePhase = (hash + now * WOBBLE_SPEED) % (2 * Math.PI);
-    const wobbleX = Math.sin(wobblePhase) * WOBBLE_AMPLITUDE * DRIFT_FRACTION;
-    const wobbleY = Math.cos(wobblePhase * 1.3) * WOBBLE_AMPLITUDE * DRIFT_FRACTION;
+    // 6b. Organic wobble per Spec 02: only when actively drifting
+    // per Spec 03 acceptance criteria: stable positions when scores are stable
+    let wobbleX = 0;
+    let wobbleY = 0;
+    if (driftMagnitude > 2) {
+      const hash = threadHash(t.id);
+      const wobblePhase = (hash + now * WOBBLE_SPEED) % (2 * Math.PI);
+      wobbleX = Math.sin(wobblePhase) * WOBBLE_AMPLITUDE * DRIFT_FRACTION;
+      wobbleY = Math.cos(wobblePhase * 1.3) * WOBBLE_AMPLITUDE * DRIFT_FRACTION;
+    }
 
     t.position = {
       x: t.position.x + dx * DRIFT_FRACTION + wobbleX,
@@ -277,20 +308,23 @@ export function driftTick(
     updated.push(t);
   }
 
-  // 6. Collision avoidance pass
+  // 6. Collision avoidance pass on target positions per Spec 03 Section 2:
+  // Applied after clustering adjustments, before actual position update
   applyCollisionAvoidance(updated);
 
   return updated;
 }
 
 // Push overlapping threads apart (minimum separation distance)
+// Per Spec 03: operates on targetPosition so separation is enforced before
+// the actual position moves toward the target
 function applyCollisionAvoidance(threads: Thread[]): void {
   for (let i = 0; i < threads.length; i++) {
     for (let j = i + 1; j < threads.length; j++) {
       const a = threads[i];
       const b = threads[j];
-      const dx = b.position.x - a.position.x;
-      const dy = b.position.y - a.position.y;
+      const dx = b.targetPosition.x - a.targetPosition.x;
+      const dy = b.targetPosition.y - a.targetPosition.y;
       const dist = Math.hypot(dx, dy);
 
       if (dist < COLLISION_MIN_DISTANCE && dist > 0) {
@@ -298,8 +332,8 @@ function applyCollisionAvoidance(threads: Thread[]): void {
         const pushX = (dx / dist) * overlap * COLLISION_PUSH_STRENGTH;
         const pushY = (dy / dist) * overlap * COLLISION_PUSH_STRENGTH;
 
-        a.position = { x: a.position.x - pushX, y: a.position.y - pushY };
-        b.position = { x: b.position.x + pushX, y: b.position.y + pushY };
+        a.targetPosition = { x: a.targetPosition.x - pushX, y: a.targetPosition.y - pushY };
+        b.targetPosition = { x: b.targetPosition.x + pushX, y: b.targetPosition.y + pushY };
       }
     }
   }
@@ -397,6 +431,27 @@ export function onArchive(thread: Thread, zones: Map<ZoneId, Zone>): Thread {
     targetPosition: position,
     lifecycleState: "handled",
     visualState: "archived",
+    lastModified: Date.now(),
+  };
+}
+
+// Label action: reset neglect per Spec 03 Section 3
+export function onLabel(thread: Thread): Thread {
+  return {
+    ...thread,
+    neglectDuration: 0,
+    lastUserReplyTimestamp: Date.now(),
+    lastModified: Date.now(),
+  };
+}
+
+// Mark read action: reset neglect per Spec 03 Section 3
+export function onMarkRead(thread: Thread): Thread {
+  return {
+    ...thread,
+    neglectDuration: 0,
+    lastUserReplyTimestamp: Date.now(),
+    unread: false,
     lastModified: Date.now(),
   };
 }

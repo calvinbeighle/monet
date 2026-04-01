@@ -2,9 +2,9 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: 1062 tests passing. Tags through v0.8.5.
+**Current state**: 1091 tests passing. Tags through v0.8.6.
 
-**Implemented**: All 12 specs fully implemented. 1.1-1.7 Foundation (Gmail auth, thread model, fetching, sync, outbound actions, offline queue), 2.1-2.6 Core Map (shell, rendering, navigation, zones, drift, clustering), 3.1-3.5 Game Mechanics (risk scoring, trust, opportunities, front health, alerts), 4.1-4.3 Agent System (units, AI backend, deployment UI), 5.1-5.8 Spec Compliance Round 1 (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1-6.5 Spec Compliance Round 2 (quota UI, travel arc, history filters, cluster indicator, draft store), 7.1-7.6 Spec Compliance Round 3 (organic drift, cluster migration, cluster-biased placement, failed thread identification, batch queue, zone quick-nav).
+**Implemented**: All 12 specs fully implemented. 1.1-1.7 Foundation (Gmail auth, thread model, fetching, sync, outbound actions, offline queue), 2.1-2.6 Core Map (shell, rendering, navigation, zones, drift, clustering), 3.1-3.5 Game Mechanics (risk scoring, trust, opportunities, front health, alerts), 4.1-4.3 Agent System (units, AI backend, deployment UI), 5.1-5.8 Spec Compliance Round 1 (drag interactions, animations, reconnect backoff, tone variants, context menu), 6.1-6.5 Spec Compliance Round 2 (quota UI, travel arc, history filters, cluster indicator, draft store), 7.1-7.6 Spec Compliance Round 3 (organic drift, cluster migration, cluster-biased placement, failed thread identification, batch queue, zone quick-nav), 8.1-8.7 Spec Compliance Round 4 (clustering affinity nudge, collision avoidance on target positions, wobble stability, onLabel/onMarkRead handlers, reauth banner, read-state-change sync, failedThreadIds full propagation).
 
 **Next priorities**: Remaining spec compliance gaps (see below), performance profiling, integration testing.
 
@@ -14,18 +14,12 @@ Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
 - Spec 03: `topicTags` field absent from Thread model; topic-biased initial placement and clustering nudge missing
 - Spec 03: `Drifting-Lost` and `Approaching-Archive` lifecycle states absent (spec defines 6 zone states, code has 5)
-- Spec 03: Clustering affinity nudge to target positions not implemented in tick cycle
 
 **Medium**:
 
-- Spec 01: No UI for `reauthentication-required` state mid-session (401 during active use)
 - Spec 01: Sending a saved draft does not delete the Gmail draft object (orphaned drafts)
 - Spec 02: Urgency pulse fade-out not smooth on urgency drop (abrupt)
 - Spec 02: Zoom density transitions snap instead of fading between levels
-- Spec 03: Collision avoidance operates on actual position, not target position as specified
-- Spec 03: Label and mark-read user actions not implemented (no neglect reset)
-- Spec 03: Organic wobble makes positions never stable when scores are stable
-- Spec 05: failedThreadIds not propagated from ai-backend to ResultsOverlay in deployment-confirmation
 - Spec 06: No hover tooltip on deployed agent icon showing elapsed time
 - Spec 06: No snap-back animation when agent drag is cancelled
 - Spec 06: DeploymentRecord missing progress field and outcome summary
@@ -34,7 +28,6 @@ Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 - Spec 08: Composer-active Escape step not modeled (no composerActive nav state)
 - Spec 08: Pinch-to-zoom gesture not implemented
 - Spec 09: New->Active on thread open not fired for non-click paths (arrow key select)
-- Spec 10: read-state-change events not produced or handled by sync engine
 - Spec 12: Search overlay close does not restore keyboard focus to map
 
 **Low**:

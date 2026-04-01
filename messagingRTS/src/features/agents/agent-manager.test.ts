@@ -135,7 +135,7 @@ describe("Agent manager", () => {
       let agent = createAgentInstance("closer"); // 10 min cooldown
       agent = deployAgent(agent, "c1", ["t1"], now);
       agent = startWorking(agent, now);
-      agent = completeAgent(agent, [], now);
+      agent = completeAgent(agent, [], [], now);
       agent = startCooldown(agent, now);
 
       expect(agent.status).toBe("cooldown");
@@ -147,7 +147,7 @@ describe("Agent manager", () => {
       let agent = createAgentInstance("closer");
       agent = deployAgent(agent, "c1", ["t1"], now);
       agent = startWorking(agent, now);
-      agent = completeAgent(agent, [], now);
+      agent = completeAgent(agent, [], [], now);
       agent = startCooldown(agent, now);
 
       // Still in cooldown
@@ -166,7 +166,7 @@ describe("Agent manager", () => {
       let agent = createAgentInstance("closer");
       agent = deployAgent(agent, "c1", ["t1"], now);
       agent = startWorking(agent, now);
-      agent = completeAgent(agent, [], now);
+      agent = completeAgent(agent, [], [], now);
       agent = startCooldown(agent, now);
 
       const remaining = getCooldownRemaining(agent, now + 5 * 60 * 1000);
@@ -178,7 +178,7 @@ describe("Agent manager", () => {
       let agent = createAgentInstance("closer");
       agent = deployAgent(agent, "c1", ["t1"], now);
       agent = startWorking(agent, now);
-      agent = completeAgent(agent, [], now);
+      agent = completeAgent(agent, [], [], now);
       agent = startCooldown(agent, now);
 
       // Cannot deploy during cooldown

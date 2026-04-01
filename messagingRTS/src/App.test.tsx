@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { useAppStore } from "./lib/stores/app-store";
 import { useThreadStore } from "./lib/stores/thread-store";
+import { useAuthStore } from "./features/auth/auth-store";
 import { createThread } from "./lib/types";
 
 // Mock persistence manager so App init doesn't hit IndexedDB
@@ -349,6 +350,45 @@ describe("Responsive - Agent dock compact form (Spec 12 Section 11)", () => {
     });
     const dock = screen.getByTestId("agent-dock");
     expect(dock.className).toContain("h-16");
+  });
+});
+
+describe("Reauthentication banner (Spec 01)", () => {
+  beforeEach(() => {
+    resetStores();
+    useAppStore.setState({ shellState: "active" });
+  });
+
+  it("shows reauth banner when authState is reauthentication-required", () => {
+    useAuthStore.setState({ authState: "reauthentication-required" });
+    renderApp();
+    expect(screen.getByTestId("reauth-banner")).toBeInTheDocument();
+  });
+
+  it("reauth banner has role=alert for accessibility", () => {
+    useAuthStore.setState({ authState: "reauthentication-required" });
+    renderApp();
+    const banner = screen.getByTestId("reauth-banner");
+    expect(banner).toHaveAttribute("role", "alert");
+  });
+
+  it("reauth banner contains a Reconnect Gmail button", () => {
+    useAuthStore.setState({ authState: "reauthentication-required" });
+    renderApp();
+    expect(screen.getByTestId("reconnect-gmail-btn")).toBeInTheDocument();
+  });
+
+  it("does not show reauth banner when authState is authenticated", () => {
+    useAuthStore.setState({ authState: "authenticated" });
+    renderApp();
+    expect(screen.queryByTestId("reauth-banner")).not.toBeInTheDocument();
+  });
+
+  it("does not show reauth banner when authState is unauthenticated", () => {
+    useAppStore.setState({ shellState: "unauthenticated" });
+    useAuthStore.setState({ authState: "unauthenticated" });
+    renderApp();
+    expect(screen.queryByTestId("reauth-banner")).not.toBeInTheDocument();
   });
 });
 

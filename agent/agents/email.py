@@ -198,7 +198,12 @@ class EmailAgent(BaseAgent):
             return json.dumps({"error": str(e)})
 
     def _tool_list_inbox(self, params: dict) -> str:
-        """List inbox emails via Nango Gmail proxy."""
+        """List inbox emails via Nango Gmail proxy.
+
+        Gmail's messages.list returns only {id, threadId} pairs. After getting
+        the list, batch-fetch metadata for each message so the AI has subject,
+        sender, and date to work with.
+        """
         max_results = params.get("max_results", 20)
         unread_only = params.get("unread_only", False)
 
@@ -214,10 +219,55 @@ class EmailAgent(BaseAgent):
             params={"q": query, "maxResults": max_results},
         )
         resp.raise_for_status()
-        return resp.text
+        data = resp.json()
+
+        messages_raw = data.get("messages", [])
+        if not messages_raw:
+            return json.dumps({"messages": []})
+
+        # Batch-fetch metadata for each message ID
+        messages_with_metadata = []
+        for msg_stub in messages_raw:
+            msg_id = msg_stub.get("id")
+            if not msg_id:
+                continue
+            meta_resp = nango_proxy_request(
+                method="GET",
+                path=f"gmail/v1/users/me/messages/{msg_id}",
+                provider_config_key=_PROVIDER_CONFIG_KEY,
+                connection_id=_CONNECTION_ID,
+                params={
+                    "format": "metadata",
+                    "metadataHeaders": "From,Subject,Date",
+                },
+            )
+            if meta_resp.status_code != 200:
+                messages_with_metadata.append(
+                    {"id": msg_id, "threadId": msg_stub.get("threadId")}
+                )
+                continue
+            meta = meta_resp.json()
+            headers_list = meta.get("payload", {}).get("headers", [])
+            headers_map = {h["name"].lower(): h["value"] for h in headers_list}
+            messages_with_metadata.append(
+                {
+                    "id": msg_id,
+                    "threadId": meta.get("threadId"),
+                    "subject": headers_map.get("subject", ""),
+                    "from": headers_map.get("from", ""),
+                    "date": headers_map.get("date", ""),
+                }
+            )
+
+        return json.dumps({"messages": messages_with_metadata})
 
     def _tool_read_email(self, params: dict) -> str:
-        """Read a specific email via Nango Gmail proxy."""
+        """Read a specific email via Nango Gmail proxy.
+
+        Gmail returns body content as base64url-encoded data in payload.parts
+        (multipart) or payload.body.data (simple messages). Parse the response
+        and return a clean structure with decoded body text.
+        """
         message_id = params["message_id"]
 
         resp = nango_proxy_request(
@@ -227,7 +277,52 @@ class EmailAgent(BaseAgent):
             connection_id=_CONNECTION_ID,
         )
         resp.raise_for_status()
-        return resp.text
+        data = resp.json()
+
+        payload = data.get("payload", {})
+        headers_list = payload.get("headers", [])
+        headers_map = {h["name"].lower(): h["value"] for h in headers_list}
+
+        # Decode body: multipart messages store parts in payload.parts,
+        # simple messages store data directly in payload.body.data.
+        body_text = ""
+        parts = payload.get("parts", [])
+        if parts:
+            # Prefer text/plain part; fall back to first part with data
+            for part in parts:
+                mime = part.get("mimeType", "")
+                part_data = part.get("body", {}).get("data", "")
+                if part_data and mime == "text/plain":
+                    body_text = base64.urlsafe_b64decode(part_data + "==").decode(
+                        "utf-8", errors="replace"
+                    )
+                    break
+            if not body_text:
+                for part in parts:
+                    part_data = part.get("body", {}).get("data", "")
+                    if part_data:
+                        body_text = base64.urlsafe_b64decode(part_data + "==").decode(
+                            "utf-8", errors="replace"
+                        )
+                        break
+        else:
+            raw_data = payload.get("body", {}).get("data", "")
+            if raw_data:
+                body_text = base64.urlsafe_b64decode(raw_data + "==").decode(
+                    "utf-8", errors="replace"
+                )
+
+        return json.dumps(
+            {
+                "message_id": data.get("id"),
+                "thread_id": data.get("threadId"),
+                "subject": headers_map.get("subject", ""),
+                "from": headers_map.get("from", ""),
+                "to": headers_map.get("to", ""),
+                "date": headers_map.get("date", ""),
+                "body": body_text,
+            }
+        )
 
     def _tool_draft_reply(self, params: dict) -> str:
         """Create a draft reply via Nango Gmail proxy.
@@ -312,13 +407,14 @@ class EmailAgent(BaseAgent):
                 orig = orig_resp.json()
                 thread_id = orig.get("threadId")
                 headers_list = orig.get("payload", {}).get("headers", [])
+                orig_subject = None
                 for h in headers_list:
                     if h["name"].lower() == "message-id":
                         orig_message_id_header = h["value"]
                     if h["name"].lower() == "subject":
                         orig_subject = h["value"]
-                        if not subject.lower().startswith("re:"):
-                            subject = f"Re: {orig_subject}" if orig_subject else subject
+                if orig_subject is not None and not subject.lower().startswith("re:"):
+                    subject = f"Re: {orig_subject}" if orig_subject else subject
 
         # Build RFC 2822 MIME message
         mime_msg = MIMEText(body)
