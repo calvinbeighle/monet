@@ -33,6 +33,19 @@ export function SearchOverlay({
     }
   }, [searchActive]);
 
+  // Per Spec 12 Section 6: close search when user clicks outside the overlay
+  useEffect(() => {
+    if (!searchActive) return;
+    const handleClickOutside = (e: globalThis.MouseEvent) => {
+      if (overlayRef.current && !overlayRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    // Use capture to intercept before the map handler
+    document.addEventListener("mousedown", handleClickOutside, true);
+    return () => document.removeEventListener("mousedown", handleClickOutside, true);
+  }, [searchActive, onClose]);
+
   const overlayRef = useRef<HTMLDivElement>(null);
 
   const handleKeyDown = useCallback(
@@ -42,10 +55,16 @@ export function SearchOverlay({
         e.stopPropagation();
         onClose();
       } else if (e.key === "Enter") {
+        // Per Spec 12 Section 6: submitting a search closes the overlay.
+        // Shift+Enter cycles to previous result without closing.
         if (e.shiftKey) {
           onCyclePrevious();
         } else {
-          onCycleNext();
+          // Cycle to next result, then close if there are results or a query
+          if (searchResults.length > 0) {
+            onCycleNext();
+          }
+          onClose();
         }
       } else if (e.key === "Tab") {
         // Trap focus within search overlay per Spec 12 Section 6

@@ -120,6 +120,38 @@ describe("SyncEngine", () => {
       expect(useSyncStore.getState().syncMode).toBe("incremental");
     });
 
+    it("removes orphaned threads not present in Gmail after initial load (Spec 09)", async () => {
+      // Pre-populate store with a thread that won't be in the Gmail result
+      const orphan = { id: "orphan-1", subject: "Deleted in Gmail" };
+      useThreadStore
+        .getState()
+        .setThread(
+          orphan as unknown as Parameters<
+            typeof useThreadStore.getState
+          >["0"]["threads"] extends Map<string, infer V>
+            ? V
+            : never,
+        );
+
+      const mockPerformInitialLoad = vi
+        .fn()
+        .mockImplementation(
+          async (_lookback: number, onThreadLoaded?: (thread: { id: string }) => void) => {
+            const t1 = { id: "t1", subject: "Still in Gmail" };
+            onThreadLoaded?.(t1 as unknown as Parameters<NonNullable<typeof onThreadLoaded>>[0]);
+            return { threads: [t1], historyId: "600" };
+          },
+        );
+
+      _setEngineFetchFns({ performInitialLoad: mockPerformInitialLoad });
+      await startInitialLoad();
+
+      // The orphan should be removed, only t1 remains
+      expect(useThreadStore.getState().threads.has("orphan-1")).toBe(false);
+      expect(useThreadStore.getState().threads.has("t1")).toBe(true);
+      expect(useThreadStore.getState().threads.size).toBe(1);
+    });
+
     it("handles initial load failure gracefully", async () => {
       const mockPerformInitialLoad = vi.fn().mockRejectedValue(new Error("Network error"));
 

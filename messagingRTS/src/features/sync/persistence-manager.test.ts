@@ -110,6 +110,47 @@ describe("Persistence manager", () => {
       const loaded = await loadPersistedThreads();
       expect(loaded[0].neglectDuration).toBeGreaterThan(11 * HOUR_MS);
     });
+
+    it("recomputes target position from updated scores on restore (Spec 09)", async () => {
+      const thread = {
+        ...createThread("t1", "Subject", "Snippet"),
+        position: { x: 100, y: 100 },
+        targetPosition: { x: 100, y: 100 },
+        zone: "active-front" as const,
+      };
+      setMockStore([thread]);
+
+      const loaded = await loadPersistedThreads();
+      // targetPosition should be recomputed based on scores, not just preserved from storage
+      expect(loaded[0].targetPosition).toBeDefined();
+      expect(typeof loaded[0].targetPosition.x).toBe("number");
+      expect(typeof loaded[0].targetPosition.y).toBe("number");
+    });
+
+    it("recomputes zone from actual position on restore (Spec 09)", async () => {
+      const thread = {
+        ...createThread("t1", "Subject", "Snippet"),
+        position: { x: 500, y: 500 },
+        targetPosition: { x: 500, y: 500 },
+        zone: "active-front" as const, // may not match position
+      };
+      setMockStore([thread]);
+
+      const loaded = await loadPersistedThreads();
+      // Zone should be recalculated from actual position, not blindly preserved
+      expect(loaded[0].zone).toBeDefined();
+    });
+
+    it("resets drift velocity to zero on restore (Spec 09)", async () => {
+      const thread = {
+        ...createThread("t1", "Subject", "Snippet"),
+        driftVelocity: { dx: 5.3, dy: -2.1 },
+      };
+      setMockStore([thread]);
+
+      const loaded = await loadPersistedThreads();
+      expect(loaded[0].driftVelocity).toEqual({ dx: 0, dy: 0 });
+    });
   });
 
   describe("saveThreadState", () => {

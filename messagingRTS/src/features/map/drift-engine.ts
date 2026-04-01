@@ -283,7 +283,11 @@ export function driftTick(
         t.targetPosition = { ...migration.target };
         clusterMigrations.delete(t.id);
         t.driftVelocity = { dx: 0, dy: 0 };
-        t.zone = getZoneAtPosition(zones, t.position.x, t.position.y);
+        const migrationZone = getZoneAtPosition(zones, t.position.x, t.position.y);
+        if (migrationZone !== t.zone) {
+          t.previousZone = t.zone;
+          t.zone = migrationZone;
+        }
         t.lastModified = now;
         updated.push(t);
         continue;
@@ -300,8 +304,12 @@ export function driftTick(
           dx: (migration.target.x - migration.startPosition.x) * DRIFT_FRACTION,
           dy: (migration.target.y - migration.startPosition.y) * DRIFT_FRACTION,
         };
-        // Update zone based on actual position
-        t.zone = getZoneAtPosition(zones, t.position.x, t.position.y);
+        // Update zone based on actual position, tracking previous zone per Spec 04
+        const inProgressZone = getZoneAtPosition(zones, t.position.x, t.position.y);
+        if (inProgressZone !== t.zone) {
+          t.previousZone = t.zone;
+          t.zone = inProgressZone;
+        }
         t.lastModified = now;
         updated.push(t);
         continue;
@@ -335,8 +343,12 @@ export function driftTick(
       dy: dy * DRIFT_FRACTION + wobbleY,
     };
 
-    // Update zone based on actual position
-    t.zone = getZoneAtPosition(zones, t.position.x, t.position.y);
+    // Update zone based on actual position, tracking previous zone per Spec 04
+    const newZone = getZoneAtPosition(zones, t.position.x, t.position.y);
+    if (newZone !== t.zone) {
+      t.previousZone = t.zone;
+      t.zone = newZone;
+    }
 
     t.lastModified = now;
     updated.push(t);

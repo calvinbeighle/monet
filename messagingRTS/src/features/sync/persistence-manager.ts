@@ -13,6 +13,8 @@ import {
   clearActionQueue,
 } from "../../lib/utils/persistence";
 import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
+import { computeTargetZone, computeTargetPosition } from "../map/drift-engine";
+import { createZoneLayout, getZoneAtPosition } from "../map/zone-layout";
 import type { Thread } from "../../lib/types";
 
 // Save interval: persist thread state every 5 seconds (avoids excessive IndexedDB writes
@@ -31,17 +33,34 @@ export async function loadPersistedThreads(): Promise<Thread[]> {
   if (persisted.length === 0) return [];
 
   const now = Date.now();
+  const zones = createZoneLayout();
 
-  // Re-evaluate scores to reflect time elapsed since last session
-  const reEvaluated = persisted.map((thread) => ({
-    ...thread,
-    urgencyScore: computeUrgencyScore(thread, now),
-    valueScore: computeValueScore(thread),
-    // Update neglect duration: time since last user action
-    neglectDuration: thread.lastUserReplyTimestamp
-      ? now - thread.lastUserReplyTimestamp
-      : now - thread.firstMessageTimestamp,
-  }));
+  // Per Spec 09 Behavior 2: after restoration, recompute ALL computed properties
+  // (urgency, value, neglect, zone, position, drift velocity) against current data.
+  // If any computed value differs from the stored value, the stored value is updated.
+  const reEvaluated = persisted.map((thread) => {
+    const t = {
+      ...thread,
+      urgencyScore: computeUrgencyScore(thread, now),
+      valueScore: computeValueScore(thread),
+      neglectDuration: thread.lastUserReplyTimestamp
+        ? now - thread.lastUserReplyTimestamp
+        : now - thread.firstMessageTimestamp,
+    };
+
+    // Recompute target zone and position from updated scores
+    const targetZone = computeTargetZone(t);
+    const targetPosition = computeTargetPosition(t, zones, targetZone);
+    t.targetPosition = targetPosition;
+
+    // Recompute zone from actual position (soft boundary model)
+    t.zone = getZoneAtPosition(zones, t.position.x, t.position.y);
+
+    // Reset drift velocity - will be recalculated on next tick
+    t.driftVelocity = { dx: 0, dy: 0 };
+
+    return t;
+  });
 
   return reEvaluated;
 }

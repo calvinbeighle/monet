@@ -98,6 +98,16 @@ export async function startInitialLoad(): Promise<void> {
     useSyncStore.getState().recordSyncSuccess();
     useAppStore.getState().setSyncStatus("connected");
 
+    // Per Spec 09: if a thread exists in persistent storage but no longer exists
+    // in Gmail, remove it from the map. Reconcile after initial load completes.
+    const gmailThreadIds = new Set(result.threads.map((t) => t.id));
+    const storeThreadIds = [...threadStore.threads.keys()];
+    for (const id of storeThreadIds) {
+      if (!gmailThreadIds.has(id)) {
+        threadStore.removeThread(id);
+      }
+    }
+
     // Transition shell state based on thread count
     const threadCount = useThreadStore.getState().getThreadCount();
     if (threadCount === 0) {

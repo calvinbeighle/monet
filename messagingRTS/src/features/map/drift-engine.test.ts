@@ -168,6 +168,28 @@ describe("driftTick", () => {
     expect(current[0].zone).toBe("at-risk");
   });
 
+  it("tracks previousZone when drift moves thread across zone boundary (Spec 04)", () => {
+    const zones = createZoneLayout();
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    const afCenter = getZoneCenter(zones, "active-front");
+    thread.position = { x: afCenter.x, y: afCenter.y };
+    thread.targetPosition = { x: afCenter.x, y: afCenter.y };
+    thread.zone = "active-front";
+    thread.previousZone = null;
+    thread.riskTier = "critical";
+    thread.lifecycleState = "at-risk";
+
+    // Run many ticks until thread crosses into at-risk zone
+    let current = [thread];
+    for (let i = 0; i < 300; i++) {
+      current = driftTick(current, zones);
+    }
+    // Thread should have moved to at-risk and previousZone should be recorded
+    expect(current[0].zone).toBe("at-risk");
+    expect(current[0].previousZone).toBe("active-front");
+  });
+
   it("clears userOverrideZone when risk tier crosses to critical (Spec 04)", () => {
     const zones = createZoneLayout();
     const now = Date.now();
