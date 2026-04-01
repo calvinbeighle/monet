@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and all core systems implemented. 702 tests passing. Tags through v0.7.1. Build, typecheck, lint all clean.
+**Current state**: 803 tests passing. Tags through v0.7.5.
 
 **Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (complete - drag-to-deploy, confirmation, recall, quick-deploy, batch deployment).
 
-**Next priorities**: Cross-cutting concerns (accessibility, performance optimization, responsive layout).
+**Next priorities**: Integration testing, accessibility (ARIA), performance profiling, responsive polish.
 
 ---
 
@@ -324,6 +324,8 @@ These must be resolved before implementation begins:
 - **Responsive layout**: panels collapse at narrow viewports (Phase 2)
 - [x] **Filter system**: show/hide threads by zone, label, sender, urgency; hidden threads still drift and can resurface on at-risk/lost transition (Phase 2)
 - [x] **Batch operations**: multi-select threads, bulk actions (mark handled, move zone, apply label, assign agent) (Phase 2)
+- [x] **Game mechanics runtime wiring**: front health, opportunity ticking, trust decay, streak evaluation, session stats all connected to drift tick loop and outbound actions (Spec 07)
+- [x] **Session summary live data**: session summary modal reads real-time stats instead of hardcoded zeros (Spec 07, Spec 12)
 
 ---
 
@@ -491,3 +493,14 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Batch action bar (src/components/batch-action-bar.tsx): Toolbar visible when selectedThreadIds.size > 0. Actions: Mark Handled, Move to Zone (dropdown), Apply Label (text input), Assign Agent (dropdown), Clear. ARIA toolbar role, descriptive aria-labels.
 - Map renderer: batch-selected threads get cyan ring (0x00ccff) distinct from white single-selection ring. Dirty flag cache includes batchSelected state.
 - Test count: 782 total (32 new batch operation tests), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Game Mechanics Runtime Wiring (2026-03-31)
+
+- Game loop orchestrator (src/features/game-mechanics/game-loop.ts): Central tick function `runGameTick()` called from drift tick (200ms) in map-viewport.tsx. Throttles expensive operations: front health every 5s, trust decay every 30s, streak evaluation every 60s. Opportunity window ticking runs every tick (cheap). Returns `GameTickResult` with updated threads, optional health score, streaks, and session stat deltas.
+- Front health score wired: `computeFrontHealth()` feeds real thread risk distribution, trust averages, and session stats into `appStore.frontHealthScore`. Status bar now shows live health instead of hardcoded 100.
+- Opportunity system wired: `tickOpportunities()` transitions ripe -> fading -> expired on each tick. Reply during active window calls `captureOpportunity()` and increments `sessionStats.opportunitiesCaptured`. Expired transitions increment `sessionStats.opportunitiesMissed`.
+- Trust system wired: `trustRecords` (Record<string, TrustRecord>) stored in app store. `updateTrustOnReply()` called on successful reply in outbound-actions.ts (creates records for new contacts, increments for known). `runTrustDecay()` evaluates all records every 30s against 2x critical threshold per thread type. Floor protection preserved for established contacts.
+- Streak counters wired: `evaluateStreaks()` runs on streak check interval, only evaluates when date changes (YYYY-MM-DD comparison). `setStreaks()` action syncs `streakState` to `streakInboxZero`/`streakZeroLost` flat fields read by status bar.
+- Session summary wired: App.tsx reads live `sessionStats` from app store instead of hardcoded zeros. `netHealthChange` computed as `frontHealthScore - initialHealthScore`. `sessionDurationMs` computed live from `sessionStats.sessionStart`. Counters incremented in: outbound-actions.ts (reply: trust, opportunity capture, risk mitigation), batch-operations.ts (threadsHandled), deployment-confirmation.tsx (agentsDeployed), game-loop.ts (opportunitiesMissed, lostThreadCount).
+- determineChangeType fixed: sync-engine.ts now returns "label-change" for label deletions and non-UNREAD additions, "new-message" for UNREAD/INBOX additions. Previously both branches returned "new-message".
+- Test count: 803 total (21 new: 17 game-loop, 4 app-store), all passing. Typecheck and lint clean.
