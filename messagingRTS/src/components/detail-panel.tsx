@@ -3,7 +3,7 @@
 // metadata (zone, risk, opportunity, scores), participants, and reply composer.
 // At narrow viewports (< RESPONSIVE_BREAKPOINT), overlays instead of shrinking map.
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAppStore, useThreadStore } from "../lib/stores";
 import type { Thread, RiskTier, OpportunityState } from "../lib/types";
 import type { TrustTier } from "../lib/types/game-mechanics";
@@ -230,6 +230,19 @@ export function DetailPanel() {
   const setSelectedThread = useAppStore((s) => s.setSelectedThread);
   const threads = useThreadStore((s) => s.threads);
 
+  // Slide animation state per Spec 12 Section 5
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    // Trigger slide-in on next frame so the initial translate-x-full is painted first
+    const frame = requestAnimationFrame(() => setIsVisible(true));
+    return () => {
+      cancelAnimationFrame(frame);
+      setIsVisible(false);
+    };
+  }, [selectedThreadId]);
+
   if (!selectedThreadId) return null;
 
   const thread = threads.get(selectedThreadId);
@@ -241,7 +254,7 @@ export function DetailPanel() {
 
   return (
     <div
-      className="flex h-full w-80 shrink-0 flex-col border-l border-gray-800 bg-[#0e0e1a]"
+      className={`flex h-full w-80 shrink-0 flex-col border-l border-gray-800 bg-[#0e0e1a] transition-transform duration-300 ease-out ${isVisible ? "translate-x-0" : "translate-x-full"}`}
       data-testid="detail-panel"
       role="complementary"
       aria-label="Thread detail"

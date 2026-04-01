@@ -69,6 +69,8 @@ export function _resetEngineFetchFns(): void {
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let isPolling = false;
+let consecutivePollFailures = 0;
+const MAX_RETRY_INTERVAL_MS = 60000; // 60s cap per Spec 10 Section 8
 
 // --- Initial Load ---
 // Per Spec 10: fetch all inbox threads within lookback window, progressive loading,
@@ -411,13 +413,41 @@ export function stopPolling(): void {
   }
 }
 
+// Compute retry interval with exponential backoff per Spec 10 Section 8
+// On success (0 consecutive failures), use base poll interval.
+// On failure, use min(base * 2^failures, maxRetryInterval).
+export function getRetryInterval(): number {
+  const baseInterval = useSyncStore.getState().pollIntervalMs;
+  if (consecutivePollFailures === 0) return baseInterval;
+  const exponential = baseInterval * Math.pow(2, consecutivePollFailures);
+  return Math.min(exponential, MAX_RETRY_INTERVAL_MS);
+}
+
 function schedulePoll(): void {
   if (!isPolling) return;
-  const interval = useSyncStore.getState().pollIntervalMs;
+  const interval = getRetryInterval();
   pollTimer = setTimeout(async () => {
+    const failuresBefore = useSyncStore.getState().consecutiveFailures;
     await performIncrementalSync();
+    const failuresAfter = useSyncStore.getState().consecutiveFailures;
+
+    if (failuresAfter > failuresBefore) {
+      consecutivePollFailures++;
+    } else if (failuresAfter === 0) {
+      consecutivePollFailures = 0;
+    }
+
     schedulePoll();
   }, interval);
+}
+
+// Exported for testing
+export function _getConsecutivePollFailures(): number {
+  return consecutivePollFailures;
+}
+
+export function _setConsecutivePollFailures(n: number): void {
+  consecutivePollFailures = n;
 }
 
 // --- Action Queue Replay ---

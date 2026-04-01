@@ -76,4 +76,19 @@ describe("SessionSummaryModal", () => {
     const modal = screen.getByTestId("session-summary-modal");
     expect(modal).toHaveAttribute("aria-label", "Session summary");
   });
+
+  it("renders a dimming backdrop overlay per Spec 12 Section 10", () => {
+    render(<SessionSummaryModal data={mockData} triggeredFrom={null} />);
+    const backdrop = screen.getByTestId("session-summary-backdrop");
+    // Backdrop should be fixed, cover full viewport, and have dimming bg
+    expect(backdrop.className).toContain("fixed");
+    expect(backdrop.className).toContain("inset-0");
+    expect(backdrop.className).toContain("bg-black/60");
+  });
+
+  it("backdrop covers full viewport with z-index for proper stacking", () => {
+    render(<SessionSummaryModal data={mockData} triggeredFrom={null} />);
+    const backdrop = screen.getByTestId("session-summary-backdrop");
+    expect(backdrop.className).toContain("z-50");
+  });
 });

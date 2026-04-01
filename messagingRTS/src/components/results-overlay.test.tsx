@@ -186,3 +186,100 @@ describe("ResultsOverlay", () => {
     expect(screen.getByText("1 approved, 0 rejected")).toBeInTheDocument();
   });
 });
+
+describe("ResultsOverlay - Drafter tone variants (Spec 07)", () => {
+  beforeEach(resetStores);
+
+  function setupDrafterWithToneVariants() {
+    const store = useAgentStore.getState();
+    store.deploy("drafter", "c1", ["t1", "t2"]);
+    store.startWork("drafter");
+    store.complete("drafter", [
+      {
+        threadId: "t1",
+        outputType: "reply-draft",
+        content: "[Professional] Dear team, please review.",
+      },
+      { threadId: "t1", outputType: "tone-variant", content: "[Casual] Hey team, take a look!" },
+      {
+        threadId: "t1",
+        outputType: "tone-variant",
+        content: "[Friendly] Hi everyone, would love your thoughts.",
+      },
+      { threadId: "t2", outputType: "reply-draft", content: "Thanks for your message." },
+    ]);
+
+    useDeploymentStore.setState({
+      deployments: [
+        {
+          id: "deploy-drafter",
+          agentRole: "drafter",
+          clusterId: "c1",
+          threadIds: ["t1", "t2"],
+          status: "completed",
+          startedAt: Date.now() - 5000,
+          completedAt: Date.now(),
+          recalledAt: null,
+          batchId: null,
+        },
+      ],
+    });
+  }
+
+  it("groups proposals by thread and shows tone variant tabs for drafter", () => {
+    setupDrafterWithToneVariants();
+    render(<ResultsOverlay agentRole="drafter" />);
+
+    // Should render a tone variant group for thread t1
+    expect(screen.getByTestId("tone-variant-group-t1")).toBeInTheDocument();
+    expect(screen.getByTestId("tone-variant-tabs")).toBeInTheDocument();
+  });
+
+  it("shows tone labels as tab buttons", () => {
+    setupDrafterWithToneVariants();
+    render(<ResultsOverlay agentRole="drafter" />);
+
+    // Three variants for t1: Professional, Casual, Friendly
+    const agent = useAgentStore.getState().getAgent("drafter");
+    const t1Proposals = agent.proposals.filter((p) => p.threadId === "t1");
+    expect(t1Proposals).toHaveLength(3);
+
+    // Tone tabs should show the tone labels
+    for (const p of t1Proposals) {
+      expect(screen.getByTestId(`tone-tab-${p.id}`)).toBeInTheDocument();
+    }
+  });
+
+  it("clicking tone tab switches the active variant", () => {
+    setupDrafterWithToneVariants();
+    render(<ResultsOverlay agentRole="drafter" />);
+
+    const agent = useAgentStore.getState().getAgent("drafter");
+    const t1Proposals = agent.proposals.filter((p) => p.threadId === "t1");
+
+    // Initially shows the first variant (Professional)
+    expect(screen.getByText("[Professional] Dear team, please review.")).toBeInTheDocument();
+
+    // Click second tone tab (Casual)
+    fireEvent.click(screen.getByTestId(`tone-tab-${t1Proposals[1].id}`));
+    expect(screen.getByText("[Casual] Hey team, take a look!")).toBeInTheDocument();
+  });
+
+  it("single-proposal threads render without tone variant tabs for drafter", () => {
+    setupDrafterWithToneVariants();
+    render(<ResultsOverlay agentRole="drafter" />);
+
+    // t2 has only one proposal, so no tone variant group/tabs
+    expect(screen.queryByTestId("tone-variant-group-t2")).not.toBeInTheDocument();
+    // But the proposal content should still be visible
+    expect(screen.getByText("Thanks for your message.")).toBeInTheDocument();
+  });
+
+  it("non-drafter agents render proposals without tone variant grouping", () => {
+    setupCompletedAgent();
+    render(<ResultsOverlay agentRole="closer" />);
+
+    // Closer should never show tone variant tabs
+    expect(screen.queryByTestId("tone-variant-tabs")).not.toBeInTheDocument();
+  });
+});

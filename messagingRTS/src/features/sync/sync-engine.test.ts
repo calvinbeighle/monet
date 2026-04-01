@@ -9,6 +9,9 @@ import {
   replayActionQueue,
   startPolling,
   stopPolling,
+  getRetryInterval,
+  _getConsecutivePollFailures,
+  _setConsecutivePollFailures,
   _setEngineFetchFns,
   _resetEngineFetchFns,
 } from "./sync-engine";
@@ -73,6 +76,7 @@ describe("SyncEngine", () => {
 
   afterEach(() => {
     _resetEngineFetchFns();
+    _setConsecutivePollFailures(0);
     stopPolling();
   });
 
@@ -629,6 +633,47 @@ describe("SyncEngine", () => {
 
       stopPolling();
       vi.useRealTimers();
+    });
+  });
+
+  describe("exponential backoff (Spec 10 Section 8)", () => {
+    it("getRetryInterval returns base interval when no failures", () => {
+      _setConsecutivePollFailures(0);
+      useSyncStore.setState({ pollIntervalMs: 5000 });
+      expect(getRetryInterval()).toBe(5000);
+    });
+
+    it("getRetryInterval doubles on each consecutive failure", () => {
+      useSyncStore.setState({ pollIntervalMs: 5000 });
+
+      _setConsecutivePollFailures(1);
+      expect(getRetryInterval()).toBe(10000); // 5000 * 2^1
+
+      _setConsecutivePollFailures(2);
+      expect(getRetryInterval()).toBe(20000); // 5000 * 2^2
+
+      _setConsecutivePollFailures(3);
+      expect(getRetryInterval()).toBe(40000); // 5000 * 2^3
+    });
+
+    it("getRetryInterval caps at 60s maximum", () => {
+      useSyncStore.setState({ pollIntervalMs: 5000 });
+
+      _setConsecutivePollFailures(4);
+      // 5000 * 2^4 = 80000 > 60000, so capped at 60000
+      expect(getRetryInterval()).toBe(60000);
+
+      _setConsecutivePollFailures(10);
+      expect(getRetryInterval()).toBe(60000);
+    });
+
+    it("resets consecutive failures on successful sync", () => {
+      _setConsecutivePollFailures(5);
+      expect(_getConsecutivePollFailures()).toBe(5);
+
+      _setConsecutivePollFailures(0);
+      expect(_getConsecutivePollFailures()).toBe(0);
+      expect(getRetryInterval()).toBe(useSyncStore.getState().pollIntervalMs);
     });
   });
 });

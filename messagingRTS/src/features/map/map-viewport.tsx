@@ -872,6 +872,87 @@ export function MapViewport() {
     };
   }, []);
 
+  // -- Context menu state for right-click agent deploy per Spec 06 --
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    threadIds: string[];
+    clusterId: string;
+    zoneId: ZoneId;
+  } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const renderer = rendererRef.current;
+    const container = containerRef.current;
+    if (!renderer || !container) return;
+
+    const rect = container.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const cam = renderer.getCameraState();
+    const mapPos = screenToMap(screenX, screenY, cam, rect.width, rect.height);
+
+    // Hit-test clusters first
+    const hitCluster = hitTestCluster(clustersRef.current, mapPos.x, mapPos.y, 120 / cam.zoom);
+    if (hitCluster) {
+      const threadArray = [...useThreadStore.getState().threads.values()];
+      const threadMap = new Map(threadArray.map((t) => [t.id, t]));
+      const clusterThreadIds = hitCluster.memberThreadIds.filter((tid) => threadMap.has(tid));
+      const zoneId = getZoneAtPosition(zonesRef.current, mapPos.x, mapPos.y);
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        threadIds: clusterThreadIds,
+        clusterId: hitCluster.id,
+        zoneId,
+      });
+      return;
+    }
+
+    // Hit-test individual threads
+    const threadArray = [...useThreadStore.getState().threads.values()];
+    const hitId = hitTestThread(threadArray, mapPos.x, mapPos.y);
+    if (hitId) {
+      const zoneId = getZoneAtPosition(zonesRef.current, mapPos.x, mapPos.y);
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        threadIds: [hitId],
+        clusterId: `zone-${zoneId}`,
+        zoneId,
+      });
+      return;
+    }
+
+    // No target hit - close any existing menu
+    setContextMenu(null);
+  }, []);
+
+  const handleContextMenuSelect = useCallback(
+    (role: AgentRole) => {
+      if (!contextMenu) return;
+      const def = AGENT_DEFINITIONS[role];
+      const threadIds = contextMenu.threadIds.slice(0, def.capacity);
+      useDeploymentStore.getState().showConfirmation({
+        agentRole: role,
+        clusterId: contextMenu.clusterId,
+        threadIds,
+        description: `${def.name}: ${def.description.toLowerCase()} (${threadIds.length} thread${threadIds.length !== 1 ? "s" : ""} in ${contextMenu.zoneId})`,
+      });
+      setContextMenu(null);
+    },
+    [contextMenu],
+  );
+
+  // Close context menu on any click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [contextMenu]);
+
   // -- Search handlers --
 
   const handleSearch = useCallback((query: string) => {
@@ -922,7 +1003,66 @@ export function MapViewport() {
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
       onKeyDown={handleKeyDown}
+      onContextMenu={handleContextMenu}
     >
+      {/* Context menu for right-click agent deploy per Spec 06 */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-48 rounded border border-gray-700 bg-[#14142a] py-1 shadow-xl"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          data-testid="deploy-context-menu"
+          role="menu"
+          aria-label="Deploy agent"
+        >
+          <div className="px-3 py-1 text-[10px] text-gray-500 uppercase">Deploy Agent</div>
+          {(
+            Object.entries(AGENT_DEFINITIONS) as [
+              AgentRole,
+              (typeof AGENT_DEFINITIONS)[AgentRole],
+            ][]
+          ).map(([role, def]) => {
+            const agentState = useAgentStore.getState().agents.get(role);
+            const canDeploy = useAgentStore.getState().canDeployRole(role);
+            const statusLabel =
+              agentState?.status === "cooldown"
+                ? "Cooldown"
+                : agentState?.status === "working" || agentState?.status === "deployed"
+                  ? "Busy"
+                  : canDeploy
+                    ? "Available"
+                    : "Unavailable";
+            const isAvailable = canDeploy;
+            const colorHex = `#${def.color.toString(16).padStart(6, "0")}`;
+
+            return (
+              <button
+                key={role}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
+                  isAvailable
+                    ? "text-gray-300 hover:bg-gray-700"
+                    : "text-gray-600 cursor-not-allowed"
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isAvailable) handleContextMenuSelect(role);
+                }}
+                disabled={!isAvailable}
+                role="menuitem"
+                data-testid={`context-menu-${role}`}
+              >
+                <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colorHex }} />
+                <span className="flex-1">{def.name}</span>
+                <span
+                  className={`text-[10px] ${isAvailable ? "text-green-500" : "text-gray-600"}`}
+                  data-testid={`context-menu-${role}-status`}
+                >
+                  {statusLabel}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <SearchOverlay
         onSearch={handleSearch}
         onCycleNext={handleSearchCycleNext}

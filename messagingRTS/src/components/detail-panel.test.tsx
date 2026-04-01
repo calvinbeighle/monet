@@ -210,6 +210,30 @@ describe("DetailPanel", () => {
     expect(screen.queryByTestId("participant-trust")).not.toBeInTheDocument();
   });
 
+  it("has slide animation classes (translate-x) per Spec 12 Section 5", () => {
+    const thread = createThread("t1", "Subject", "Snippet");
+    useThreadStore.setState({ threads: new Map([["t1", thread]]) });
+    useAppStore.setState({ selectedThreadId: "t1" });
+
+    render(<DetailPanel />);
+    const panel = screen.getByTestId("detail-panel");
+    // Panel should have transition-transform and duration-300 classes for slide animation
+    expect(panel.className).toContain("transition-transform");
+    expect(panel.className).toContain("duration-300");
+    expect(panel.className).toContain("ease-out");
+  });
+
+  it("starts off-screen with translate-x-full before animation", () => {
+    const thread = createThread("t1", "Subject", "Snippet");
+    useThreadStore.setState({ threads: new Map([["t1", thread]]) });
+    useAppStore.setState({ selectedThreadId: "t1" });
+
+    render(<DetailPanel />);
+    const panel = screen.getByTestId("detail-panel");
+    // Initially (before rAF fires), panel should have translate-x-full
+    expect(panel.className).toContain("translate-x-full");
+  });
+
   it("renders trust tier color class for high-trust participant", () => {
     const thread = {
       ...createThread("t1", "Subject", "Snippet"),

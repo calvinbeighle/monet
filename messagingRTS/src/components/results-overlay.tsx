@@ -3,10 +3,32 @@
 // Does not auto-dismiss - user must act on all proposals or manually close.
 // After all proposals resolved: agent enters cooldown, deployment transitions to "resolved".
 
+import { useState } from "react";
 import { useAgentStore } from "../lib/stores/agent-store";
 import { useDeploymentStore } from "../lib/stores/deployment-store";
 import { AGENT_DEFINITIONS } from "../lib/types";
 import type { AgentRole, AgentProposal } from "../lib/types";
+
+// Extract tone label from proposal content if present (Drafter tone variants per Spec 07)
+// Content format from output parser: "[tone_label] actual content"
+function extractToneLabel(content: string): { toneLabel: string | null; cleanContent: string } {
+  const match = content.match(/^\[([^\]]+)\]\s*/);
+  if (match) {
+    return { toneLabel: match[1], cleanContent: content.slice(match[0].length) };
+  }
+  return { toneLabel: null, cleanContent: content };
+}
+
+// Group proposals by threadId for tone variant display
+function groupProposalsByThread(proposals: AgentProposal[]): Map<string, AgentProposal[]> {
+  const groups = new Map<string, AgentProposal[]>();
+  for (const p of proposals) {
+    const existing = groups.get(p.threadId) ?? [];
+    existing.push(p);
+    groups.set(p.threadId, existing);
+  }
+  return groups;
+}
 
 function ProposalItem({ proposal, agentRole }: { proposal: AgentProposal; agentRole: AgentRole }) {
   const resolve = useAgentStore((s) => s.resolve);
@@ -57,6 +79,66 @@ function ProposalItem({ proposal, agentRole }: { proposal: AgentProposal; agentR
   );
 }
 
+// Tone variant group: shows tabs when multiple proposals target the same thread (Spec 07 Drafter)
+function ToneVariantGroup({
+  proposals,
+  agentRole,
+}: {
+  proposals: AgentProposal[];
+  agentRole: AgentRole;
+}) {
+  const [activeVariantIndex, setActiveVariantIndex] = useState(0);
+
+  // Extract tone labels for all proposals in the group
+  const variants = proposals.map((p) => ({
+    proposal: p,
+    ...extractToneLabel(p.content),
+  }));
+
+  const hasToneLabels = variants.some((v) => v.toneLabel !== null);
+
+  // If there is only one proposal or no tone labels, just render them directly
+  if (proposals.length <= 1 || !hasToneLabels) {
+    return (
+      <>
+        {proposals.map((p) => (
+          <ProposalItem key={p.id} proposal={p} agentRole={agentRole} />
+        ))}
+      </>
+    );
+  }
+
+  const activeVariant = variants[activeVariantIndex];
+
+  return (
+    <div
+      className="border border-gray-700 rounded mb-2"
+      data-testid={`tone-variant-group-${proposals[0].threadId}`}
+    >
+      {/* Tone variant tabs */}
+      <div className="flex border-b border-gray-700" data-testid="tone-variant-tabs">
+        {variants.map((v, idx) => (
+          <button
+            key={v.proposal.id}
+            className={`flex-1 px-2 py-1.5 text-xs transition-colors ${
+              idx === activeVariantIndex
+                ? "bg-gray-700 text-gray-200"
+                : "bg-transparent text-gray-500 hover:text-gray-400"
+            }`}
+            onClick={() => setActiveVariantIndex(idx)}
+            data-testid={`tone-tab-${v.proposal.id}`}
+          >
+            {v.toneLabel ?? `Variant ${idx + 1}`}
+          </button>
+        ))}
+      </div>
+
+      {/* Active variant content */}
+      {activeVariant && <ProposalItem proposal={activeVariant.proposal} agentRole={agentRole} />}
+    </div>
+  );
+}
+
 export function ResultsOverlay({ agentRole }: { agentRole: AgentRole }) {
   const agent = useAgentStore((s) => s.agents.get(agentRole));
   const beginCooldown = useAgentStore((s) => s.beginCooldown);
@@ -102,11 +184,18 @@ export function ResultsOverlay({ agentRole }: { agentRole: AgentRole }) {
           </span>
         </div>
 
-        {/* Proposals list */}
+        {/* Proposals list - grouped by thread for Drafter tone variants per Spec 07 */}
         <div className="flex-1 overflow-y-auto p-4" data-testid="results-proposals-list">
-          {agent.proposals.map((proposal) => (
-            <ProposalItem key={proposal.id} proposal={proposal} agentRole={agentRole} />
-          ))}
+          {agentRole === "drafter"
+            ? (() => {
+                const groups = groupProposalsByThread(agent.proposals);
+                return [...groups.entries()].map(([threadId, proposals]) => (
+                  <ToneVariantGroup key={threadId} proposals={proposals} agentRole={agentRole} />
+                ));
+              })()
+            : agent.proposals.map((proposal) => (
+                <ProposalItem key={proposal.id} proposal={proposal} agentRole={agentRole} />
+              ))}
         </div>
 
         {/* Footer */}
