@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { v4 as uuid } from "uuid";
 import { EventEmitter } from "events";
 import { generateVideo, generateImage } from "./image-generator";
+import type { AgentSuggestion } from "./prediction-engine";
 
 const USE_IMAGINE = process.env.USE_IMAGINE === "true";
 
@@ -159,6 +160,16 @@ export class AgentManager extends EventEmitter {
       this.emit("update", card);
     }
 
+    return card;
+  }
+
+  createAgentWithSuggestion(suggestion: AgentSuggestion): AgentCard {
+    const card = this.createAgent();
+    // Pre-populate the card with the suggestion so the UI can display it
+    card.instruction = suggestion.instruction;
+    card.summary = suggestion.reason;
+    card.rawOutput = `[Suggested: ${suggestion.category}] ${suggestion.reason}\nScore: ${suggestion.score}/100 | Source: ${suggestion.source}`;
+    this.emit("update", card);
     return card;
   }
 

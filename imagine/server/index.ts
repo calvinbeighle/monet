@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import { AgentManager } from "./agent-manager";
+import { getPredictions } from "./prediction-engine";
+import type { AgentSuggestion } from "./prediction-engine";
 
 const app = express();
 app.use(cors());
@@ -8,10 +10,28 @@ app.use(express.json());
 
 const manager = new AgentManager();
 
-// Create 5 initial agents
-for (let i = 0; i < 5; i++) {
-  manager.createAgent();
+// Create initial agents, pre-populated with predictions where available
+async function initializeAgents() {
+  let predictions: AgentSuggestion[] = [];
+  try {
+    predictions = await getPredictions();
+    console.log(`Loaded ${predictions.length} predictions from activity data`);
+  } catch {
+    console.log("No predictions available, creating blank agents");
+  }
+
+  const topPredictions = predictions.slice(0, 5);
+
+  for (let i = 0; i < 5; i++) {
+    if (i < topPredictions.length) {
+      manager.createAgentWithSuggestion(topPredictions[i]);
+    } else {
+      manager.createAgent();
+    }
+  }
 }
+
+initializeAgents();
 
 // SSE endpoint - streams card updates
 app.get("/api/events", (req, res) => {
@@ -38,6 +58,16 @@ app.get("/api/events", (req, res) => {
     manager.off("update", onUpdate);
     manager.off("remove", onRemove);
   });
+});
+
+// Get predictions from activity data
+app.get("/api/predictions", async (_req, res) => {
+  try {
+    const predictions = await getPredictions();
+    res.json(predictions);
+  } catch {
+    res.json([]);
+  }
 });
 
 // Get all cards
