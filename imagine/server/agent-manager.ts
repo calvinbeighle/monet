@@ -14,6 +14,7 @@ export interface AgentCard {
   imageUrl: string | null;
   videoUrl: string | null;
   rawOutput: string;
+  suggestion: { reason: string; category: string; score: number } | null;
 }
 
 // Verified working stock videos + dynamic fetch from Pexels
@@ -133,6 +134,7 @@ export class AgentManager extends EventEmitter {
       imageUrl: null,
       videoUrl: null,
       rawOutput: "",
+      suggestion: null,
     };
     this.agents.set(card.id, { card, abort: null, sessionId: null });
     this.emit("update", card);
@@ -165,10 +167,12 @@ export class AgentManager extends EventEmitter {
 
   createAgentWithSuggestion(suggestion: AgentSuggestion): AgentCard {
     const card = this.createAgent();
-    // Pre-populate the card with the suggestion so the UI can display it
-    card.instruction = suggestion.instruction;
-    card.summary = suggestion.reason;
-    card.rawOutput = `[Suggested: ${suggestion.category}] ${suggestion.reason}\nScore: ${suggestion.score}/100 | Source: ${suggestion.source}`;
+    // Attach suggestion as context - user decides whether to act on it
+    card.suggestion = {
+      reason: suggestion.reason,
+      category: suggestion.category,
+      score: suggestion.score,
+    };
     this.emit("update", card);
     return card;
   }

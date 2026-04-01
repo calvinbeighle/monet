@@ -264,11 +264,17 @@ export function Card({ card, index }: { card: CardData; index: number }) {
           {card.status === "error" && card.summary && (
             <p className="text-red-300 text-[13px]">{card.summary}</p>
           )}
-          {card.status === "idle" && !card.instruction && (
-            <p className="text-white/40 text-[14px]">
-              Waiting for instructions...
-            </p>
-          )}
+          {card.status === "idle" &&
+            !card.instruction &&
+            (card.suggestion ? (
+              <p className="text-white/50 text-[14px] leading-relaxed">
+                {card.suggestion.reason}
+              </p>
+            ) : (
+              <p className="text-white/30 text-[14px]">
+                Waiting for instructions...
+              </p>
+            ))}
         </div>
 
         {/* Input bar */}
