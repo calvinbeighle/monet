@@ -1,14 +1,12 @@
 // Deployment confirmation dialog per Spec 06
 // Shows agent role, description, thread count. Confirm deploys, cancel snaps agent back.
-// On confirm: deploys agent, simulates travel + work, generates proposals via work simulator.
+// On confirm: deploys agent, travel animation, then AI backend processes threads.
 
 import { AGENT_DEFINITIONS } from "../lib/types";
 import { useDeploymentStore } from "../lib/stores/deployment-store";
 import { useAgentStore } from "../lib/stores/agent-store";
-import {
-  generateSimulatedProposals,
-  SIMULATED_WORK_DURATION_MS,
-} from "../features/agents/work-simulator";
+import { useThreadStore } from "../lib/stores/thread-store";
+import { processAgentWork } from "../features/agents/ai-backend";
 
 export function DeploymentConfirmation() {
   const confirmation = useDeploymentStore((s) => s.confirmation);
@@ -17,6 +15,7 @@ export function DeploymentConfirmation() {
   const startTravel = useDeploymentStore((s) => s.startTravel);
   const startWork = useDeploymentStore((s) => s.startWork);
   const completeDeployment = useDeploymentStore((s) => s.completeDeployment);
+  const failDeployment = useDeploymentStore((s) => s.failDeployment);
 
   if (!confirmation) return null;
 
@@ -30,7 +29,7 @@ export function DeploymentConfirmation() {
     const agentStore = useAgentStore.getState();
     agentStore.deploy(record.agentRole, record.clusterId, record.threadIds);
 
-    // Travel phase (1.5s), then work phase (simulated duration)
+    // Travel phase (1.5s), then AI work phase
     startTravel(record.id);
     setTimeout(() => {
       // Check agent is still deployed (not recalled during travel)
@@ -40,15 +39,33 @@ export function DeploymentConfirmation() {
       useAgentStore.getState().startWork(record.agentRole);
       startWork(record.id);
 
-      // Simulate work completion after duration
-      setTimeout(() => {
-        const workingAgent = useAgentStore.getState().getAgent(record.agentRole);
-        if (workingAgent.status !== "working") return;
+      // Resolve thread objects for AI context
+      const threadStore = useThreadStore.getState();
+      const threads = record.threadIds
+        .map((id) => threadStore.getThread(id))
+        .filter((t) => t !== undefined);
 
-        const proposals = generateSimulatedProposals(record.agentRole, record.threadIds);
-        useAgentStore.getState().complete(record.agentRole, proposals);
-        completeDeployment(record.id);
-      }, SIMULATED_WORK_DURATION_MS);
+      // Process via AI backend (falls back to simulation if no API key)
+      processAgentWork(record.agentRole, record.threadIds, threads)
+        .then((result) => {
+          const workingAgent = useAgentStore.getState().getAgent(record.agentRole);
+          if (workingAgent.status !== "working") return;
+
+          if (result.errors.length > 0) {
+            console.warn(`[DeploymentConfirmation] ${record.agentRole} errors:`, result.errors);
+          }
+          if (result.source === "simulated") {
+            console.info(`[DeploymentConfirmation] ${record.agentRole} used simulated proposals`);
+          }
+
+          useAgentStore.getState().complete(record.agentRole, result.proposals);
+          completeDeployment(record.id);
+        })
+        .catch((err) => {
+          console.error(`[DeploymentConfirmation] ${record.agentRole} fatal error:`, err);
+          useAgentStore.getState().fail(record.agentRole);
+          failDeployment(record.id);
+        });
     }, 1500);
   };
 

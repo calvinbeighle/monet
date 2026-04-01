@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 604 tests passing. Tags through v0.6.8. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 664 tests passing. Tags through v0.6.9. Build, typecheck, lint all clean.
 
 **Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (partial), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
-2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.3 Agent Deployment UI (drag-to-deploy, confirmation, recall, quick-deploy).
+2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (drag-to-deploy, confirmation, recall, quick-deploy).
 
-**Next priorities**: 4.2 Agent AI Backend, then Performance (500+ entity benchmark).
+**Next priorities**: Performance (500+ entity benchmark), then 1.3 Thread Data Model completion (tests for state transitions, persistence round-trip, merge on reload, thread removal).
 
 ---
 
@@ -284,16 +284,16 @@ These must be resolved before implementation begins:
 
 ### 4.2 Agent AI Backend
 
-- [ ] Integration with Claude API for agent intelligence
-- [ ] Per-agent-type prompt templates (Closer, Researcher, Scheduler, Cleaner, Drafter, Escalation Bot)
-- [ ] Thread context packaging: conversation history, participant data, enrichment data fed to LLM
-- [ ] Structured output parsing: proposals extracted from LLM response
-- [ ] Rate limiting and error handling for API calls
-- [ ] Drafter: produce 1 primary draft + up to 2 tone variants
-- [ ] Cleaner: batch grouping logic for bulk archive proposals
-- [ ] Escalation Bot: urgency signal detection rules
-- [ ] **Spec**: 05-agent-units (behavioral descriptions per type)
-- [ ] **Tests**: Prompt construction correctness, output parsing, error recovery, tone variant generation
+- [x] Integration with Claude API for agent intelligence
+- [x] Per-agent-type prompt templates (Closer, Researcher, Scheduler, Cleaner, Drafter, Escalation Bot)
+- [x] Thread context packaging: conversation history, participant data, enrichment data fed to LLM
+- [x] Structured output parsing: proposals extracted from LLM response
+- [x] Rate limiting and error handling for API calls
+- [x] Drafter: produce 1 primary draft + up to 2 tone variants
+- [x] Cleaner: batch grouping logic for bulk archive proposals
+- [x] Escalation Bot: urgency signal detection rules
+- [x] **Spec**: 05-agent-units (behavioral descriptions per type)
+- [x] **Tests**: Prompt construction correctness, output parsing, error recovery, tone variant generation
 
 ### 4.3 Agent Deployment Interaction
 
@@ -452,3 +452,16 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - Queue cleanup: Succeeded entries are removed immediately after replay (not accumulated). Actions targeting deleted threads are discarded with user notification before attempting execution.
 - Label-change action: `executeAction()` now handles `label-change` type via new `modifyThreadLabels()` gmail-client function that supports arbitrary add/remove label combinations.
 - Test count: 604 total (6 new: 2 reconnect trigger, 2 conflict resolution, 1 thread-deleted discard, 1 label-change replay), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Agent AI Backend (2026-03-31)
+
+- AI backend replaces work-simulator with real Claude API integration (Spec 05 Section 4.2). Falls back to simulated proposals when VITE_ANTHROPIC_API_KEY is not configured - graceful degradation for development and testing.
+- src/features/agents/claude-client.ts: Anthropic SDK wrapper with dangerouslyAllowBrowser for frontend. Semaphore-based rate limiting (default 3 concurrent). Exponential backoff retry (3 attempts) for rate limits, 5xx, and connection errors. Injectable \_setCreateMessageFn for testing.
+- src/features/agents/context-packager.ts: Transforms Thread objects into structured text context for LLM consumption. Includes metadata (subject, zone, risk tier, urgency/value scores, opportunity state, neglect duration), participant info (org, VIP flag, relationship score, response history), and conversation messages (last 20, 2000 char limit per body, HTML->text fallback).
+- src/features/agents/prompt-templates.ts: Per-agent-type system prompts and tool definitions. Uses Claude tool_use for structured output. Closer: submit_proposal (reply-draft, follow-up-draft, close-action-proposal). Researcher: submit_proposal (enriched-contact, company-background, thread-summary). Scheduler: submit_proposal (meeting-time-proposal, availability-summary, scheduling-reply-draft). Cleaner: submit_batch_proposal (archive-proposal, label-assignment, unsubscribe-proposal) with thread_ids array for atomic batch proposals. Drafter: submit_proposal with tone_label field for variants. Escalation Bot: submit_proposal with urgency_level field.
+- src/features/agents/output-parser.ts: Parses Claude tool_use content blocks into ParsedProposal objects. Handles both submit_proposal (single thread) and submit_batch_proposal (Cleaner batches - expands to one proposal per thread). Validates required fields, filters invalid entries, prepends tone/batch labels to content. filterValidProposals drops proposals referencing threads not in the deployment.
+- src/features/agents/ai-backend.ts: Orchestrator function processAgentWork(role, threadIds, threads). Checks isClaudeClientConfigured(), falls back to generateSimulatedProposals if not. Packages thread context, builds prompts, calls sendMessage, parses response, filters valid proposals. On any API error, falls back to simulation with error logging.
+- deployment-confirmation.tsx: Replaced synchronous work-simulator call with async processAgentWork. Fetches thread objects from useThreadStore for AI context. Handles async completion and failure (failDeployment on catch).
+- App.tsx: Initializes Claude client from VITE_ANTHROPIC_API_KEY on startup (Step 0 in init flow).
+- @anthropic-ai/sdk added to dependencies. .env.example updated with VITE_ANTHROPIC_API_KEY.
+- Test count: 664 total (60 new: 13 claude-client, 16 ai-backend, 14 output-parser, 6 prompt-templates, 11 context-packager), all passing. Typecheck and lint clean.

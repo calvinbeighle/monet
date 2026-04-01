@@ -27,6 +27,8 @@ import { useThreadStore } from "./lib/stores";
 import { useAgentStore } from "./lib/stores/agent-store";
 import { useAuthStore } from "./features/auth/auth-store";
 import type { AgentRole } from "./lib/types";
+import { initClaudeClient, isClaudeClientConfigured } from "./features/agents/claude-client";
+import { getAnthropicApiKey } from "./features/agents/ai-backend";
 
 export function App() {
   const shellState = useAppStore((s) => s.shellState);
@@ -87,6 +89,17 @@ export function App() {
     let cancelled = false;
 
     const init = async () => {
+      // Step 0: Initialize Claude API client if key is configured (4.2)
+      if (!isClaudeClientConfigured()) {
+        const apiKey = getAnthropicApiKey();
+        if (apiKey) {
+          initClaudeClient({ apiKey });
+          console.info("[App] Claude API client initialized for agent AI backend");
+        } else {
+          console.info("[App] No Anthropic API key - agents will use simulated proposals");
+        }
+      }
+
       // Step 1: Check Nango connection status
       await useAuthStore.getState().checkConnection();
       if (cancelled) return;
