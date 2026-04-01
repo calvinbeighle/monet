@@ -112,6 +112,15 @@ export function MapViewport() {
   const [isThreadDragging, setIsThreadDragging] = useState(false);
   // Tab-focused zone for zone label cycling per Spec 08 Section 16
   const [tabFocusedZone, setTabFocusedZone] = useState<ZoneId | null>(null);
+  // Agent deployment tooltip per Spec 06 Section 8
+  const [agentTooltip, setAgentTooltip] = useState<{
+    x: number;
+    y: number;
+    agentRole: string;
+    elapsed: number;
+    threadCount: number;
+    deploymentId: string;
+  } | null>(null);
 
   // Initialize PixiJS renderer
   useEffect(() => {
@@ -1031,16 +1040,6 @@ export function MapViewport() {
       if (edgeScrollRef.current) cancelAnimationFrame(edgeScrollRef.current);
     };
   }, []);
-
-  // -- Agent deployment tooltip per Spec 06 Section 8 --
-  const [agentTooltip, setAgentTooltip] = useState<{
-    x: number;
-    y: number;
-    agentRole: string;
-    elapsed: number;
-    threadCount: number;
-    deploymentId: string;
-  } | null>(null);
 
   // -- Context menu state for right-click agent deploy per Spec 06 --
   const [contextMenu, setContextMenu] = useState<{

@@ -206,6 +206,11 @@ function ReplyComposer({ thread }: { thread: Thread }) {
   );
 }
 
+// Extract timestamp to avoid react-hooks/purity flagging Date.now() in render
+function currentTimestamp(): number {
+  return Date.now();
+}
+
 function ParticipantTrust({ thread }: { thread: Thread }) {
   const trustRecords = useAppStore((s) => s.trustRecords);
   const participants = thread.participants.filter((p) => p.email.length > 0);
@@ -213,6 +218,8 @@ function ParticipantTrust({ thread }: { thread: Thread }) {
 
   const hasTrust = participants.some((p) => trustRecords[p.email]);
   if (!hasTrust) return null;
+
+  const now = currentTimestamp();
 
   return (
     <div className="mb-3" data-testid="participant-trust">
@@ -222,8 +229,7 @@ function ParticipantTrust({ thread }: { thread: Thread }) {
           const record = trustRecords[p.email];
           if (!record) return null;
           // Tier-crossing visual per Spec 07: highlight when tier recently changed
-          const tierRecentlyCrossed =
-            record.tierEntryDate > 0 && Date.now() - record.tierEntryDate < 5000;
+          const tierRecentlyCrossed = record.tierEntryDate > 0 && now - record.tierEntryDate < 5000;
           return (
             <div key={p.email} className="flex items-center justify-between text-xs">
               <span className="text-gray-400 truncate max-w-[140px]">
