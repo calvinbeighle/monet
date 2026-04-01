@@ -5,8 +5,8 @@
 import { useRef, useEffect, useCallback, useState } from "react";
 import { MapRenderer } from "./map-renderer";
 import { createZoneLayout, updateZoneSizes } from "./zone-layout";
-import { driftTick } from "./drift-engine";
-import { evaluateClusters } from "./clustering";
+import { driftTick, onManualReclassify } from "./drift-engine";
+import { evaluateClusters, excludeFromCluster } from "./clustering";
 import type { Cluster } from "../../lib/types/cluster";
 import {
   useThreadStore,
@@ -79,6 +79,13 @@ export function MapViewport() {
   const lastClickTimeRef = useRef(0);
   const lastClickIdRef = useRef<string | null>(null);
   const dragDistanceRef = useRef(0);
+  // Thread drag state per Spec 04 Section 9 - tracks when user is dragging a specific thread
+  const threadDragRef = useRef<{
+    threadId: string;
+    startX: number;
+    startY: number;
+    clusterId: string | null;
+  } | null>(null);
 
   const threads = useThreadStore((s) => s.threads);
   const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
@@ -97,6 +104,8 @@ export function MapViewport() {
 
   // Zone snapshot for render - updated from the ref by the drift tick
   const [zonesSnapshot, setZonesSnapshot] = useState(createZoneLayout);
+  // Track whether a thread drag is active for cursor styling
+  const [isThreadDragging, setIsThreadDragging] = useState(false);
 
   // Initialize PixiJS renderer
   useEffect(() => {
@@ -305,31 +314,211 @@ export function MapViewport() {
     isDraggingRef.current = true;
     dragDistanceRef.current = 0;
     lastMouseRef.current = { x: e.clientX, y: e.clientY };
-  }, []);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDraggingRef.current) return;
-    const dx = e.clientX - lastMouseRef.current.x;
-    const dy = e.clientY - lastMouseRef.current.y;
-    dragDistanceRef.current += Math.abs(dx) + Math.abs(dy);
-    lastMouseRef.current = { x: e.clientX, y: e.clientY };
-    rendererRef.current?.pan(-dx, -dy);
-
-    // Edge scrolling per Spec 08 (only during drag)
+    // Hit-test threads to start a thread drag per Spec 04 Section 9
+    const renderer = rendererRef.current;
     const container = containerRef.current;
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-    const localX = e.clientX - rect.left;
-    const localY = e.clientY - rect.top;
-    const edgeDir = computeEdgeScroll(localX, localY, rect.width, rect.height);
-    useNavigationStore.getState().setEdgeScrollDirection(edgeDir);
+    if (renderer && container) {
+      const rect = container.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const cam = renderer.getCameraState();
+      const mapPos = screenToMap(screenX, screenY, cam, rect.width, rect.height);
+      const threadArray = [...useThreadStore.getState().threads.values()];
+      const hitId = hitTestThread(threadArray, mapPos.x, mapPos.y);
+      if (hitId) {
+        // Find if thread belongs to a cluster
+        let clusterId: string | null = null;
+        for (const cluster of clustersRef.current) {
+          if (cluster.memberThreadIds.includes(hitId)) {
+            clusterId = cluster.id;
+            break;
+          }
+        }
+        threadDragRef.current = {
+          threadId: hitId,
+          startX: mapPos.x,
+          startY: mapPos.y,
+          clusterId,
+        };
+      }
+    }
   }, []);
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      // Agent drag target validation per Spec 06 Section 3
+      const deployDrag = useDeploymentStore.getState().dragState;
+      if (deployDrag) {
+        const renderer = rendererRef.current;
+        const container = containerRef.current;
+        if (renderer && container) {
+          const rect = container.getBoundingClientRect();
+          const screenX = e.clientX - rect.left;
+          const screenY = e.clientY - rect.top;
+          const cam = renderer.getCameraState();
+          const mapPos = screenToMap(screenX, screenY, cam, rect.width, rect.height);
+          const hitCluster = hitTestCluster(
+            clustersRef.current,
+            mapPos.x,
+            mapPos.y,
+            120 / cam.zoom,
+          );
+          const hoverClusterId = hitCluster?.id ?? null;
+          const zoneId = getZoneAtPosition(zonesRef.current, mapPos.x, mapPos.y);
+          const valid = hoverClusterId !== null;
+          useDeploymentStore.getState().setDragTarget(hoverClusterId, zoneId, valid);
+
+          // Compute cluster validation sets for renderer visual feedback
+          const validClusterIds = new Set<string>();
+          const invalidClusterIds = new Set<string>();
+          const alreadyDeployedClusterIds = new Set<string>();
+          const canDeploy = useAgentStore.getState().canDeployRole(deployDrag.draggingRole);
+          const deployments = useDeploymentStore.getState().deployments;
+
+          for (const cluster of clustersRef.current) {
+            const hasDeployment = deployments.some(
+              (d) =>
+                d.agentRole === deployDrag.draggingRole &&
+                d.clusterId === cluster.id &&
+                (d.status === "in-progress" || d.status === "traveling"),
+            );
+            if (hasDeployment) {
+              alreadyDeployedClusterIds.add(cluster.id);
+            } else if (canDeploy) {
+              validClusterIds.add(cluster.id);
+            } else {
+              invalidClusterIds.add(cluster.id);
+            }
+          }
+
+          renderer.setAgentDragState({
+            active: true,
+            validClusterIds,
+            invalidClusterIds,
+            alreadyDeployedClusterIds,
+            hoverClusterId,
+          });
+        }
+      }
+
+      if (!isDraggingRef.current) return;
+      const dx = e.clientX - lastMouseRef.current.x;
+      const dy = e.clientY - lastMouseRef.current.y;
+      dragDistanceRef.current += Math.abs(dx) + Math.abs(dy);
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+
+      // Thread drag mode per Spec 04 Section 9 - move thread position instead of panning
+      if (threadDragRef.current && dragDistanceRef.current > 5) {
+        if (!isThreadDragging) setIsThreadDragging(true);
+        const renderer = rendererRef.current;
+        const container = containerRef.current;
+        if (renderer && container) {
+          const rect = container.getBoundingClientRect();
+          const screenX = e.clientX - rect.left;
+          const screenY = e.clientY - rect.top;
+          const cam = renderer.getCameraState();
+          const mapPos = screenToMap(screenX, screenY, cam, rect.width, rect.height);
+          useThreadStore.getState().updateThread(threadDragRef.current.threadId, {
+            position: mapPos,
+          });
+        }
+        return; // Skip panning and edge scrolling during thread drag
+      }
+
+      rendererRef.current?.pan(-dx, -dy);
+
+      // Edge scrolling per Spec 08 (only during drag)
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const localX = e.clientX - rect.left;
+      const localY = e.clientY - rect.top;
+      const edgeDir = computeEdgeScroll(localX, localY, rect.width, rect.height);
+      useNavigationStore.getState().setEdgeScrollDirection(edgeDir);
+    },
+    [isThreadDragging],
+  );
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent) => {
       const wasDragging = dragDistanceRef.current > 5;
       isDraggingRef.current = false;
       useNavigationStore.getState().setEdgeScrollDirection(null);
+
+      // Clear agent drag visuals
+      rendererRef.current?.setAgentDragState({
+        active: false,
+        validClusterIds: new Set(),
+        invalidClusterIds: new Set(),
+        alreadyDeployedClusterIds: new Set(),
+        hoverClusterId: null,
+      });
+
+      // Handle thread drag-to-zone reclassification per Spec 04 Section 9
+      const threadDrag = threadDragRef.current;
+      threadDragRef.current = null;
+      if (isThreadDragging) setIsThreadDragging(false);
+      if (threadDrag && wasDragging) {
+        const renderer = rendererRef.current;
+        const container = containerRef.current;
+        if (renderer && container) {
+          const rect = container.getBoundingClientRect();
+          const screenX = e.clientX - rect.left;
+          const screenY = e.clientY - rect.top;
+          const cam = renderer.getCameraState();
+          const mapPos = screenToMap(screenX, screenY, cam, rect.width, rect.height);
+
+          const thread = useThreadStore.getState().threads.get(threadDrag.threadId);
+          if (thread) {
+            const targetZone = getZoneAtPosition(zonesRef.current, mapPos.x, mapPos.y);
+            const updated = onManualReclassify(thread, zonesRef.current, targetZone, mapPos);
+            useThreadStore.getState().updateThread(threadDrag.threadId, updated);
+
+            // Spec 11 Section 9: if thread was in a cluster, check if dropped outside it
+            if (threadDrag.clusterId) {
+              const cluster = clustersRef.current.find((c) => c.id === threadDrag.clusterId);
+              if (cluster) {
+                // Check if drop position is outside cluster boundary
+                const memberPositions = cluster.memberThreadIds
+                  .filter((tid) => tid !== threadDrag.threadId)
+                  .map((tid) => useThreadStore.getState().threads.get(tid))
+                  .filter(Boolean)
+                  .map((t) => t!.position);
+
+                if (memberPositions.length > 0) {
+                  const padding = 80; // generous boundary check
+                  const minX = Math.min(...memberPositions.map((p) => p.x)) - padding;
+                  const maxX = Math.max(...memberPositions.map((p) => p.x)) + padding;
+                  const minY = Math.min(...memberPositions.map((p) => p.y)) - padding;
+                  const maxY = Math.max(...memberPositions.map((p) => p.y)) + padding;
+
+                  if (mapPos.x < minX || mapPos.x > maxX || mapPos.y < minY || mapPos.y > maxY) {
+                    excludeFromCluster(threadDrag.threadId, threadDrag.clusterId);
+                  }
+                }
+              }
+            }
+
+            // Update thread counts immediately
+            const threadArray = [...useThreadStore.getState().threads.values()];
+            const counts: Record<ZoneId, number> = {
+              "active-front": 0,
+              opportunities: 0,
+              "at-risk": 0,
+              lost: 0,
+              noise: 0,
+              "base-handled": 0,
+            };
+            for (const t of threadArray) {
+              counts[t.zone]++;
+            }
+            updateZoneSizes(zonesRef.current, counts);
+            setZonesSnapshot(new Map(zonesRef.current));
+          }
+        }
+        return;
+      }
 
       // Handle agent drop per Spec 06 - if an agent is being dragged, validate and show confirmation
       const deployDrag = useDeploymentStore.getState().dragState;
@@ -493,7 +682,7 @@ export function MapViewport() {
         }
       }
     },
-    [selectThread],
+    [selectThread, isThreadDragging],
   );
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -724,7 +913,7 @@ export function MapViewport() {
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full cursor-grab active:cursor-grabbing outline-none"
+      className={`relative h-full w-full outline-none ${isThreadDragging ? "cursor-move" : "cursor-grab active:cursor-grabbing"}`}
       data-testid="map-viewport"
       tabIndex={0}
       onMouseDown={handleMouseDown}

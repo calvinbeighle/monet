@@ -456,6 +456,74 @@ describe("Connection line rendering", () => {
   });
 });
 
+describe("Agent drag state visuals (Spec 06 Section 3)", () => {
+  it("setAgentDragState updates internal state", () => {
+    const renderer = new MapRenderer();
+    const state = {
+      active: true,
+      validClusterIds: new Set(["c1", "c2"]),
+      invalidClusterIds: new Set(["c3"]),
+      alreadyDeployedClusterIds: new Set(["c4"]),
+      hoverClusterId: "c1",
+    };
+    renderer.setAgentDragState(state);
+    const result = renderer.getAgentDragState();
+    expect(result.active).toBe(true);
+    expect(result.validClusterIds.has("c1")).toBe(true);
+    expect(result.validClusterIds.has("c2")).toBe(true);
+    expect(result.invalidClusterIds.has("c3")).toBe(true);
+    expect(result.alreadyDeployedClusterIds.has("c4")).toBe(true);
+    expect(result.hoverClusterId).toBe("c1");
+  });
+
+  it("setAgentDragState can be cleared", () => {
+    const renderer = new MapRenderer();
+    renderer.setAgentDragState({
+      active: true,
+      validClusterIds: new Set(["c1"]),
+      invalidClusterIds: new Set(),
+      alreadyDeployedClusterIds: new Set(),
+      hoverClusterId: "c1",
+    });
+    renderer.setAgentDragState({
+      active: false,
+      validClusterIds: new Set(),
+      invalidClusterIds: new Set(),
+      alreadyDeployedClusterIds: new Set(),
+      hoverClusterId: null,
+    });
+    const result = renderer.getAgentDragState();
+    expect(result.active).toBe(false);
+    expect(result.validClusterIds.size).toBe(0);
+    expect(result.hoverClusterId).toBeNull();
+  });
+
+  it("renderClusters does not crash with agent drag state active (no init)", () => {
+    const renderer = new MapRenderer();
+    renderer.setAgentDragState({
+      active: true,
+      validClusterIds: new Set(["cluster-0"]),
+      invalidClusterIds: new Set(["cluster-1"]),
+      alreadyDeployedClusterIds: new Set(["cluster-2"]),
+      hoverClusterId: "cluster-0",
+    });
+    const threads = generateThreads(10);
+    const clusters = generateClusters(3, threads);
+    // Without layers, renderClusters returns early - no crash
+    expect(() => renderer.renderClusters(clusters, threads)).not.toThrow();
+  });
+
+  it("default agent drag state is inactive", () => {
+    const renderer = new MapRenderer();
+    const state = renderer.getAgentDragState();
+    expect(state.active).toBe(false);
+    expect(state.validClusterIds.size).toBe(0);
+    expect(state.invalidClusterIds.size).toBe(0);
+    expect(state.alreadyDeployedClusterIds.size).toBe(0);
+    expect(state.hoverClusterId).toBeNull();
+  });
+});
+
 // Helper: build a minimal Zone object for testing
 function makeZone(
   id: string,

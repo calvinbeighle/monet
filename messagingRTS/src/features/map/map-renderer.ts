@@ -52,6 +52,21 @@ export class MapRenderer {
   private searchHighlightIds: Set<string> = new Set();
   private searchActive = false;
 
+  // Agent drag visual state per Spec 06 Section 3
+  private agentDragState: {
+    active: boolean;
+    validClusterIds: Set<string>;
+    invalidClusterIds: Set<string>;
+    alreadyDeployedClusterIds: Set<string>;
+    hoverClusterId: string | null;
+  } = {
+    active: false,
+    validClusterIds: new Set(),
+    invalidClusterIds: new Set(),
+    alreadyDeployedClusterIds: new Set(),
+    hoverClusterId: null,
+  };
+
   // Object pools for recycled Graphics/Text
   private graphicsPool: Graphics[] = [];
   private textPool: Text[] = [];
@@ -515,6 +530,22 @@ export class MapRenderer {
         g.circle(cluster.centroid.x, cluster.centroid.y, r);
         g.stroke({ color: color as ColorSource, width: 2, alpha: 0.5 });
 
+        // Agent drag target validation visuals per Spec 06 Section 3
+        if (this.agentDragState.active) {
+          const isHovered = this.agentDragState.hoverClusterId === cluster.id;
+          if (this.agentDragState.alreadyDeployedClusterIds.has(cluster.id)) {
+            g.circle(cluster.centroid.x, cluster.centroid.y, r + 4);
+            g.stroke({ color: 0xddaa22 as ColorSource, width: 2, alpha: 0.6 });
+          } else if (this.agentDragState.validClusterIds.has(cluster.id)) {
+            const borderWidth = isHovered ? 4 : 3;
+            g.circle(cluster.centroid.x, cluster.centroid.y, r + 4);
+            g.stroke({ color: 0x44cc44 as ColorSource, width: borderWidth, alpha: 0.7 });
+          } else if (this.agentDragState.invalidClusterIds.has(cluster.id)) {
+            g.circle(cluster.centroid.x, cluster.centroid.y, r + 4);
+            g.stroke({ color: 0xcc4444 as ColorSource, width: 2, alpha: 0.4 });
+          }
+        }
+
         // Count label
         let label = this.clusterLabels.get(cluster.id);
         if (!label) {
@@ -560,6 +591,22 @@ export class MapRenderer {
           width: 1.5,
           alpha: CLUSTER_BOUNDARY_ALPHA,
         });
+
+        // Agent drag target validation visuals per Spec 06 Section 3
+        if (this.agentDragState.active) {
+          const isHovered = this.agentDragState.hoverClusterId === cluster.id;
+          if (this.agentDragState.alreadyDeployedClusterIds.has(cluster.id)) {
+            g.roundRect(minX - 2, minY - 2, w + 4, h + 4, cornerRadius);
+            g.stroke({ color: 0xddaa22 as ColorSource, width: 2, alpha: 0.6 });
+          } else if (this.agentDragState.validClusterIds.has(cluster.id)) {
+            const borderWidth = isHovered ? 4 : 3;
+            g.roundRect(minX - 2, minY - 2, w + 4, h + 4, cornerRadius);
+            g.stroke({ color: 0x44cc44 as ColorSource, width: borderWidth, alpha: 0.7 });
+          } else if (this.agentDragState.invalidClusterIds.has(cluster.id)) {
+            g.roundRect(minX - 2, minY - 2, w + 4, h + 4, cornerRadius);
+            g.stroke({ color: 0xcc4444 as ColorSource, width: 2, alpha: 0.4 });
+          }
+        }
 
         // Cluster label above boundary
         let label = this.clusterLabels.get(cluster.id);
@@ -748,6 +795,27 @@ export class MapRenderer {
   setSearchHighlight(ids: string[], active: boolean): void {
     this.searchHighlightIds = new Set(ids);
     this.searchActive = active;
+  }
+
+  // Set agent drag visual state per Spec 06 Section 3
+  setAgentDragState(state: {
+    active: boolean;
+    validClusterIds: Set<string>;
+    invalidClusterIds: Set<string>;
+    alreadyDeployedClusterIds: Set<string>;
+    hoverClusterId: string | null;
+  }): void {
+    this.agentDragState = state;
+  }
+
+  getAgentDragState(): {
+    active: boolean;
+    validClusterIds: Set<string>;
+    invalidClusterIds: Set<string>;
+    alreadyDeployedClusterIds: Set<string>;
+    hoverClusterId: string | null;
+  } {
+    return this.agentDragState;
   }
 
   getScreenWidth(): number {
