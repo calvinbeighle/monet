@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import { AgentManager } from "./agent-manager";
 import { getPredictions } from "./prediction-engine";
-import type { SessionHistory } from "./prediction-engine";
+import type { SessionHistory, AgentSuggestion } from "./prediction-engine";
 
 const app = express();
 app.use(cors());
@@ -10,12 +10,10 @@ app.use(express.json());
 
 const manager = new AgentManager();
 
-// Create 5 blank cards to start
-for (let i = 0; i < 5; i++) {
-  manager.createAgent();
-}
+// Pre-fetched prediction buffer - always kept stocked
+let predictionBuffer: AgentSuggestion[] = [];
+let fetchingPredictions = false;
 
-// Get in-app history from completed/active agents
 function getInAppHistory(): SessionHistory[] {
   return manager
     .getAll()
@@ -28,6 +26,43 @@ function getInAppHistory(): SessionHistory[] {
       rawOutput: c.rawOutput,
     }));
 }
+
+// Refill the prediction buffer in the background
+async function refillPredictions() {
+  if (fetchingPredictions) return;
+  fetchingPredictions = true;
+  try {
+    const history = getInAppHistory();
+    const predictions = await getPredictions(history);
+    predictionBuffer = predictions;
+    console.log(
+      `Prediction buffer refilled: ${predictions.length} suggestions`,
+    );
+  } catch (err) {
+    console.error("Prediction refill failed:", err);
+  } finally {
+    fetchingPredictions = false;
+  }
+}
+
+// Pop the next prediction from the buffer
+function nextPrediction(): AgentSuggestion | null {
+  if (predictionBuffer.length === 0) return null;
+  return predictionBuffer.shift()!;
+}
+
+// Create 5 blank cards to start
+for (let i = 0; i < 5; i++) {
+  manager.createAgent();
+}
+
+// Start pre-fetching predictions immediately in background
+refillPredictions();
+
+// Refill whenever an agent completes - the context has changed
+manager.on("agent-done", () => {
+  refillPredictions();
+});
 
 // SSE endpoint
 app.get("/api/events", (req, res) => {
@@ -73,22 +108,22 @@ app.post("/api/cards/:id/instruct", (req, res) => {
   }
 });
 
-// Add a new card - use prediction engine if there's session history
-app.post("/api/cards", async (_req, res) => {
-  const history = getInAppHistory();
-
-  // Only run predictions if user has done something or trace data exists
-  if (history.length > 0) {
-    try {
-      const predictions = await getPredictions(history);
-      if (predictions.length > 0) {
-        const card = manager.createAgentWithSuggestion(predictions[0]);
-        return res.json(card);
-      }
-    } catch {}
+// Add a new card - use pre-fetched prediction if available
+app.post("/api/cards", (_req, res) => {
+  const prediction = nextPrediction();
+  if (prediction) {
+    const card = manager.createAgentWithSuggestion(prediction);
+    // If buffer is running low, refill in background
+    if (predictionBuffer.length < 3) {
+      refillPredictions();
+    }
+    return res.json(card);
   }
-
   const card = manager.createAgent();
+  // Trigger a refill for future cards
+  if (predictionBuffer.length === 0) {
+    refillPredictions();
+  }
   res.json(card);
 });
 
