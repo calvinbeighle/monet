@@ -744,21 +744,27 @@ export function MapViewport() {
         return;
       }
 
-      // Escape - back navigation per Spec 08
+      // Escape - three-step back navigation per Spec 08 Section 14
+      // Step 1: If composer active, dismiss composer
+      // Step 2: If detail panel open, close detail panel and clear selection
+      // Step 3: Back navigation to previous camera state
       if (e.key === "Escape") {
         e.preventDefault();
         const navStore = useNavigationStore.getState();
         const currentSelection = useThreadStore.getState().selectedThreadId;
 
-        if (navStore.detailPanelOpen) {
-          // First escape: close detail panel, clear selection
+        if (navStore.composerActive) {
+          // Step 1: dismiss composer, keep detail panel open
+          navStore.setComposerActive(false);
+        } else if (navStore.detailPanelOpen) {
+          // Step 2: close detail panel, clear selection
           selectThread(null);
           navStore.closeDetailPanel();
         } else if (currentSelection) {
           // Clear selection
           selectThread(null);
         } else {
-          // Back navigation
+          // Step 3: back navigation
           const prev = navStore.restorePreviousCamera();
           if (prev) {
             renderer.animateTo(prev.x, prev.y, prev.zoom);
@@ -780,8 +786,11 @@ export function MapViewport() {
           if (nearest) {
             selectThread(nearest);
             useNavigationStore.getState().openDetailPanel();
-            // Pan to keep visible
+            // Trigger New->Active lifecycle transition on thread open per Spec 09
             const thread = useThreadStore.getState().threads.get(nearest);
+            if (thread && thread.lifecycleState === "new") {
+              useThreadStore.getState().transitionState(nearest, "active", "user-opened");
+            }
             if (thread) {
               renderer.animateTo(thread.position.x, thread.position.y, cam.zoom);
             }
@@ -792,8 +801,11 @@ export function MapViewport() {
         const nextId = findNextThreadInDirection(threadArray, currentId, e.key, cam.level);
         if (nextId) {
           selectThread(nextId);
-          // Pan to keep selected entity visible per Spec 08
+          // Trigger New->Active lifecycle transition on thread open per Spec 09
           const thread = useThreadStore.getState().threads.get(nextId);
+          if (thread && thread.lifecycleState === "new") {
+            useThreadStore.getState().transitionState(nextId, "active", "user-opened");
+          }
           if (thread) {
             renderer.animateTo(thread.position.x, thread.position.y, cam.zoom);
           }
@@ -1028,8 +1040,9 @@ export function MapViewport() {
 
   const handleSearchClose = useCallback(() => {
     useNavigationStore.getState().closeSearch();
-    // Return focus to map per Spec 12
+    // Return focus to map per Spec 12 - both DOM focus and focus zone state
     containerRef.current?.focus();
+    useAppStore.getState().setFocusZone("map");
   }, []);
 
   // -- Minimap navigation --

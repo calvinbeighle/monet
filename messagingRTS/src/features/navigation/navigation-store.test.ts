@@ -10,6 +10,7 @@ describe("NavigationStore", () => {
     useNavigationStore.setState({
       camera: { x: 0, y: 0, zoom: 0.5, level: "tactical" },
       detailPanelOpen: false,
+      composerActive: false,
       searchActive: false,
       searchQuery: "",
       searchResults: [],
@@ -193,6 +194,31 @@ describe("NavigationStore", () => {
 
       useNavigationStore.getState().setEdgeScrollDirection(null);
       expect(useNavigationStore.getState().edgeScrollDirection).toBeNull();
+    });
+  });
+
+  describe("Composer state per Spec 08 Section 14", () => {
+    it("starts with composer inactive", () => {
+      expect(useNavigationStore.getState().composerActive).toBe(false);
+    });
+
+    it("sets composer active", () => {
+      useNavigationStore.getState().setComposerActive(true);
+      expect(useNavigationStore.getState().composerActive).toBe(true);
+    });
+
+    it("clears composer active", () => {
+      useNavigationStore.getState().setComposerActive(true);
+      useNavigationStore.getState().setComposerActive(false);
+      expect(useNavigationStore.getState().composerActive).toBe(false);
+    });
+
+    it("closeDetailPanel also clears composer active", () => {
+      useNavigationStore.getState().openDetailPanel();
+      useNavigationStore.getState().setComposerActive(true);
+      useNavigationStore.getState().closeDetailPanel();
+      expect(useNavigationStore.getState().composerActive).toBe(false);
+      expect(useNavigationStore.getState().detailPanelOpen).toBe(false);
     });
   });
 });

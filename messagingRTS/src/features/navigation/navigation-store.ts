@@ -22,6 +22,9 @@ interface NavigationStore {
   // Selection per Spec 08 - detail panel open state
   detailPanelOpen: boolean;
 
+  // Composer state per Spec 08 Section 14 - three-step Escape sequence
+  composerActive: boolean;
+
   // Search per Spec 08
   searchActive: boolean;
   searchQuery: string;
@@ -42,6 +45,7 @@ interface NavigationStore {
 
   openDetailPanel: () => void;
   closeDetailPanel: () => void;
+  setComposerActive: (active: boolean) => void;
 
   openSearch: () => void;
   closeSearch: () => void;
@@ -58,6 +62,7 @@ export const useNavigationStore = create<NavigationStore>((set, get) => ({
   camera: { x: 0, y: 0, zoom: 0.5, level: "tactical" },
 
   detailPanelOpen: false,
+  composerActive: false,
 
   searchActive: false,
   searchQuery: "",
@@ -85,7 +90,8 @@ export const useNavigationStore = create<NavigationStore>((set, get) => ({
   },
 
   openDetailPanel: () => set({ detailPanelOpen: true }),
-  closeDetailPanel: () => set({ detailPanelOpen: false }),
+  closeDetailPanel: () => set({ detailPanelOpen: false, composerActive: false }),
+  setComposerActive: (active) => set({ composerActive: active }),
 
   openSearch: () =>
     set({ searchActive: true, searchQuery: "", searchResults: [], searchFocusIndex: -1 }),

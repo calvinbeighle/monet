@@ -6,6 +6,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useAppStore, useThreadStore } from "../lib/stores";
 import { useDraftStore } from "../lib/stores/draft-store";
+import { useNavigationStore } from "../features/navigation/navigation-store";
 import type { Thread, RiskTier, OpportunityState } from "../lib/types";
 import type { TrustTier } from "../lib/types/game-mechanics";
 import {
@@ -151,6 +152,8 @@ function ReplyComposer({ thread }: { thread: Thread }) {
         rows={3}
         value={body}
         onChange={handleBodyChange}
+        onFocus={() => useNavigationStore.getState().setComposerActive(true)}
+        onBlur={() => useNavigationStore.getState().setComposerActive(false)}
         disabled={sending}
         data-testid="reply-textarea"
       />
