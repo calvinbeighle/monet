@@ -65,7 +65,7 @@ export function NotificationArea() {
 
   return (
     <div
-      className="absolute bottom-2 left-2 z-20 flex max-h-52 w-64 flex-col-reverse gap-1 overflow-hidden"
+      className="absolute bottom-2 left-2 z-20 flex max-h-52 w-64 flex-col gap-1 overflow-hidden"
       data-testid="notification-area"
       aria-live="polite"
     >

@@ -281,14 +281,13 @@ export function evaluateClusters(
       const existingForTimestamp = reuseId
         ? existingClusters.find((c) => c.id === reuseId)
         : undefined;
-      // Per Spec 11: extent grows monotonically - restore high-water mark from existing cluster
-      const existingExtent = existingForTimestamp?.visualExtent ?? 0;
+      // Per Spec 11: extent contracts to current member count when members leave
       const cluster: Cluster = {
         id: clusterId,
         memberThreadIds: [pair.a, pair.b],
         centroid: computeCentroid(membersData),
         label: deriveLabel(membersData),
-        visualExtent: Math.max(2, existingExtent),
+        visualExtent: 2,
         formationTimestamp: existingForTimestamp?.formationTimestamp ?? now,
         lastMembershipChange: now,
       };
@@ -302,8 +301,8 @@ export function evaluateClusters(
       const membersData = clusterA.memberThreadIds.map((id) => threadMap.get(id)!).filter(Boolean);
       clusterA.centroid = computeCentroid(membersData);
       clusterA.label = deriveLabel(membersData);
-      // Per Spec 11: extent does not decrease unless member count decreases (high-water mark)
-      clusterA.visualExtent = Math.max(clusterA.visualExtent, clusterA.memberThreadIds.length);
+      // Per Spec 11: extent tracks current member count (contracts when members leave)
+      clusterA.visualExtent = clusterA.memberThreadIds.length;
       clusterA.lastMembershipChange = now;
     } else if (!clusterA && clusterB) {
       // Add A to B's cluster
@@ -312,8 +311,8 @@ export function evaluateClusters(
       const membersData = clusterB.memberThreadIds.map((id) => threadMap.get(id)!).filter(Boolean);
       clusterB.centroid = computeCentroid(membersData);
       clusterB.label = deriveLabel(membersData);
-      // Per Spec 11: extent does not decrease unless member count decreases (high-water mark)
-      clusterB.visualExtent = Math.max(clusterB.visualExtent, clusterB.memberThreadIds.length);
+      // Per Spec 11: extent tracks current member count (contracts when members leave)
+      clusterB.visualExtent = clusterB.memberThreadIds.length;
       clusterB.lastMembershipChange = now;
     }
     // Both assigned to different clusters - don't merge (one cluster per thread)

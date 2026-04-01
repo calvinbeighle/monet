@@ -342,8 +342,8 @@ describe("evaluateClusters", () => {
     expect(clusters[0].label).toContain("Alice");
   });
 
-  // Per Spec 11: when a cluster is rebuilt with an existing ID, its visualExtent preserves the high-water mark
-  it("preserves visualExtent high-water mark when cluster is rebuilt (Spec 11)", () => {
+  // Per Spec 11: visualExtent contracts to current member count when members leave
+  it("contracts visualExtent to current member count when cluster is rebuilt (Spec 11)", () => {
     const now = Date.now();
     const t1 = createThread("t1", "Project update", "s");
     t1.participants = [makeContact("alice@co.com"), makeContact("bob@co.com")];
@@ -355,19 +355,19 @@ describe("evaluateClusters", () => {
     t2.latestMessageTimestamp = now;
     t2.position = { x: 110, y: 100 };
 
-    // First evaluation: forms cluster
+    // First evaluation: forms cluster with 2 members
     const { clusters: pass1 } = evaluateClusters([t1, t2], [], now);
     expect(pass1.length).toBe(1);
+    expect(pass1[0].visualExtent).toBe(2);
 
-    // Artificially inflate the visualExtent (simulates animation growing the extent)
-    const inflatedExtent = 99;
-    pass1[0].visualExtent = inflatedExtent;
+    // Artificially inflate the visualExtent (simulates prior larger membership)
+    pass1[0].visualExtent = 99;
 
-    // Second evaluation with the inflated existing cluster
+    // Second evaluation with the inflated existing cluster - should contract to actual member count
     const { clusters: pass2 } = evaluateClusters([t1, t2], pass1, now);
     expect(pass2.length).toBe(1);
-    // The rebuilt cluster should preserve the high-water mark (Math.max(2, existingExtent))
-    expect(pass2[0].visualExtent).toBe(inflatedExtent);
+    // Per Spec 11: extent contracts to the value appropriate for remaining member count
+    expect(pass2[0].visualExtent).toBe(2);
   });
 
   it("cluster label does NOT use participant when they are absent from some members (Spec 11)", () => {

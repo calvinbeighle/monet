@@ -293,14 +293,12 @@ export function App() {
     setShowFilterPanel(false);
   };
 
-  // Initializing state
+  // Initializing state - per Spec 12: status bar always visible in all states
   if (shellState === "initializing") {
     return (
-      <div
-        className="flex h-full w-full items-center justify-center bg-[#0a0a12] text-gray-400"
-        data-testid="shell-initializing"
-      >
-        Initializing...
+      <div className="flex h-full w-full flex-col bg-[#0a0a12]" data-testid="shell-initializing">
+        <StatusBar />
+        <div className="flex flex-1 items-center justify-center text-gray-400">Initializing...</div>
       </div>
     );
   }

@@ -766,7 +766,10 @@ export function MapViewport() {
       }
 
       const threadArray = [...useThreadStore.getState().threads.values()];
-      const hitId = hitTestThread(threadArray, mapPos.x, mapPos.y);
+      // Per Spec 08: at strategic zoom, individual threads are not visible - skip thread hit-test
+      // Only cluster aggregate dots are clickable at strategic zoom
+      const hitId =
+        cam.level === "strategic" ? null : hitTestThread(threadArray, mapPos.x, mapPos.y);
 
       const now = Date.now();
       const isDoubleClick =
@@ -776,6 +779,10 @@ export function MapViewport() {
 
       if (isDoubleClick && hitId) {
         // Double-click: zoom to detail per Spec 08
+        // Per Spec 08: if already at detail level on the same entity, no additional zoom occurs
+        if (cam.level === "detail" && selectedThreadId === hitId) {
+          return;
+        }
         const thread = useThreadStore.getState().threads.get(hitId);
         if (thread) {
           useNavigationStore.getState().saveCameraHistory();
@@ -851,7 +858,7 @@ export function MapViewport() {
         }
       }
     },
-    [selectThread, isThreadDragging],
+    [selectThread, isThreadDragging, selectedThreadId],
   );
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -951,11 +958,11 @@ export function MapViewport() {
           // Step 1: dismiss composer, keep detail panel open
           navStore.setComposerActive(false);
         } else if (navStore.detailPanelOpen) {
-          // Step 2: close detail panel, clear selection
-          selectThread(null);
+          // Step 2: close detail panel only, keep selection per Spec 08 state machine
+          // Detail Panel Open -> Entity Selected (Escape closes panel, not selection)
           navStore.closeDetailPanel();
         } else if (currentSelection) {
-          // Clear selection
+          // Step 3: Entity Selected -> None: clear selection
           selectThread(null);
         } else {
           // Step 3: back navigation
@@ -1002,8 +1009,21 @@ export function MapViewport() {
           if (thread && thread.lifecycleState === "new") {
             useThreadStore.getState().transitionState(nextId, "active", "user-opened");
           }
+          // Per Spec 08: only pan camera to keep selected entity visible, not always center
           if (thread) {
-            renderer.animateTo(thread.position.x, thread.position.y, cam.zoom);
+            const sw = renderer.getScreenWidth();
+            const sh = renderer.getScreenHeight();
+            const margin = 60; // px margin from viewport edge before panning
+            const screenX = (thread.position.x - cam.x) * cam.zoom + sw / 2;
+            const screenY = (thread.position.y - cam.y) * cam.zoom + sh / 2;
+            if (
+              screenX < margin ||
+              screenX > sw - margin ||
+              screenY < margin ||
+              screenY > sh - margin
+            ) {
+              renderer.animateTo(thread.position.x, thread.position.y, cam.zoom);
+            }
           }
         }
         return;
