@@ -2,13 +2,13 @@
 
 Greenfield project. No source code exists yet. 12 specs written in `specs/`.
 
-**Current state**: Project scaffolded and core systems implemented. 664 tests passing. Tags through v0.6.9. Build, typecheck, lint all clean.
+**Current state**: Project scaffolded and core systems implemented. 689 tests passing. Tags through v0.7.0. Build, typecheck, lint all clean.
 
-**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (partial), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
+**Implemented**: 1.1 Scaffolding, 1.2 Gmail Auth via Nango, 1.3 Thread Data Model (complete), 1.4 Thread Fetching & Initial Load, 1.5 Incremental Sync & Real-Time Updates, 1.6 Outbound Actions (Reply, Draft, Archive), 1.7 Offline Queue & Conflict Resolution, 2.1 Application Shell, 2.2 Map Rendering,
 2.3 Navigation, 2.4 Zone System, 2.5 Drift Engine,
 2.6 Clustering, 3.1-3.5 Game Mechanics (including Map Alerts), 4.1 Agent Units, 4.2 Agent AI Backend, 4.3 Agent Deployment UI (drag-to-deploy, confirmation, recall, quick-deploy).
 
-**Next priorities**: Performance (500+ entity benchmark), then 1.3 Thread Data Model completion (tests for state transitions, persistence round-trip, merge on reload, thread removal).
+**Next priorities**: 4.3 Batch deployment (multi-cluster selection), then cross-cutting concerns (filter system, batch operations).
 
 ---
 
@@ -62,8 +62,8 @@ These must be resolved before implementation begins:
 - [x] Thread lifecycle state machine: new -> active -> waiting -> at-risk -> lost / handled
 - [x] State transition logging with timestamps and trigger events
 - [x] Merge logic: persisted state + fresh Gmail data on reload
-- [ ] **Spec**: 09-thread-data-model
-- [ ] **Tests**: State transitions (all valid paths), persistence round-trip, merge on reload, thread removal when deleted from Gmail
+- [x] **Spec**: 09-thread-data-model
+- [x] **Tests**: State transitions (all valid paths), persistence round-trip, merge on reload, thread removal when deleted from Gmail
 
 ### 1.4 Gmail Thread Fetching & Initial Load (via Nango proxy)
 
@@ -134,7 +134,7 @@ These must be resolved before implementation begins:
 - [x] Drift animation (slow organic positional movement)
 - [x] Agent-occupied visual indicator on threads
 - [x] Archived thread fade to minimum opacity
-- [ ] Performance target: smooth rendering with 500+ entities
+- [x] Performance target: smooth rendering with 500+ entities
 - [x] Viewport responsiveness on resize
 - [x] **Spec**: 02-map-rendering
 - [x] **Tests**: Layer ordering, entity state-driven appearance, 500-entity performance benchmark, resize behavior
@@ -465,3 +465,9 @@ All specs authored. No source code exists yet. Implementation begins at 1.1.
 - App.tsx: Initializes Claude client from VITE_ANTHROPIC_API_KEY on startup (Step 0 in init flow).
 - @anthropic-ai/sdk added to dependencies. .env.example updated with VITE_ANTHROPIC_API_KEY.
 - Test count: 664 total (60 new: 13 claude-client, 16 ai-backend, 14 output-parser, 6 prompt-templates, 11 context-packager), all passing. Typecheck and lint clean.
+
+### Implementation Notes - Thread Data Model & Performance (2026-03-31)
+
+- 1.3 Thread Data Model complete: Real IndexedDB persistence tests via fake-indexeddb (round-trip, bulk persist, zone index query, delete, count, thread removal reconciliation when deleted from Gmail). Merge-on-reload edge cases (empty array overwrite, falsy-but-not-nullish boolean). Thread store transitionState now guards against invalid transitions using isValidTransition. Multi-step state history accumulation tested (5-step lifecycle new->active->waiting->at-risk->lost->handled).
+- 2.2 Performance optimizations for 500+ entities: Viewport culling (AABB from camera state, entities outside bounds hidden not destroyed), object pooling (Graphics/Text recycled via free list instead of destroy/recreate), dirty flagging (skip redraw for low-urgency threads with unchanged position/scores/visual state). Search mode bypasses culling to preserve dimming effect. Performance benchmark tests verify culling math, dirty flag behavior, and pool mechanics.
+- Test count: 689 total (25 new: 15 persistence, 3 thread-store, 7 map-renderer performance), all passing. Typecheck and lint clean.

@@ -96,6 +96,56 @@ describe("ThreadStore", () => {
     expect(useThreadStore.getState().selectedThreadIds.size).toBe(0);
   });
 
+  it("rejects invalid state transition (handled -> active)", () => {
+    const thread = createThread("t1", "Subject", "snippet");
+    thread.lifecycleState = "handled";
+    thread.stateHistory = [
+      { from: "new", to: "active", timestamp: 1000, trigger: "user-opened" },
+      { from: "active", to: "handled", timestamp: 2000, trigger: "handled-action" },
+    ];
+    useThreadStore.getState().setThread(thread);
+
+    useThreadStore.getState().transitionState("t1", "active", "invalid-attempt");
+
+    const result = useThreadStore.getState().getThread("t1")!;
+    expect(result.lifecycleState).toBe("handled");
+    expect(result.stateHistory).toHaveLength(2); // no new entry added
+  });
+
+  it("accumulates multi-step history (new -> active -> waiting -> at-risk -> lost -> handled)", () => {
+    const thread = createThread("t1", "Subject", "snippet");
+    useThreadStore.getState().setThread(thread);
+
+    useThreadStore.getState().transitionState("t1", "active", "user-opened");
+    useThreadStore.getState().transitionState("t1", "waiting", "user-replied");
+    useThreadStore.getState().transitionState("t1", "at-risk", "time-threshold-waiting");
+    useThreadStore.getState().transitionState("t1", "lost", "time-threshold-lost");
+    useThreadStore.getState().transitionState("t1", "handled", "handled-action");
+
+    const result = useThreadStore.getState().getThread("t1")!;
+    expect(result.lifecycleState).toBe("handled");
+    expect(result.stateHistory).toHaveLength(5);
+
+    expect(result.stateHistory[0]).toMatchObject({ from: "new", to: "active" });
+    expect(result.stateHistory[1]).toMatchObject({ from: "active", to: "waiting" });
+    expect(result.stateHistory[2]).toMatchObject({ from: "waiting", to: "at-risk" });
+    expect(result.stateHistory[3]).toMatchObject({ from: "at-risk", to: "lost" });
+    expect(result.stateHistory[4]).toMatchObject({ from: "lost", to: "handled" });
+  });
+
+  it("updateThread on missing ID is a no-op", () => {
+    const thread = createThread("t1", "Subject", "snippet");
+    useThreadStore.getState().setThread(thread);
+
+    const stateBefore = useThreadStore.getState().threads;
+    useThreadStore.getState().updateThread("nonexistent", { urgencyScore: 0.99 });
+    const stateAfter = useThreadStore.getState().threads;
+
+    // State reference should be the same (no-op returns state unchanged)
+    expect(stateAfter).toBe(stateBefore);
+    expect(useThreadStore.getState().getThread("nonexistent")).toBeUndefined();
+  });
+
   it("filters threads by zone", () => {
     const t1 = createThread("t1", "S1", "s1");
     const t2 = { ...createThread("t2", "S2", "s2"), zone: "lost" as const };

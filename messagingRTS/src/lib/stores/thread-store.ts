@@ -3,6 +3,7 @@
 
 import { create } from "zustand";
 import type { Thread, ThreadLifecycleState, ZoneId } from "../types";
+import { isValidTransition } from "../utils/thread-lifecycle";
 
 interface ThreadStore {
   threads: Map<string, Thread>;
@@ -81,6 +82,7 @@ export const useThreadStore = create<ThreadStore>((set, get) => ({
     set((state) => {
       const thread = state.threads.get(id);
       if (!thread) return state;
+      if (!isValidTransition(thread.lifecycleState, to)) return state;
       const transition = {
         from: thread.lifecycleState,
         to,

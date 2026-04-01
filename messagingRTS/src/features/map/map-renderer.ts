@@ -51,6 +51,16 @@ export class MapRenderer {
   private searchHighlightIds: Set<string> = new Set();
   private searchActive = false;
 
+  // Object pools for recycled Graphics/Text
+  private graphicsPool: Graphics[] = [];
+  private textPool: Text[] = [];
+
+  // Dirty flagging - cache of last-rendered state per thread
+  private threadRenderCache: Map<
+    string,
+    { x: number; y: number; urgency: number; value: number; visualState: string; selected: boolean }
+  > = new Map();
+
   // Animation state
   private pulseTime = 0;
   private zoomAnimationTarget: { x: number; y: number; zoom: number } | null = null;
@@ -104,6 +114,9 @@ export class MapRenderer {
     this.threadLabels.clear();
     this.clusterGraphics.clear();
     this.clusterLabels.clear();
+    this.graphicsPool.length = 0;
+    this.textPool.length = 0;
+    this.threadRenderCache.clear();
   }
 
   // Camera control
@@ -201,28 +214,63 @@ export class MapRenderer {
 
     const activeIds = new Set(threads.map((t) => t.id));
 
-    // Remove graphics for threads that no longer exist
+    // Remove graphics for threads that no longer exist (pool instead of destroy)
     for (const [id, g] of this.threadGraphics) {
       if (!activeIds.has(id)) {
-        g.destroy();
-        this.threadGraphics.delete(id);
+        this.releaseGraphics(g, this.threadGraphics, id);
         const label = this.threadLabels.get(id);
         if (label) {
-          label.destroy();
-          this.threadLabels.delete(id);
+          this.releaseText(label, this.threadLabels, id);
         }
+        this.threadRenderCache.delete(id);
       }
     }
 
     const zoomLevel = this.getZoomLevel();
+    const bounds = this.getVisibleBounds();
 
     for (const thread of threads) {
+      // Viewport culling - skip entities outside visible area
+      // When search is active, keep all threads visible for dimming effect
+      if (!this.searchActive && !this.isInBounds(thread.position.x, thread.position.y, bounds)) {
+        const existingG = this.threadGraphics.get(thread.id);
+        if (existingG) existingG.visible = false;
+        const existingL = this.threadLabels.get(thread.id);
+        if (existingL) existingL.visible = false;
+        continue;
+      }
+
       let g = this.threadGraphics.get(thread.id);
       if (!g) {
-        g = new Graphics();
-        this.layers.foreground.addChild(g);
+        g = this.acquireGraphics(this.layers.foreground);
         this.threadGraphics.set(thread.id, g);
       }
+
+      // Dirty flagging - skip full redraw if render-relevant properties unchanged
+      // Only skip for low-urgency threads (high-urgency ones need pulse animation updates)
+      const cacheKey = {
+        x: thread.position.x,
+        y: thread.position.y,
+        urgency: thread.urgencyScore,
+        value: thread.valueScore,
+        visualState: thread.visualState,
+        selected: thread.id === this.selectedThreadId,
+      };
+      const cached = this.threadRenderCache.get(thread.id);
+      if (
+        thread.urgencyScore <= 0.5 &&
+        cached &&
+        cached.x === cacheKey.x &&
+        cached.y === cacheKey.y &&
+        cached.urgency === cacheKey.urgency &&
+        cached.value === cacheKey.value &&
+        cached.visualState === cacheKey.visualState &&
+        cached.selected === cacheKey.selected
+      ) {
+        g.visible = true;
+        continue;
+      }
+      this.threadRenderCache.set(thread.id, cacheKey);
 
       g.clear();
 
@@ -288,17 +336,7 @@ export class MapRenderer {
       if (zoomLevel === "operational" || zoomLevel === "detail") {
         let label = this.threadLabels.get(thread.id);
         if (!label) {
-          label = new Text({
-            text: "",
-            style: new TextStyle({
-              fontFamily: "Inter, system-ui, sans-serif",
-              fontSize: 11,
-              fill: 0xcccccc,
-              wordWrap: true,
-              wordWrapWidth: 120,
-            }),
-          });
-          this.layers.foreground.addChild(label);
+          label = this.acquireText(this.layers.foreground);
           this.threadLabels.set(thread.id, label);
         }
 
@@ -322,20 +360,19 @@ export class MapRenderer {
 
     const activeClusterIds = new Set(clusters.map((c) => c.id));
 
-    // Remove graphics for clusters that no longer exist
+    // Remove graphics for clusters that no longer exist (pool instead of destroy)
     for (const [id, g] of this.clusterGraphics) {
       if (!activeClusterIds.has(id)) {
-        g.destroy();
-        this.clusterGraphics.delete(id);
+        this.releaseGraphics(g, this.clusterGraphics, id);
         const label = this.clusterLabels.get(id);
         if (label) {
-          label.destroy();
-          this.clusterLabels.delete(id);
+          this.releaseText(label, this.clusterLabels, id);
         }
       }
     }
 
     const zoomLevel = this.getZoomLevel();
+    const bounds = this.getVisibleBounds();
     const threadMap = new Map(threads.map((t) => [t.id, t]));
 
     for (const cluster of clusters) {
@@ -351,10 +388,18 @@ export class MapRenderer {
       }
       if (memberPositions.length < 2) continue;
 
+      // Viewport culling for clusters
+      if (!this.isInBounds(cluster.centroid.x, cluster.centroid.y, bounds)) {
+        const existingG = this.clusterGraphics.get(cluster.id);
+        if (existingG) existingG.visible = false;
+        const existingL = this.clusterLabels.get(cluster.id);
+        if (existingL) existingL.visible = false;
+        continue;
+      }
+
       let g = this.clusterGraphics.get(cluster.id);
       if (!g) {
-        g = new Graphics();
-        this.layers.mid.addChild(g);
+        g = this.acquireGraphics(this.layers.mid);
         this.clusterGraphics.set(cluster.id, g);
       }
       g.clear();
@@ -377,16 +422,10 @@ export class MapRenderer {
         // Count label
         let label = this.clusterLabels.get(cluster.id);
         if (!label) {
-          label = new Text({
-            text: "",
-            style: new TextStyle({
-              fontFamily: "Inter, system-ui, sans-serif",
-              fontSize: 13,
-              fill: 0xffffff,
-              align: "center",
-            }),
-          });
-          this.layers.mid.addChild(label);
+          label = this.acquireText(this.layers.mid);
+          label.style.fontSize = 13;
+          label.style.fill = 0xffffff;
+          label.style.align = "center";
           this.clusterLabels.set(cluster.id, label);
         }
         label.text = `${cluster.memberThreadIds.length}`;
@@ -429,16 +468,10 @@ export class MapRenderer {
         // Cluster label above boundary
         let label = this.clusterLabels.get(cluster.id);
         if (!label) {
-          label = new Text({
-            text: "",
-            style: new TextStyle({
-              fontFamily: "Inter, system-ui, sans-serif",
-              fontSize: 11,
-              fill: 0xaaaacc,
-              align: "center",
-            }),
-          });
-          this.layers.mid.addChild(label);
+          label = this.acquireText(this.layers.mid);
+          label.style.fontSize = 11;
+          label.style.fill = 0xaaaacc;
+          label.style.align = "center";
           this.clusterLabels.set(cluster.id, label);
         }
         label.text = cluster.label;
@@ -461,6 +494,77 @@ export class MapRenderer {
         tg.visible = true;
       }
     }
+  }
+
+  // Viewport culling - compute visible world-space AABB
+  private getVisibleBounds(): { minX: number; minY: number; maxX: number; maxY: number } {
+    const sw = this.app?.screen.width ?? 1920;
+    const sh = this.app?.screen.height ?? 1080;
+    const margin = 100; // extra margin to avoid pop-in
+    return {
+      minX: this.cameraX - (sw / 2 + margin) / this.cameraZoom,
+      minY: this.cameraY - (sh / 2 + margin) / this.cameraZoom,
+      maxX: this.cameraX + (sw / 2 + margin) / this.cameraZoom,
+      maxY: this.cameraY + (sh / 2 + margin) / this.cameraZoom,
+    };
+  }
+
+  private isInBounds(
+    x: number,
+    y: number,
+    bounds: ReturnType<typeof this.getVisibleBounds>,
+  ): boolean {
+    return x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY;
+  }
+
+  // Object pool helpers
+  private acquireGraphics(parent: Container): Graphics {
+    const g = this.graphicsPool.pop();
+    if (g) {
+      g.clear();
+      g.visible = true;
+      parent.addChild(g);
+      return g;
+    }
+    const ng = new Graphics();
+    parent.addChild(ng);
+    return ng;
+  }
+
+  private releaseGraphics(g: Graphics, map: Map<string, Graphics>, id: string): void {
+    g.clear();
+    g.visible = false;
+    g.removeFromParent();
+    map.delete(id);
+    this.graphicsPool.push(g);
+  }
+
+  private acquireText(parent: Container): Text {
+    const t = this.textPool.pop();
+    if (t) {
+      t.visible = true;
+      parent.addChild(t);
+      return t;
+    }
+    const nt = new Text({
+      text: "",
+      style: new TextStyle({
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontSize: 11,
+        fill: 0xcccccc,
+        wordWrap: true,
+        wordWrapWidth: 120,
+      }),
+    });
+    parent.addChild(nt);
+    return nt;
+  }
+
+  private releaseText(t: Text, map: Map<string, Text>, id: string): void {
+    t.visible = false;
+    t.removeFromParent();
+    map.delete(id);
+    this.textPool.push(t);
   }
 
   private getUrgencyColor(urgency: number): number {
