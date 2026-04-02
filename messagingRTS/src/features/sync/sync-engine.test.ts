@@ -2,7 +2,7 @@
 // Covers: initial load orchestration, incremental sync, history expiry backfill,
 // connectivity transitions, action queue replay, polling lifecycle
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from "vitest";
 import {
   startInitialLoad,
   performIncrementalSync,
@@ -713,6 +713,53 @@ describe("SyncEngine", () => {
       // Thread should NOT be overwritten (user's optimistic state preserved)
       const updated = useThreadStore.getState().getThread("t1");
       expect(updated?.visualState).toBe("archived");
+    });
+
+    it("conflict log includes action types", async () => {
+      const now = Date.now();
+      const mockFetchHistory = vi.fn().mockResolvedValue({
+        history: [
+          {
+            id: "200",
+            messagesAdded: [{ message: { id: "msg-new", threadId: "t1", labelIds: ["INBOX"] } }],
+          },
+        ],
+        historyId: "200",
+      } as GmailHistoryResponse);
+      const mockFetchDetail = vi.fn().mockResolvedValue(makeThreadDetail("t1", "200"));
+
+      _setEngineFetchFns({
+        fetchHistoryChanges: mockFetchHistory,
+        fetchThreadDetail: mockFetchDetail,
+      });
+
+      const { createThread } = await import("../../lib/types");
+      const thread = createThread("t1", "Subject", "snippet");
+      useThreadStore.getState().setThread(thread);
+
+      useSyncStore.setState({
+        lastHistoryId: "100",
+        connectivityStatus: "connected",
+        syncMode: "incremental",
+      });
+
+      // Enqueue an action that will be older than the inbound change - server wins
+      useSyncStore.getState().enqueueAction({
+        type: "archive",
+        threadId: "t1",
+        payload: null,
+        userInitiatedTimestamp: now - 10000,
+      });
+
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      await performIncrementalSync();
+
+      // At least one log call should mention the action type
+      const logCalls = consoleSpy.mock.calls.map((args) => args.join(" "));
+      consoleSpy.mockRestore();
+      const conflictLog = logCalls.find((msg) => msg.includes("Conflict"));
+      expect(conflictLog).toBeDefined();
+      expect(conflictLog).toContain("archive");
     });
   });
 

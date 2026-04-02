@@ -74,6 +74,9 @@ export class MapRenderer {
   // In-progress deployment cluster IDs per Spec 06 Section 4
   private inProgressClusterIds: Set<string> = new Set();
 
+  // Escalated cluster IDs per Spec 05: clusters flagged by Escalation Bot
+  private escalatedClusterIds: Set<string> = new Set();
+
   // Travel arc animations per Spec 06
   private travelAnimations: Array<{
     agentColor: number;
@@ -718,6 +721,13 @@ export class MapRenderer {
           g.stroke({ color: 0xffd700 as ColorSource, width: 3, alpha: pulseAlpha });
         }
 
+        // Escalation visual per Spec 05: red elevated border for escalated clusters
+        if (this.escalatedClusterIds.has(cluster.id)) {
+          const pulseAlpha = (0.5 + 0.4 * Math.sin(this.pulseTime * 2.5)) * aggAlpha;
+          g.circle(cluster.centroid.x, cluster.centroid.y, r + 12);
+          g.stroke({ color: 0xff2222 as ColorSource, width: 4, alpha: pulseAlpha });
+        }
+
         // Count label
         let label = this.clusterLabels.get(cluster.id);
         if (!label) {
@@ -796,6 +806,13 @@ export class MapRenderer {
           const pulseAlpha = (0.3 + 0.3 * Math.sin(this.pulseTime * 3.0)) * indAlpha;
           g.roundRect(minX - 4, minY - 4, w + 8, h + 8, cornerRadius);
           g.stroke({ color: 0xffd700 as ColorSource, width: 3, alpha: pulseAlpha });
+        }
+
+        // Escalation visual per Spec 05: red elevated border for escalated clusters
+        if (this.escalatedClusterIds.has(cluster.id)) {
+          const pulseAlpha = (0.5 + 0.4 * Math.sin(this.pulseTime * 2.5)) * indAlpha;
+          g.roundRect(minX - 8, minY - 8, w + 16, h + 16, cornerRadius);
+          g.stroke({ color: 0xff2222 as ColorSource, width: 4, alpha: pulseAlpha });
         }
 
         // Cluster label above boundary
@@ -1088,6 +1105,15 @@ export class MapRenderer {
 
   getInProgressClusterIds(): Set<string> {
     return this.inProgressClusterIds;
+  }
+
+  // Set escalated cluster IDs per Spec 05
+  setEscalatedClusterIds(ids: Set<string>): void {
+    this.escalatedClusterIds = ids;
+  }
+
+  getEscalatedClusterIds(): Set<string> {
+    return this.escalatedClusterIds;
   }
 
   // Travel arc animations per Spec 06

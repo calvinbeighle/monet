@@ -18,8 +18,9 @@ import {
   clearAllBatchQueues,
   hasQueuedThreads,
   dequeueNextBatch,
+  evaluateOpportunityFlags,
 } from "./agent-manager";
-import { AGENT_DEFINITIONS } from "../../lib/types";
+import { AGENT_DEFINITIONS, createThread } from "../../lib/types";
 
 beforeEach(() => {
   resetCounters();
@@ -335,6 +336,58 @@ describe("Agent manager", () => {
       let agent = createAgentInstance("closer");
       agent = deployAgent(agent, "c1", ["t1"]);
       expect(canDeploy(agent)).toBe(false);
+    });
+  });
+
+  describe("evaluateOpportunityFlags", () => {
+    it("flags threads from researcher context summaries", () => {
+      let agent = createAgentInstance("researcher");
+      agent = deployAgent(agent, "c1", ["t1"]);
+      agent = startWorking(agent);
+      agent = completeAgent(agent, [
+        { threadId: "t1", outputType: "thread-context-summary", content: "Context for t1" },
+      ]);
+
+      const thread = createThread("t1", "Subject", "snippet");
+      const threads = new Map([["t1", thread]]);
+
+      const flagged = evaluateOpportunityFlags(agent, threads);
+
+      expect(flagged.length).toBe(1);
+      expect(flagged[0].opportunityState).toBe("ripe");
+    });
+
+    it("does not flag already-flagged threads", () => {
+      let agent = createAgentInstance("researcher");
+      agent = deployAgent(agent, "c1", ["t1"]);
+      agent = startWorking(agent);
+      agent = completeAgent(agent, [
+        { threadId: "t1", outputType: "thread-context-summary", content: "Context for t1" },
+      ]);
+
+      const thread = createThread("t1", "Subject", "snippet");
+      thread.opportunityState = "ripe"; // already flagged
+      const threads = new Map([["t1", thread]]);
+
+      const flagged = evaluateOpportunityFlags(agent, threads);
+
+      expect(flagged.length).toBe(0);
+    });
+
+    it("returns empty for non-applicable agent roles", () => {
+      let agent = createAgentInstance("scheduler");
+      agent = deployAgent(agent, "c1", ["t1"]);
+      agent = startWorking(agent);
+      agent = completeAgent(agent, [
+        { threadId: "t1", outputType: "reply-draft", content: "Scheduled meeting" },
+      ]);
+
+      const thread = createThread("t1", "Subject", "snippet");
+      const threads = new Map([["t1", thread]]);
+
+      const flagged = evaluateOpportunityFlags(agent, threads);
+
+      expect(flagged.length).toBe(0);
     });
   });
 });

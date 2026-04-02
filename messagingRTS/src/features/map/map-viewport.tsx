@@ -107,6 +107,8 @@ export function MapViewport() {
   const viewportWidth = useAppStore((s) => s.viewportWidth);
   const viewportHeight = useAppStore((s) => s.viewportHeight);
 
+  const escalatedClusterIds = useDeploymentStore((s) => s.escalatedClusterIds);
+
   // Zone snapshot for render - updated from the ref by the drift tick
   const [zonesSnapshot, setZonesSnapshot] = useState(createZoneLayout);
   // Cluster snapshot for minimap - updated from the ref by the drift tick
@@ -389,6 +391,13 @@ export function MapViewport() {
     if (!renderer) return;
     renderer.setSearchHighlight(searchResults, searchActive);
   }, [searchResults, searchActive]);
+
+  // Sync escalated cluster IDs to renderer per Spec 05
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    renderer.setEscalatedClusterIds(escalatedClusterIds);
+  }, [escalatedClusterIds]);
 
   // Pan camera to focused search result per Spec 08
   useEffect(() => {
@@ -788,6 +797,7 @@ export function MapViewport() {
           useNavigationStore.getState().saveCameraHistory();
           selectThread(hitId);
           useNavigationStore.getState().openDetailPanel();
+          useAppStore.getState().setSelectedThread(hitId);
           renderer.animateTo(thread.position.x, thread.position.y, getCanonicalZoom("detail"));
         }
         return;
@@ -828,6 +838,7 @@ export function MapViewport() {
           }
           selectThread(hitId);
           useNavigationStore.getState().openDetailPanel();
+          useAppStore.getState().setSelectedThread(hitId);
           // Trigger New->Active lifecycle transition on thread open per Spec 09
           const thread = useThreadStore.getState().threads.get(hitId);
           if (thread && thread.lifecycleState === "new") {
@@ -852,6 +863,7 @@ export function MapViewport() {
         // Click empty space -> clear selection per Spec 08
         selectThread(null);
         useNavigationStore.getState().closeDetailPanel();
+        useAppStore.getState().setSelectedThread(null);
         // Also clear batch selection
         if (useThreadStore.getState().selectedThreadIds.size > 0) {
           useThreadStore.getState().clearBatchSelection();
@@ -964,6 +976,7 @@ export function MapViewport() {
         } else if (currentSelection) {
           // Step 3: Entity Selected -> None: clear selection
           selectThread(null);
+          useAppStore.getState().setSelectedThread(null);
         } else {
           // Step 3: back navigation
           const prev = navStore.restorePreviousCamera();
@@ -989,6 +1002,7 @@ export function MapViewport() {
           if (nearest) {
             selectThread(nearest);
             useNavigationStore.getState().openDetailPanel();
+            useAppStore.getState().setSelectedThread(nearest);
             // Trigger New->Active lifecycle transition on thread open per Spec 09
             const thread = useThreadStore.getState().threads.get(nearest);
             if (thread && thread.lifecycleState === "new") {
@@ -1004,6 +1018,7 @@ export function MapViewport() {
         const nextId = findNextThreadInDirection(threadArray, currentId, e.key, cam.level);
         if (nextId) {
           selectThread(nextId);
+          useAppStore.getState().setSelectedThread(nextId);
           // Trigger New->Active lifecycle transition on thread open per Spec 09
           const thread = useThreadStore.getState().threads.get(nextId);
           if (thread && thread.lifecycleState === "new") {
@@ -1075,6 +1090,7 @@ export function MapViewport() {
         if (thread) {
           useNavigationStore.getState().saveCameraHistory();
           useNavigationStore.getState().openDetailPanel();
+          useAppStore.getState().setSelectedThread(selectedThreadId);
           renderer.animateTo(thread.position.x, thread.position.y, getCanonicalZoom("detail"));
         }
         return;

@@ -92,6 +92,8 @@ interface DeploymentStore {
   travelAnimations: TravelAnimation[];
   // Snap-back animation per Spec 06 Sections 4-5
   snapBackAnimation: SnapBackAnimation | null;
+  // Escalated cluster IDs per Spec 05: clusters flagged by Escalation Bot
+  escalatedClusterIds: Set<string>;
 
   // Drag actions
   startDrag: (role: AgentRole, screenX: number, screenY: number) => void;
@@ -127,6 +129,10 @@ interface DeploymentStore {
   removeTravelAnimation: (deploymentId: string) => void;
   getActiveTravelAnimations: () => TravelAnimation[];
 
+  // Escalation visual state per Spec 05
+  addEscalatedCluster: (clusterId: string) => void;
+  clearEscalatedCluster: (clusterId: string) => void;
+
   // Queries
   getActiveDeploymentForRole: (role: AgentRole) => DeploymentRecord | undefined;
   getActiveDeploymentsForRole: (role: AgentRole) => DeploymentRecord[];
@@ -151,6 +157,7 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
   selectedClusterIds: [],
   travelAnimations: [],
   snapBackAnimation: null,
+  escalatedClusterIds: new Set(),
 
   startDrag: (role, screenX, screenY) =>
     set({
@@ -348,6 +355,20 @@ export const useDeploymentStore = create<DeploymentStore>((set, get) => ({
           : d,
       ),
     })),
+
+  addEscalatedCluster: (clusterId) =>
+    set((state) => {
+      const next = new Set(state.escalatedClusterIds);
+      next.add(clusterId);
+      return { escalatedClusterIds: next };
+    }),
+
+  clearEscalatedCluster: (clusterId) =>
+    set((state) => {
+      const next = new Set(state.escalatedClusterIds);
+      next.delete(clusterId);
+      return { escalatedClusterIds: next };
+    }),
 
   getActiveDeploymentForRole: (role) => {
     return get().deployments.find(

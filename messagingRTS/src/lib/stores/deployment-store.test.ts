@@ -13,6 +13,7 @@ describe("DeploymentStore", () => {
       deployments: [],
       activeDeploymentId: null,
       selectedClusterIds: [],
+      escalatedClusterIds: new Set(),
     });
   });
 
@@ -518,6 +519,27 @@ describe("DeploymentStore", () => {
 
       const updated = useDeploymentStore.getState().deployments[0];
       expect(updated.outcomeSummary).toBe("API rate limit exceeded");
+    });
+  });
+
+  describe("escalated cluster tracking per Spec 05", () => {
+    it("addEscalatedCluster tracks escalated cluster IDs", () => {
+      useDeploymentStore.getState().addEscalatedCluster("cluster-escalated-1");
+      expect(useDeploymentStore.getState().escalatedClusterIds.has("cluster-escalated-1")).toBe(
+        true,
+      );
+    });
+
+    it("clearEscalatedCluster removes the cluster ID", () => {
+      useDeploymentStore.getState().addEscalatedCluster("cluster-escalated-2");
+      expect(useDeploymentStore.getState().escalatedClusterIds.has("cluster-escalated-2")).toBe(
+        true,
+      );
+
+      useDeploymentStore.getState().clearEscalatedCluster("cluster-escalated-2");
+      expect(useDeploymentStore.getState().escalatedClusterIds.has("cluster-escalated-2")).toBe(
+        false,
+      );
     });
   });
 

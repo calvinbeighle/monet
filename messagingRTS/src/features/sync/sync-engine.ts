@@ -344,7 +344,7 @@ async function processChangeEvents(events: ThreadChangeEvent[]): Promise<void> {
           if (inboundTimestamp > latestUserAction) {
             // Inbound change wins - apply server state, notify user
             console.log(
-              `[SyncEngine] Conflict on thread ${event.threadId}: server change (${inboundTimestamp}) supersedes user action (${latestUserAction})`,
+              `[SyncEngine] Conflict on thread ${event.threadId}: server change (${inboundTimestamp}) supersedes user action (${latestUserAction}), actions=[${pendingActions.map((a) => a.type).join(",")}]`,
             );
             useAppStore.getState().addNotification({
               message: `A change to "${thread.subject}" was made elsewhere and superseded your pending action.`,
@@ -358,7 +358,7 @@ async function processChangeEvents(events: ThreadChangeEvent[]): Promise<void> {
             // User action wins - preserve local optimistic state, skip server merge for
             // the conflicting fields. Still update non-conflicting Gmail data.
             console.log(
-              `[SyncEngine] Conflict on thread ${event.threadId}: user action (${latestUserAction}) takes precedence over server change (${inboundTimestamp})`,
+              `[SyncEngine] Conflict on thread ${event.threadId}: user action (${latestUserAction}) [${pendingActions.map((a) => a.type).join(",")}] takes precedence over server change (${inboundTimestamp})`,
             );
             useAppStore.getState().addNotification({
               message: `Your pending action on "${thread.subject}" was preserved over a conflicting change.`,

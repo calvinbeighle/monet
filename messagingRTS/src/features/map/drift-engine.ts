@@ -26,6 +26,9 @@ const WOBBLE_SPEED = 0.001; // radians per ms
 // Cluster migration animation per Spec 02
 const CLUSTER_MIGRATION_DURATION = 500; // ms
 
+// Per Spec 02: guarantee settlement within 1 second of target assignment
+const SETTLEMENT_TIME_MS = 1000;
+
 // Per-thread hash for unique wobble phase offset
 function threadHash(id: string): number {
   let hash = 0;
@@ -45,6 +48,14 @@ export interface ClusterMigrationTarget {
 
 // Module-level map for cluster migration animations
 const clusterMigrations = new Map<string, ClusterMigrationTarget>();
+
+// Module-level map tracking when each thread's target position was last changed
+// Used to enforce the 1-second settlement guarantee per Spec 02
+const targetSetTimes = new Map<string, number>();
+
+export function clearTargetSetTimes(): void {
+  targetSetTimes.clear();
+}
 
 export function setClusterMigration(
   threadId: string,
@@ -240,7 +251,13 @@ export function driftTick(
     // Thread's zone is determined by its actual position (line 129), not snapped here.
     // Target position pulls thread toward the score-driven zone gradually.
     const targetZone = computeTargetZone(t);
+    const prevTarget = t.targetPosition;
     t.targetPosition = computeTargetPosition(t, zones, targetZone);
+
+    // Track when target changes so settlement guarantee can be enforced (Spec 02)
+    if (t.targetPosition.x !== prevTarget.x || t.targetPosition.y !== prevTarget.y) {
+      targetSetTimes.set(t.id, now);
+    }
 
     // 4. Apply neglect-driven drift toward Lost zone
     // Per Spec 03: "Threads with high value but low urgency occupy stable positions
@@ -322,13 +339,19 @@ export function driftTick(
     const driftMagnitude = Math.hypot(dx, dy);
 
     // 6a. Snap-to-target per Spec 02: "settles at assigned position within one second"
-    // At DRIFT_FRACTION=0.05, 5 ticks/sec, after 1s remaining = initial * 0.95^5 = 77%.
-    // Snap when remaining distance < 1px to guarantee visual settlement within 1 second
-    // for typical drift distances. For larger jumps, the exponential approach still applies
-    // but the snap threshold ensures convergence.
-    if (driftMagnitude < 1) {
+    // Two convergence paths:
+    //   1. Time-bounded guarantee: force snap after SETTLEMENT_TIME_MS (1s) regardless of distance
+    //   2. Proximity snap: snap when remaining distance < 1px (normal exponential convergence)
+    const targetSetTime = targetSetTimes.get(t.id);
+    const forceSettle =
+      driftMagnitude > 1 &&
+      targetSetTime !== undefined &&
+      now - targetSetTime >= SETTLEMENT_TIME_MS;
+
+    if (forceSettle || driftMagnitude < 1) {
       t.position = { x: t.targetPosition.x, y: t.targetPosition.y };
       t.driftVelocity = { dx: 0, dy: 0 };
+      targetSetTimes.delete(t.id);
 
       // Update zone based on actual position, tracking previous zone per Spec 04
       const newZone = getZoneAtPosition(zones, t.position.x, t.position.y);

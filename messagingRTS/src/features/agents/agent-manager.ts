@@ -9,7 +9,9 @@ import type {
   AgentProposal,
   ProposalStatus,
 } from "../../lib/types";
+import type { Thread } from "../../lib/types";
 import { AGENT_DEFINITIONS } from "../../lib/types";
+import { flagOpportunity } from "../game-mechanics/opportunity-system";
 
 let instanceCounter = 0;
 let proposalCounter = 0;
@@ -284,4 +286,35 @@ export function canDeploy(agent: AgentInstance): boolean {
 export function resetCounters(): void {
   instanceCounter = 0;
   proposalCounter = 0;
+}
+
+// Per Spec 07: "Opportunity flag set by agent layer"
+// Researcher and Closer agents may identify opportunity threads
+export function evaluateOpportunityFlags(
+  agent: AgentInstance,
+  threads: Map<string, Thread>,
+): Thread[] {
+  if (agent.status !== "completed") return [];
+
+  const flaggedThreads: Thread[] = [];
+  for (const proposal of agent.proposals) {
+    if (proposal.status !== "pending") continue;
+
+    const thread = threads.get(proposal.threadId);
+    if (!thread) continue;
+    if (thread.opportunityState !== "none") continue; // already flagged
+
+    // Researcher: enrichment data suggests high value
+    // Closer: engagement opportunity detected
+    // Escalation Bot: urgency signals (but these are escalations, not opportunities)
+    if (
+      (agent.role === "researcher" && proposal.outputType === "thread-context-summary") ||
+      (agent.role === "closer" &&
+        (proposal.outputType === "reply-draft" || proposal.outputType === "follow-up-draft"))
+    ) {
+      flaggedThreads.push(flagOpportunity(thread));
+    }
+  }
+
+  return flaggedThreads;
 }

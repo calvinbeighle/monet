@@ -13,6 +13,7 @@ import {
   getClusterMigration,
   clearClusterMigration,
   clearAllClusterMigrations,
+  clearTargetSetTimes,
 } from "./drift-engine";
 import { createZoneLayout, getZoneCenter } from "./zone-layout";
 import { createThread } from "../../lib/types";
@@ -83,6 +84,10 @@ describe("computeTargetZone", () => {
 });
 
 describe("driftTick", () => {
+  beforeEach(() => {
+    clearTargetSetTimes();
+  });
+
   it("moves threads toward their target position", () => {
     const zones = createZoneLayout();
     const thread = createThread("t1", "Subject", "s");
@@ -286,6 +291,44 @@ describe("driftTick", () => {
 
     // Should NOT have drifted closer to lost zone - stabilized in opportunities
     expect(finalDistToLost).toBeGreaterThanOrEqual(initialDistToLost * 0.8);
+  });
+
+  it("enforces 1-second settlement guarantee when target changes", () => {
+    const zones = createZoneLayout();
+    const now = 1000000;
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    // Place far from target so exponential approach alone won't converge quickly
+    thread.position = { x: 0, y: 0 };
+    thread.targetPosition = { x: 3000, y: 3000 };
+
+    // First tick: establishes targetSetTime
+    let current = driftTick([thread], zones, now);
+    // Tick at just past 1 second mark - settlement guarantee triggers
+    current = driftTick(current, zones, now + 1001);
+
+    // Thread must have snapped to its target position
+    expect(current[0].position.x).toBe(current[0].targetPosition.x);
+    expect(current[0].position.y).toBe(current[0].targetPosition.y);
+  });
+
+  it("normal drift behavior within 1 second", () => {
+    const zones = createZoneLayout();
+    const now = 1000000;
+    const thread = createThread("t1", "Subject", "s");
+    thread.participants = [makeContact()];
+    // Place far from target so exponential approach won't converge in one tick
+    thread.position = { x: 0, y: 0 };
+    thread.targetPosition = { x: 3000, y: 3000 };
+
+    // One tick at 200ms - should use exponential approach, not snap
+    const [updated] = driftTick([thread], zones, now + 200);
+
+    // Thread should have moved toward target but not snapped all the way
+    expect(updated.position.x).toBeGreaterThan(0);
+    expect(updated.position.x).toBeLessThan(3000);
+    expect(updated.position.y).toBeGreaterThan(0);
+    expect(updated.position.y).toBeLessThan(3000);
   });
 });
 

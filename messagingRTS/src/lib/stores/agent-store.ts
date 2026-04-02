@@ -17,6 +17,8 @@ import {
   getCooldownRemaining,
 } from "../../features/agents/agent-manager";
 import { useThreadStore } from "./thread-store";
+import { useAppStore } from "./app-store";
+import { useDeploymentStore } from "./deployment-store";
 
 const ALL_ROLES: AgentRole[] = [
   "closer",
@@ -80,14 +82,38 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       return { agents: updated };
     }),
 
-  complete: (role, proposals, failedThreadIds = []) =>
+  complete: (role, proposals, failedThreadIds = []) => {
+    let agentSnapshot: AgentInstance | null = null;
+    let originalClusterId: string | null = null;
     set((state) => {
       const agent = state.agents.get(role);
       if (!agent) return state;
+      const completed = completeAgent(agent, proposals, failedThreadIds);
+      agentSnapshot = completed;
+      originalClusterId = agent.clusterId;
       const updated = new Map(state.agents);
-      updated.set(role, completeAgent(agent, proposals, failedThreadIds));
+      updated.set(role, completed);
       return { agents: updated };
-    }),
+    });
+    // Escalation Bot side effects per Spec 05
+    if (role === "escalation-bot" && agentSnapshot !== null && originalClusterId !== null) {
+      const snap = agentSnapshot as AgentInstance;
+      const clusterId = originalClusterId as string;
+      const escalationProposals = snap.proposals.filter((p) => p.outputType === "escalation-flag");
+      if (escalationProposals.length > 0) {
+        useDeploymentStore.getState().addEscalatedCluster(clusterId);
+        const threadStore = useThreadStore.getState();
+        for (const p of escalationProposals) {
+          const thread = threadStore.getThread(p.threadId);
+          const subject = thread?.subject ?? p.threadId;
+          useAppStore.getState().addNotification({
+            message: `Escalation: ${subject} flagged as urgent by Escalation Bot`,
+            severity: "critical",
+          });
+        }
+      }
+    }
+  },
 
   fail: (role) =>
     set((state) => {
