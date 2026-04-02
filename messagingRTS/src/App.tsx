@@ -51,19 +51,20 @@ export function App() {
 
   // Find agent roles with completed status (for results overlay)
   const agents = useAgentStore((s) => s.agents);
-  const completedAgentRole: AgentRole | null = (() => {
+  // Per Spec 05: proposals persist and remain reviewable after idle/cooldown
+  const reviewableAgentRole: AgentRole | null = (() => {
     for (const [role, agent] of agents) {
-      if (
-        agent.status === "completed" &&
-        (agent.proposals.length > 0 || agent.failedThreadIds.length > 0)
-      ) {
+      const hasContent = agent.proposals.length > 0 || agent.failedThreadIds.length > 0;
+      const isReviewable =
+        agent.status === "completed" || agent.status === "idle" || agent.status === "cooldown";
+      if (hasContent && isReviewable) {
         return role;
       }
     }
     return null;
   })();
-  const completedAgentFailedThreadIds: string[] =
-    completedAgentRole != null ? (agents.get(completedAgentRole)?.failedThreadIds ?? []) : [];
+  const reviewableAgentFailedThreadIds: string[] =
+    reviewableAgentRole != null ? (agents.get(reviewableAgentRole)?.failedThreadIds ?? []) : [];
 
   // Session summary wired to live stats per Spec 07
   const sessionStats = useAppStore((s) => s.sessionStats);
@@ -490,11 +491,11 @@ export function App() {
       {/* Deployment confirmation dialog - floats above everything */}
       <DeploymentConfirmation />
 
-      {/* Results overlay - shows proposals after agent completion, no auto-dismiss */}
-      {completedAgentRole && (
+      {/* Results overlay - shows proposals after agent completion; persists through idle per Spec 05 */}
+      {reviewableAgentRole && (
         <ResultsOverlay
-          agentRole={completedAgentRole}
-          failedThreadIds={completedAgentFailedThreadIds}
+          agentRole={reviewableAgentRole}
+          failedThreadIds={reviewableAgentFailedThreadIds}
         />
       )}
     </div>

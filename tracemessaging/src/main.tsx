@@ -1,3 +1,8 @@
+import "@fontsource-variable/playfair-display/wght.css";
+import "@fontsource-variable/playfair-display/wght-italic.css";
+import "@fontsource/crimson-text/400.css";
+import "@fontsource/crimson-text/600.css";
+import "@fontsource/crimson-text/400-italic.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";

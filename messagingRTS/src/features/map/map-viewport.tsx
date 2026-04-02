@@ -128,6 +128,13 @@ export function MapViewport() {
     deploymentId: string;
   } | null>(null);
 
+  // Invalid-target flash state for quick-deploy per Spec 06 Section 13
+  const [invalidFlashCluster, setInvalidFlashCluster] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
   // Initialize PixiJS renderer
   useEffect(() => {
     const container = containerRef.current;
@@ -1210,13 +1217,6 @@ export function MapViewport() {
     threadIds: string[];
     clusterId: string;
     zoneId: ZoneId;
-  } | null>(null);
-
-  // -- Invalid-target flash state for quick-deploy per Spec 06 Section 13 --
-  const [invalidFlashCluster, setInvalidFlashCluster] = useState<{
-    id: string;
-    x: number;
-    y: number;
   } | null>(null);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {

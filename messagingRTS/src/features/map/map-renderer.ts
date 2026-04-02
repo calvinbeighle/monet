@@ -440,17 +440,20 @@ export class MapRenderer {
       const smoothed = prevSmoothed + Math.sign(diff) * Math.min(maxStep, Math.abs(diff));
       this.smoothedUrgency.set(thread.id, smoothed);
 
-      // Urgency pulse per Spec 02 and Spec 07
+      // Urgency pulse per Spec 02 Section 6 and Spec 07
       // Archived threads do not pulse per Spec 02 state transitions
+      // Per Spec 02: entities at baseline urgency do not pulse
       // Per Spec 07: critical risk tier forces pulsing indicator regardless of urgency score
       const isArchived = thread.visualState === "archived";
+      const isBaselineUrgency = smoothed < 0.05 && thread.riskTier !== "critical";
       const riskPulseBoost = thread.riskTier === "critical" ? Math.max(smoothed, 0.7) : smoothed;
       const pulseRate =
         URGENCY_PULSE_BASE_RATE +
         riskPulseBoost * (URGENCY_PULSE_MAX_RATE - URGENCY_PULSE_BASE_RATE);
-      const pulse = isArchived
-        ? 1.0
-        : 1.0 + Math.sin(this.pulseTime * pulseRate * Math.PI * 2) * 0.15 * riskPulseBoost;
+      const pulse =
+        isArchived || isBaselineUrgency
+          ? 1.0
+          : 1.0 + Math.sin(this.pulseTime * pulseRate * Math.PI * 2) * 0.15 * riskPulseBoost;
 
       // Draw the thread entity
       const r = radius * pulse;

@@ -187,11 +187,12 @@ export function ResultsOverlay({
     return { x: screenX, y: screenY };
   }, [agentRole, getCompletedDeployment, threads, camera, viewportWidth, viewportHeight]);
 
-  if (
-    !agent ||
-    agent.status !== "completed" ||
-    (agent.proposals.length === 0 && failedThreadIds.length === 0)
-  ) {
+  // Per Spec 05: pending proposals persist after agent returns to idle and remain reviewable
+  const hasReviewableContent = agent && (agent.proposals.length > 0 || failedThreadIds.length > 0);
+  const isReviewableStatus =
+    agent &&
+    (agent.status === "completed" || agent.status === "idle" || agent.status === "cooldown");
+  if (!agent || !hasReviewableContent || !isReviewableStatus) {
     return null;
   }
 

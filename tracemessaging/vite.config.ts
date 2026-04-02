@@ -9,4 +9,13 @@ export default defineConfig({
       "@": "/src",
     },
   },
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:9001",
+        changeOrigin: true,
+        ws: true,
+      },
+    },
+  },
 });

@@ -75,7 +75,7 @@ export function NotificationArea() {
         return (
           <div
             key={alert.id}
-            className={`flex items-start gap-2 rounded border px-3 py-2 ${severityStyles[severity] || severityStyles.info}`}
+            className={`flex items-start gap-2 rounded border px-3 py-2 transition-all duration-300 ease-out ${severityStyles[severity] || severityStyles.info}`}
             data-testid={`map-alert-${alert.id}`}
             role="alert"
           >
@@ -95,11 +95,11 @@ export function NotificationArea() {
         );
       })}
 
-      {/* Shell notifications */}
+      {/* Shell notifications - per Spec 12 Section 8: animate out on dismiss */}
       {visibleNotifications.map((notification: ShellNotification) => (
         <div
           key={notification.id}
-          className={`flex items-start gap-2 rounded border px-3 py-2 ${severityStyles[notification.severity] || severityStyles.info}`}
+          className={`flex items-start gap-2 rounded border px-3 py-2 transition-all duration-300 ease-out ${severityStyles[notification.severity] || severityStyles.info}`}
           data-testid={`notification-${notification.id}`}
         >
           <div

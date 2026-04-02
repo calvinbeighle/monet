@@ -40,11 +40,17 @@ export async function batchMarkHandled(threadIds: string[]): Promise<number> {
   const threadStore = useThreadStore.getState();
   const connectivity = useSyncStore.getState().connectivityStatus;
   let successCount = 0;
+  let risksMitigatedCount = 0;
 
   for (const id of threadIds) {
     const thread = threadStore.getThread(id);
     if (!thread) continue;
     if (thread.lifecycleState === "handled") continue;
+
+    // Per Spec 07: count threads at elevated/critical risk as risks mitigated
+    if (thread.riskTier === "elevated" || thread.riskTier === "critical") {
+      risksMitigatedCount++;
+    }
 
     // Transition lifecycle per Spec 09
     threadStore.transitionState(id, "handled", "batch-mark-handled");
@@ -81,10 +87,14 @@ export async function batchMarkHandled(threadIds: string[]): Promise<number> {
       message: `Marked ${successCount} thread${successCount !== 1 ? "s" : ""} as handled.`,
       severity: "info",
     });
-    // Track threads handled in session stats per Spec 07
-    appState.updateSessionStats({
+    // Track threads handled and risks mitigated in session stats per Spec 07
+    const statsUpdate: Record<string, number> = {
       threadsHandled: appState.sessionStats.threadsHandled + successCount,
-    });
+    };
+    if (risksMitigatedCount > 0) {
+      statsUpdate.risksMitigated = appState.sessionStats.risksMitigated + risksMitigatedCount;
+    }
+    appState.updateSessionStats(statsUpdate);
   }
 
   threadStore.clearBatchSelection();

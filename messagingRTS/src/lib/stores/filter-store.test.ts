@@ -266,6 +266,23 @@ describe("filter-store pure functions", () => {
       expect(shouldHideThread(thread, filter)).toBe(false);
     });
 
+    it("never hides drifting-lost threads regardless of filter", () => {
+      const thread = makeThread({
+        zone: "lost",
+        lifecycleState: "drifting-lost" as Thread["lifecycleState"],
+        gmailLabels: [],
+        urgencyScore: 0.05,
+      });
+      const filter: ThreadFilter = {
+        zones: ["active-front"],
+        labels: ["IMPORTANT"],
+        senders: [],
+        urgencyMin: 0.8,
+        urgencyMax: 1,
+      };
+      expect(shouldHideThread(thread, filter)).toBe(false);
+    });
+
     it("still hides non-at-risk/lost threads that fail filter", () => {
       const thread = makeThread({
         zone: "noise",

@@ -74,7 +74,13 @@ function ThreadMetadata({ thread }: { thread: Thread }) {
 }
 
 function ReplyComposer({ thread }: { thread: Thread }) {
-  const [body, setBody] = useState("");
+  // Per Spec 01 Section 5: pre-populate textarea with saved draft content
+  const draftRecord = useDraftStore((s) => s.getDraftRecord(thread.id));
+  const initialBody =
+    draftRecord && draftRecord.state !== "none" && draftRecord.state !== "discarded"
+      ? draftRecord.body
+      : "";
+  const [body, setBody] = useState(initialBody);
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
   const quotaExhausted = useAppStore((s) => s.quotaExhausted);

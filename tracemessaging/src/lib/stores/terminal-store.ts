@@ -2,8 +2,7 @@
 
 import { create } from "zustand";
 
-const CHAT_BASE =
-  import.meta.env.VITE_CHAT_BASE ?? "http://localhost:9001/api/chat";
+const CHAT_BASE = import.meta.env.VITE_CHAT_BASE ?? "/api/chat";
 
 export type TerminalSessionStatus = "active" | "closed";
 
@@ -163,5 +162,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
 }));
 
 export function getWebSocketUrl(sessionId: string): string {
-  return `ws://localhost:9001/api/chat/sessions/${sessionId}/ws`;
+  const loc = window.location;
+  const protocol = loc.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${loc.host}/api/chat/sessions/${sessionId}/ws`;
 }

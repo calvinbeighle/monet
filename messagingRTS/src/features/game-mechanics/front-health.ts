@@ -8,9 +8,9 @@ import type { TrustRecord, SessionStats, StreakState } from "../../lib/types/gam
 // Health tier thresholds per Spec 07
 export type HealthTier = "healthy" | "degraded" | "critical";
 
-// Per Spec 07: visual state changes at <50 (degraded) and <25 (critical)
+// Per Spec 07 state transition table: healthy >= 75, degraded >= 25, critical < 25
 export function getHealthTier(score: number): HealthTier {
-  if (score >= 50) return "healthy";
+  if (score >= 75) return "healthy";
   if (score >= 25) return "degraded";
   return "critical";
 }

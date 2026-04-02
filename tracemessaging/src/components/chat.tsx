@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 function getChatWsUrl(sessionId: string): string {
-  return `ws://localhost:9001/api/chat/sessions/${sessionId}/ws`;
+  const loc = window.location;
+  const protocol = loc.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${loc.host}/api/chat/sessions/${sessionId}/ws`;
 }
 
 type ToolCallEntry = {
@@ -173,8 +175,8 @@ export function Chat({ sessionId }: { sessionId: string }) {
               style={{
                 fontFamily: "var(--font-display)",
                 fontStyle: "italic",
-                fontSize: "1.1rem",
-                color: "var(--color-ghost)",
+                fontSize: "24px",
+                color: "var(--color-ink)",
               }}
             >
               Ask anything.
@@ -198,8 +200,8 @@ export function Chat({ sessionId }: { sessionId: string }) {
                 <span
                   style={{
                     fontFamily: "monospace",
-                    fontSize: "0.75rem",
-                    color: "var(--color-muted)",
+                    fontSize: "15px",
+                    color: "var(--color-soft)",
                   }}
                 >
                   {entry.summary}
@@ -221,8 +223,8 @@ export function Chat({ sessionId }: { sessionId: string }) {
                 <span
                   style={{
                     fontFamily: "monospace",
-                    fontSize: "0.7rem",
-                    color: "var(--color-faint)",
+                    fontSize: "14px",
+                    color: "var(--color-muted)",
                   }}
                 >
                   {entry.result.length > 120
@@ -240,11 +242,11 @@ export function Chat({ sessionId }: { sessionId: string }) {
                 <div
                   style={{
                     fontFamily: "var(--font-body)",
-                    fontSize: "0.75rem",
+                    fontSize: "14px",
                     color: "var(--color-faint)",
                     marginBottom: 4,
                     textTransform: "uppercase",
-                    letterSpacing: "0.05em",
+                    letterSpacing: "1.2px",
                   }}
                 >
                   you
@@ -253,9 +255,9 @@ export function Chat({ sessionId }: { sessionId: string }) {
               <div
                 style={{
                   fontFamily: "var(--font-body)",
-                  fontSize: "0.9rem",
+                  fontSize: "18px",
                   lineHeight: 1.7,
-                  color: "var(--color-ink)",
+                  color: "var(--color-text)",
                   whiteSpace: "pre-wrap",
                   wordBreak: "break-word",
                 }}
@@ -314,9 +316,9 @@ export function Chat({ sessionId }: { sessionId: string }) {
               outline: "none",
               resize: "none",
               fontFamily: "var(--font-body)",
-              fontSize: "0.9rem",
-              lineHeight: 1.5,
-              color: "var(--color-ink)",
+              fontSize: "18px",
+              lineHeight: 1.7,
+              color: "var(--color-text)",
               minHeight: 24,
               maxHeight: 120,
               overflow: "auto",
@@ -335,7 +337,7 @@ export function Chat({ sessionId }: { sessionId: string }) {
               border: "none",
               cursor: streaming || !input.trim() ? "default" : "pointer",
               fontFamily: "var(--font-body)",
-              fontSize: "0.8rem",
+              fontSize: "15px",
               color:
                 streaming || !input.trim()
                   ? "var(--color-ghost)"

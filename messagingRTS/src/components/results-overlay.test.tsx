@@ -66,9 +66,33 @@ function setupCompletedAgent() {
 describe("ResultsOverlay", () => {
   beforeEach(resetStores);
 
-  it("renders nothing when agent is idle", () => {
+  it("renders nothing when agent is idle with no proposals", () => {
     const { container } = render(<ResultsOverlay agentRole="closer" />);
     expect(container.innerHTML).toBe("");
+  });
+
+  it("renders overlay when agent is idle but has pending proposals (Spec 05)", () => {
+    // Agent completes work, proposals are set, then agent transitions to idle
+    setupCompletedAgent();
+    // Manually transition to idle while preserving proposals
+    const agents = new Map(useAgentStore.getState().agents);
+    const closer = agents.get("closer")!;
+    agents.set("closer", { ...closer, status: "idle" });
+    useAgentStore.setState({ agents });
+
+    render(<ResultsOverlay agentRole="closer" />);
+    expect(screen.getByTestId("results-overlay")).toBeInTheDocument();
+  });
+
+  it("renders overlay when agent is in cooldown with pending proposals (Spec 05)", () => {
+    setupCompletedAgent();
+    const agents = new Map(useAgentStore.getState().agents);
+    const closer = agents.get("closer")!;
+    agents.set("closer", { ...closer, status: "cooldown" });
+    useAgentStore.setState({ agents });
+
+    render(<ResultsOverlay agentRole="closer" />);
+    expect(screen.getByTestId("results-overlay")).toBeInTheDocument();
   });
 
   it("renders nothing when agent has no proposals", () => {

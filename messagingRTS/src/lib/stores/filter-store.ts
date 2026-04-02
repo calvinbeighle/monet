@@ -89,8 +89,12 @@ function matchesLabelFilter(thread: Thread, labels: string[]): boolean {
 export function shouldHideThread(thread: Thread, filter: ThreadFilter): boolean {
   if (!isFilterActive(filter)) return false;
 
-  // Escape hatch per Spec 09: at-risk and lost threads always surface
-  if (thread.lifecycleState === "at-risk" || thread.lifecycleState === "lost") {
+  // Escape hatch per Spec 09: at-risk, drifting-lost, and lost threads always surface
+  if (
+    thread.lifecycleState === "at-risk" ||
+    thread.lifecycleState === "drifting-lost" ||
+    thread.lifecycleState === "lost"
+  ) {
     return false;
   }
 

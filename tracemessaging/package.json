@@ -13,6 +13,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/playfair-display": "^5.2.8",
+    "@fontsource/crimson-text": "^5.2.7",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-query": "^5.96.0",
     "@xterm/addon-fit": "^0.11.0",

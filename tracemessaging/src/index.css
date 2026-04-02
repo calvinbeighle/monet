@@ -3,7 +3,7 @@
 /* --- Bridge Intelligence Design System --- */
 :root {
   /* Typography */
-  --font-display: "Playfair Display", Georgia, serif;
+  --font-display: "Playfair Display Variable", Georgia, serif;
   --font-body: "Crimson Text", serif;
 
   /* Light mode (default) */
@@ -16,7 +16,7 @@
   --color-rule: rgba(0, 0, 0, 0.1);
   --color-tint: rgba(0, 0, 0, 0.03);
   --color-bg: #ffffff;
-  --color-canvas: #e8e8e8;
+  --color-canvas: #ffffff;
   --color-input-bg: rgba(0, 0, 0, 0.02);
   --color-input-border: rgba(0, 0, 0, 0.1);
   --color-input-border-focus: rgba(0, 0, 0, 0.2);
@@ -28,7 +28,7 @@
   --color-yellow: rgba(180, 130, 0, 0.8);
 
   font-family: var(--font-body);
-  line-height: 1.5;
+  line-height: 1.7;
   font-weight: 400;
   color: var(--color-text);
   background-color: var(--color-canvas);
@@ -82,7 +82,7 @@ body,
   height: 100dvh !important;
   width: 100vw !important;
   overflow-y: scroll !important;
-  scroll-snap-type: y mandatory !important;
+  scroll-snap-type: y proximity !important;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
@@ -95,7 +95,7 @@ body,
   min-height: 100dvh !important;
   width: 100vw !important;
   scroll-snap-align: start !important;
-  scroll-snap-stop: always !important;
+  scroll-snap-stop: normal !important;
   position: relative;
   flex-shrink: 0;
   overflow: hidden;

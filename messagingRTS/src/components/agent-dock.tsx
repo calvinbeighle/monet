@@ -164,7 +164,7 @@ export function AgentDock({ isCompact = false, onHistoryClick }: AgentDockProps)
           return (
             <div
               key={role}
-              className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1 transition-colors select-none ${
+              className={`flex shrink-0 items-center gap-1 rounded border px-2 py-1 transition-colors select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/60 ${
                 isDragging
                   ? "border-dashed border-gray-600 bg-[#0a0a16] opacity-40"
                   : status === "idle"
@@ -174,6 +174,9 @@ export function AgentDock({ isCompact = false, onHistoryClick }: AgentDockProps)
                       : "border-blue-800/50 bg-[#14142a] cursor-default"
               }`}
               data-testid={`agent-${role}`}
+              tabIndex={0}
+              role="listitem"
+              aria-label={`${def.name} - ${STATUS_LABEL[status]}`}
               title={`${def.name} - ${STATUS_LABEL[status]}${canDrag ? " - drag to deploy" : ""}`}
               onMouseDown={canDrag ? (e) => handleMouseDown(role, e) : undefined}
             >
@@ -195,7 +198,7 @@ export function AgentDock({ isCompact = false, onHistoryClick }: AgentDockProps)
         return (
           <div
             key={role}
-            className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 transition-colors select-none ${
+            className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 transition-colors select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500/60 ${
               isDragging
                 ? "border-dashed border-gray-600 bg-[#0a0a16] opacity-40"
                 : status === "idle"
@@ -205,6 +208,9 @@ export function AgentDock({ isCompact = false, onHistoryClick }: AgentDockProps)
                     : "border-blue-800/50 bg-[#14142a] cursor-default"
             }`}
             data-testid={`agent-${role}`}
+            tabIndex={0}
+            role="listitem"
+            aria-label={`${def.name} - ${STATUS_LABEL[status]}`}
             title={canDrag ? `${def.description} - drag to deploy` : def.description}
             onMouseDown={canDrag ? (e) => handleMouseDown(role, e) : undefined}
           >

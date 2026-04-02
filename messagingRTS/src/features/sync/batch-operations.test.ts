@@ -158,6 +158,20 @@ describe("batch-operations", () => {
       expect(notifications.some((n) => n.message.includes("3 threads"))).toBe(true);
     });
 
+    it("increments risksMitigated for threads at elevated or critical risk", async () => {
+      const ids = seedThreads(3);
+      const statsBefore = { ...useAppStore.getState().sessionStats };
+      // Set risk tiers: one elevated, one critical, one safe
+      useThreadStore.getState().updateThread("thread-0", { riskTier: "elevated" });
+      useThreadStore.getState().updateThread("thread-1", { riskTier: "critical" });
+      useThreadStore.getState().updateThread("thread-2", { riskTier: "safe" });
+
+      await batchMarkHandled(ids);
+      const statsAfter = useAppStore.getState().sessionStats;
+      expect(statsAfter.risksMitigated - statsBefore.risksMitigated).toBe(2); // elevated + critical
+      expect(statsAfter.threadsHandled - statsBefore.threadsHandled).toBe(3); // all three
+    });
+
     it("transitions each thread independently (partial failure resilient)", async () => {
       // Thread 0 is active, thread 1 is already handled
       const ids = seedThreads(1);
