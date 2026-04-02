@@ -881,3 +881,28 @@ describe("getRiskAwareColor per Spec 07", () => {
     expect(getRiskAwareColor(0.9, "unknown")).toBe(0xdd3333);
   });
 });
+
+describe("Trust indicator on map nodes per Spec 07", () => {
+  it("setTrustRecords stores records and getTrustRecords retrieves them", () => {
+    const renderer = new MapRenderer();
+    const records = {
+      "alice@test.com": {
+        contactEmail: "alice@test.com",
+        score: 60,
+        tier: "established" as const,
+        consecutiveStreak: 5,
+        tierEntryDate: Date.now(),
+        lastReplyTimestamp: Date.now(),
+        lastDecayCheck: Date.now(),
+        decayActive: false,
+      },
+    };
+    renderer.setTrustRecords(records);
+    expect(renderer.getTrustRecords()).toBe(records);
+  });
+
+  it("empty trust records by default", () => {
+    const renderer = new MapRenderer();
+    expect(Object.keys(renderer.getTrustRecords())).toHaveLength(0);
+  });
+});

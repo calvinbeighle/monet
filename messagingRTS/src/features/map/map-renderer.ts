@@ -5,6 +5,7 @@
 import { Application, Container, Graphics, Text, TextStyle, type ColorSource } from "pixi.js";
 import type { Thread, Zone, ZoneId } from "../../lib/types";
 import type { Cluster } from "../../lib/types/cluster";
+import type { TrustRecord } from "../../lib/types/game-mechanics";
 
 // Visual constants
 const THREAD_BASE_RADIUS = 8;
@@ -77,6 +78,9 @@ export class MapRenderer {
   // Escalated cluster IDs per Spec 05: clusters flagged by Escalation Bot
   private escalatedClusterIds: Set<string> = new Set();
 
+  // Trust records per Spec 07: 3-consecutive trust indicator on map nodes
+  private trustRecords: Record<string, TrustRecord> = {};
+
   // Travel arc animations per Spec 06
   private travelAnimations: Array<{
     agentColor: number;
@@ -121,6 +125,7 @@ export class MapRenderer {
       visualState: string;
       selected: boolean;
       batchSelected: boolean;
+      hasTrust: boolean;
     }
   > = new Map();
 
@@ -380,6 +385,7 @@ export class MapRenderer {
 
       // Dirty flagging - skip full redraw if render-relevant properties unchanged
       // Only skip for low-urgency, safe-risk threads (pulsing ones need animation updates)
+      const hasTrust = this.hasConsecutiveTrust(thread);
       const cacheKey = {
         x: thread.position.x,
         y: thread.position.y,
@@ -388,6 +394,7 @@ export class MapRenderer {
         visualState: thread.visualState,
         selected: thread.id === this.selectedThreadId,
         batchSelected: this.batchSelectedIds.has(thread.id),
+        hasTrust,
       };
       const cached = this.threadRenderCache.get(thread.id);
       if (
@@ -400,7 +407,8 @@ export class MapRenderer {
         cached.value === cacheKey.value &&
         cached.visualState === cacheKey.visualState &&
         cached.selected === cacheKey.selected &&
-        cached.batchSelected === cacheKey.batchSelected
+        cached.batchSelected === cacheKey.batchSelected &&
+        cached.hasTrust === cacheKey.hasTrust
       ) {
         g.visible = true;
         continue;
@@ -469,6 +477,16 @@ export class MapRenderer {
       if (thread.visualState === "agent-occupied") {
         g.circle(thread.position.x, thread.position.y, r + 4);
         g.stroke({ color: 0xffd700 as ColorSource, width: 2, alpha: 0.7 });
+      }
+
+      // Per Spec 07: 3-consecutive trust indicator on contact's threads
+      // "Three consecutive on-time replies to the same contact produce a visible
+      // trust indicator on that contact's threads."
+      if (this.hasConsecutiveTrust(thread)) {
+        const pipX = thread.position.x + r * 0.7;
+        const pipY = thread.position.y - r * 0.7;
+        g.circle(pipX, pipY, 3);
+        g.fill({ color: 0xeebb44 as ColorSource, alpha: 0.9 });
       }
 
       // Batch selection ring per Spec 09 (distinct from single selection)
@@ -927,6 +945,15 @@ export class MapRenderer {
     return getRiskAwareColor(urgency, riskTier);
   }
 
+  // Per Spec 07: check if any participant in the thread has 3+ consecutive on-time replies
+  private hasConsecutiveTrust(thread: Thread): boolean {
+    for (const p of thread.participants) {
+      const record = this.trustRecords[p.email];
+      if (record && record.consecutiveStreak >= 3) return true;
+    }
+    return false;
+  }
+
   private onTick(deltaMS: number): void {
     const deltaSec = deltaMS / 1000;
     this.lastDeltaSec = deltaSec;
@@ -1114,6 +1141,15 @@ export class MapRenderer {
 
   getEscalatedClusterIds(): Set<string> {
     return this.escalatedClusterIds;
+  }
+
+  // Per Spec 07: trust records for 3-consecutive indicator on map nodes
+  setTrustRecords(records: Record<string, TrustRecord>): void {
+    this.trustRecords = records;
+  }
+
+  getTrustRecords(): Record<string, TrustRecord> {
+    return this.trustRecords;
   }
 
   // Travel arc animations per Spec 06

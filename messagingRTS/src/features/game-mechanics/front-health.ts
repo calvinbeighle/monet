@@ -110,6 +110,8 @@ function computeLossScore(threads: Thread[], stats: SessionStats): number {
 // Streak evaluation per Spec 07: at midnight local time
 // sessionLostCount tracks threads that entered lost tier at any point during the day,
 // even if they were later recovered - this is the correct metric per Spec 07.
+// Per Spec 07 acceptance criteria: "A streak counter that resets to 0 after a missed day
+// displays 0 (not the previous count) at the start of the following day's session."
 export function evaluateStreaks(
   threads: Thread[],
   currentStreaks: StreakState,
@@ -117,6 +119,18 @@ export function evaluateStreaks(
   sessionLostCount: number = 0,
 ): StreakState {
   if (currentStreaks.lastEvaluationDate === today) return currentStreaks;
+
+  // Per Spec 07: if more than 1 day elapsed since last evaluation, we cannot verify
+  // conditions were met on missed days - reset both streaks to 0 before evaluating today.
+  // This ensures streaks don't survive app-closed gaps where threads may have been neglected.
+  const missedDays =
+    currentStreaks.lastEvaluationDate !== ""
+      ? daysBetween(currentStreaks.lastEvaluationDate, today)
+      : 0;
+  const baseStreaks =
+    missedDays > 1
+      ? { inboxZeroDays: 0, zeroLostDays: 0 }
+      : { inboxZeroDays: currentStreaks.inboxZeroDays, zeroLostDays: currentStreaks.zeroLostDays };
 
   // Inbox zero: all threads in safe tier at end of day
   const allSafe = threads.every((t) => t.riskTier === "safe" || t.lifecycleState === "handled");
@@ -127,10 +141,17 @@ export function evaluateStreaks(
   const anyLost = sessionLostCount > 0;
 
   return {
-    inboxZeroDays: allSafe ? currentStreaks.inboxZeroDays + 1 : 0,
-    zeroLostDays: !anyLost ? currentStreaks.zeroLostDays + 1 : 0,
+    inboxZeroDays: allSafe ? baseStreaks.inboxZeroDays + 1 : 0,
+    zeroLostDays: !anyLost ? baseStreaks.zeroLostDays + 1 : 0,
     lastEvaluationDate: today,
   };
+}
+
+// Calculate days between two YYYY-MM-DD date strings
+function daysBetween(dateA: string, dateB: string): number {
+  const a = new Date(dateA + "T00:00:00");
+  const b = new Date(dateB + "T00:00:00");
+  return Math.round(Math.abs(b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000));
 }
 
 // Create initial session stats

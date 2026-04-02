@@ -243,4 +243,60 @@ describe("Streaks", () => {
 
     expect(updated.zeroLostDays).toBe(5);
   });
+
+  it("resets streaks when more than 1 day is missed (app closed overnight)", () => {
+    // Per Spec 07: "A streak counter that resets to 0 after a missed day"
+    // If the app was closed for 3 days, we cannot verify conditions were met
+    const threads = [{ ...createThread("t1", "S", "s"), riskTier: "safe" as const }];
+    const streaks = {
+      ...createStreakState(),
+      inboxZeroDays: 10,
+      zeroLostDays: 7,
+      lastEvaluationDate: "2026-03-28", // 3 days ago
+    };
+    const updated = evaluateStreaks(threads, streaks, "2026-03-31");
+
+    // Streaks reset to 0 due to missed days, then evaluate today (all safe, no lost)
+    // so they increment from 0 -> 1
+    expect(updated.inboxZeroDays).toBe(1);
+    expect(updated.zeroLostDays).toBe(1);
+  });
+
+  it("does not reset streaks when exactly 1 day elapsed (normal overnight)", () => {
+    const threads = [{ ...createThread("t1", "S", "s"), riskTier: "safe" as const }];
+    const streaks = {
+      ...createStreakState(),
+      inboxZeroDays: 5,
+      zeroLostDays: 3,
+      lastEvaluationDate: "2026-03-30", // exactly 1 day ago
+    };
+    const updated = evaluateStreaks(threads, streaks, "2026-03-31");
+
+    // Normal overnight - streaks continue
+    expect(updated.inboxZeroDays).toBe(6);
+    expect(updated.zeroLostDays).toBe(4);
+  });
+
+  it("resets streaks on multi-day gap even if current state is good", () => {
+    // Even though current threads are all safe and no lost, the 5-day gap means
+    // we don't know what happened on the missed days
+    const threads = [
+      {
+        ...createThread("t1", "S", "s"),
+        riskTier: "safe" as const,
+        lifecycleState: "handled" as const,
+      },
+    ];
+    const streaks = {
+      ...createStreakState(),
+      inboxZeroDays: 20,
+      zeroLostDays: 15,
+      lastEvaluationDate: "2026-03-26", // 5 days ago
+    };
+    const updated = evaluateStreaks(threads, streaks, "2026-03-31");
+
+    // Reset from multi-day gap, then evaluate today: all safe, no lost -> both = 1
+    expect(updated.inboxZeroDays).toBe(1);
+    expect(updated.zeroLostDays).toBe(1);
+  });
 });

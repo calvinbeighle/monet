@@ -108,6 +108,7 @@ export function MapViewport() {
   const viewportHeight = useAppStore((s) => s.viewportHeight);
 
   const escalatedClusterIds = useDeploymentStore((s) => s.escalatedClusterIds);
+  const trustRecords = useAppStore((s) => s.trustRecords);
 
   // Zone snapshot for render - updated from the ref by the drift tick
   const [zonesSnapshot, setZonesSnapshot] = useState(createZoneLayout);
@@ -379,11 +380,12 @@ export function MapViewport() {
     const visibleThreads = getVisibleThreads(threadArray, filter);
     renderer.setSelectedThread(selectedThreadId);
     renderer.setBatchSelectedIds(selectedThreadIds);
+    renderer.setTrustRecords(trustRecords);
     renderer.renderZones(zonesRef.current);
     renderer.renderConnections(visibleThreads, clustersRef.current);
     renderer.renderThreads(visibleThreads);
     renderer.renderClusters(clustersRef.current, visibleThreads);
-  }, [threads, selectedThreadId, selectedThreadIds, filter]);
+  }, [threads, selectedThreadId, selectedThreadIds, filter, trustRecords]);
 
   // Sync search highlighting to renderer
   useEffect(() => {

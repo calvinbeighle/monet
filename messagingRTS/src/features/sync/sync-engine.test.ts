@@ -2,7 +2,7 @@
 // Covers: initial load orchestration, incremental sync, history expiry backfill,
 // connectivity transitions, action queue replay, polling lifecycle
 
-import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   startInitialLoad,
   performIncrementalSync,

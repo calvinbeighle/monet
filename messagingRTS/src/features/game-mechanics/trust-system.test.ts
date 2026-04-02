@@ -32,9 +32,9 @@ describe("Trust system", () => {
     it("increases score by thread type amount", () => {
       const record = createTrustRecord("test@example.com");
 
-      // existing-relationship gives +5
+      // existing-relationship gives +8 (highest, proportional to 24h tolerance)
       const updated = onTimeReply(record, "existing-relationship");
-      expect(updated.score).toBe(5);
+      expect(updated.score).toBe(8);
       expect(updated.consecutiveStreak).toBe(1);
     });
 
@@ -59,11 +59,12 @@ describe("Trust system", () => {
     it("transitions tier when crossing boundary", () => {
       let record = createTrustRecord("test@example.com");
       // Start at 0 (new), need 20 to reach building
-      for (let i = 0; i < 4; i++) {
-        record = onTimeReply(record, "existing-relationship"); // +5 each
+      // existing-relationship gives +8, so 3 replies = 24 (building tier)
+      for (let i = 0; i < 3; i++) {
+        record = onTimeReply(record, "existing-relationship"); // +8 each
       }
-      // Score should be 20
-      expect(record.score).toBe(20);
+      // Score should be 24
+      expect(record.score).toBe(24);
       expect(record.tier).toBe("building");
     });
 
@@ -183,6 +184,37 @@ describe("Trust system", () => {
 
       const decayed = evaluateDecay(record, "existing-relationship", now);
       expect(decayed.score).toBeLessThan(30); // no floor protection
+    });
+  });
+
+  describe("trust increment proportionality (Spec 07)", () => {
+    it("existing-relationship increment is significantly larger than internal", () => {
+      const record = createTrustRecord("test@example.com");
+      const existingReply = onTimeReply(record, "existing-relationship");
+      const internalReply = onTimeReply(record, "internal");
+
+      // Per Spec 07: "larger for high-latency-tolerance thread types (existing-relationship)
+      // than for low-latency-tolerance types (internal)"
+      // Gap should reflect 6x tolerance ratio (24h vs 4h)
+      expect(existingReply.score - internalReply.score).toBeGreaterThanOrEqual(4);
+    });
+
+    it("warm-intro gets more than cold-outreach", () => {
+      const record = createTrustRecord("test@example.com");
+      const warmReply = onTimeReply(record, "warm-intro");
+      const coldReply = onTimeReply(record, "cold-outreach");
+
+      expect(warmReply.score).toBeGreaterThan(coldReply.score);
+    });
+
+    it("transactional gets the smallest increment", () => {
+      const record = createTrustRecord("test@example.com");
+      const transReply = onTimeReply(record, "transactional");
+      const coldReply = onTimeReply(record, "cold-outreach");
+      const internalReply = onTimeReply(record, "internal");
+
+      expect(transReply.score).toBeLessThan(coldReply.score);
+      expect(transReply.score).toBeLessThan(internalReply.score);
     });
   });
 });

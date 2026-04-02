@@ -415,7 +415,7 @@ describe("Game loop", () => {
     it("creates new record for unknown contact", () => {
       const result = updateTrustOnReply({}, ["new@test.com"], "existing-relationship");
       expect(result["new@test.com"]).toBeDefined();
-      expect(result["new@test.com"].score).toBe(5); // existing-relationship increment
+      expect(result["new@test.com"].score).toBe(8); // existing-relationship increment
     });
 
     it("increments existing record", () => {
@@ -425,7 +425,7 @@ describe("Game loop", () => {
         ["alice@test.com"],
         "existing-relationship",
       );
-      expect(result["alice@test.com"].score).toBe(45);
+      expect(result["alice@test.com"].score).toBe(48);
     });
 
     it("uses correct increment per thread type", () => {
@@ -439,8 +439,8 @@ describe("Game loop", () => {
     it("updates multiple participants", () => {
       const result = updateTrustOnReply({}, ["a@test.com", "b@test.com"], "warm-intro");
       expect(Object.keys(result)).toHaveLength(2);
-      expect(result["a@test.com"].score).toBe(3);
-      expect(result["b@test.com"].score).toBe(3);
+      expect(result["a@test.com"].score).toBe(5);
+      expect(result["b@test.com"].score).toBe(5);
     });
 
     it("does not increase trust for late reply (beyond elevated threshold)", () => {
@@ -470,7 +470,7 @@ describe("Game loop", () => {
         "existing-relationship",
         onTimeElapsed,
       );
-      expect(result["alice@test.com"].score).toBe(45);
+      expect(result["alice@test.com"].score).toBe(48);
     });
 
     it("creates record for new contact even on late reply", () => {

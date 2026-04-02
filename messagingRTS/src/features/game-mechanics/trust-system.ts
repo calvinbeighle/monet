@@ -14,13 +14,16 @@ const TIER_BOUNDARIES: Record<TrustTier, { min: number; max: number }> = {
   "high-trust": { min: 80, max: 100 },
 };
 
-// Trust increment per on-time reply (larger for high-tolerance thread types
-// per Spec 07: "personal replies worth more")
+// Trust increment per on-time reply per Spec 07: "The trust increase is larger for
+// high-latency-tolerance thread types (existing-relationship) than for low-latency-tolerance
+// types (internal), reflecting that timely personal replies carry more weight."
+// Values spread proportionally to reflect tolerance ratios:
+// existing-relationship (24h) vs internal (4h) = 6x tolerance, now 8:3 increment (2.7x).
 const TRUST_INCREMENT: Record<ThreadType, number> = {
   "cold-outreach": 2,
-  "warm-intro": 3,
-  "existing-relationship": 5,
-  internal: 4,
+  "warm-intro": 5,
+  "existing-relationship": 8,
+  internal: 3,
   transactional: 1,
 };
 
