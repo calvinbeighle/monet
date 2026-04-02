@@ -21,6 +21,7 @@ import { useSyncStore } from "../../lib/stores/sync-store";
 import { useAppStore } from "../../lib/stores";
 import type { ThreadChangeEvent, ThreadChangeType, ActionQueueEntry } from "../../lib/types";
 import { computeUrgencyScore, computeValueScore } from "../../lib/utils/scoring";
+import { rateLimiter } from "../../lib/utils/rate-limiter";
 import { placeNewThread } from "../map/drift-engine";
 import { createZoneLayout } from "../map/zone-layout";
 import { evaluateClusters } from "../map/clustering";
@@ -443,11 +444,29 @@ export function stopPolling(): void {
   }
 }
 
+// Poll interval multiplier when quota is near exhaustion per Spec 01:
+// "When quota is near exhaustion, background sync frequency is reduced first."
+const QUOTA_REDUCTION_MULTIPLIER = 6;
+
 // Compute retry interval with exponential backoff per Spec 10 Section 8
 // On success (0 consecutive failures), use base poll interval.
 // On failure, use min(base * 2^failures, maxRetryInterval).
+// Per Spec 01: proactively reduce poll frequency when quota nears exhaustion.
 export function getRetryInterval(): number {
   const baseInterval = useSyncStore.getState().pollIntervalMs;
+
+  // Proactive quota-aware reduction per Spec 01 Section 6:
+  // Reduce background sync frequency before quota is fully exhausted.
+  const quotaStatus = rateLimiter.getStatus();
+  if (quotaStatus.isExhausted) {
+    // Fully exhausted - use max interval (effectively suspend polling)
+    return MAX_RETRY_INTERVAL_MS;
+  }
+  if (quotaStatus.isNearExhaustion) {
+    // Near exhaustion (>=80%) - slow down polling significantly
+    return baseInterval * QUOTA_REDUCTION_MULTIPLIER;
+  }
+
   if (consecutivePollFailures === 0) return baseInterval;
   const exponential = baseInterval * Math.pow(2, consecutivePollFailures);
   return Math.min(exponential, MAX_RETRY_INTERVAL_MS);

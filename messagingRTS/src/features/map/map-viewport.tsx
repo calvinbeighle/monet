@@ -313,7 +313,17 @@ export function MapViewport() {
       if (clusterResult.threadUpdates.size > 0) {
         const threadStore = useThreadStore.getState();
         for (const [threadId, newClusterId] of clusterResult.threadUpdates) {
-          threadStore.updateThread(threadId, { clusterMembership: newClusterId });
+          // Per Spec 11: surface membership state on thread record
+          const existingThread = threadStore.getThread(threadId);
+          const membershipState = newClusterId
+            ? ("member" as const)
+            : (existingThread?.overrideExcludedClusterIds?.length ?? 0) > 0
+              ? ("override-excluded" as const)
+              : ("unassigned" as const);
+          threadStore.updateThread(threadId, {
+            clusterMembership: newClusterId,
+            clusterMembershipState: membershipState,
+          });
           if (newClusterId) {
             const cluster = clusterResult.clusters.find((c) => c.id === newClusterId);
             const thread = gameResult.updatedThreads.find((t) => t.id === threadId);
@@ -647,6 +657,16 @@ export function MapViewport() {
 
                   if (mapPos.x < minX || mapPos.x > maxX || mapPos.y < minY || mapPos.y > maxY) {
                     excludeFromCluster(threadDrag.threadId, threadDrag.clusterId);
+                    // Per Spec 11: surface override-excluded state on thread record
+                    const draggedThread = useThreadStore.getState().getThread(threadDrag.threadId);
+                    const excludedIds = [
+                      ...(draggedThread?.overrideExcludedClusterIds ?? []),
+                      threadDrag.clusterId,
+                    ];
+                    useThreadStore.getState().updateThread(threadDrag.threadId, {
+                      clusterMembershipState: "override-excluded",
+                      overrideExcludedClusterIds: excludedIds,
+                    });
                   }
                 }
               }
@@ -1098,8 +1118,9 @@ export function MapViewport() {
         return;
       }
 
-      // Quick-deploy shortcuts (Shift+1 through Shift+6) per Spec 06
-      // Deploys agent to threads near viewport center
+      // Quick-deploy shortcuts (Shift+1 through Shift+6) per Spec 06 Section 13:
+      // "Keyboard shortcuts can trigger quick-deploy when a cluster is selected on the map."
+      // Targets the cluster containing the currently selected thread, not viewport center.
       const QUICK_DEPLOY_ROLES: Record<string, AgentRole> = {
         "!": "closer", // Shift+1
         "@": "researcher", // Shift+2
@@ -1112,20 +1133,23 @@ export function MapViewport() {
       if (quickDeployRole && e.shiftKey) {
         e.preventDefault();
         const agentStore = useAgentStore.getState();
+        // Find the cluster containing the selected thread
+        const selThread = selectedThreadId
+          ? useThreadStore.getState().getThread(selectedThreadId)
+          : null;
+        const targetCluster = selThread?.clusterMembership
+          ? clustersRef.current.find((c) => c.id === selThread.clusterMembership)
+          : null;
+        if (!targetCluster) return; // No cluster selected - no action per spec
         if (agentStore.canDeployRole(quickDeployRole)) {
-          const cam = renderer.getCameraState();
-          // Per Spec 11 Section 10: only clusters are valid deployment targets
-          const nearCluster = hitTestCluster(clustersRef.current, cam.x, cam.y, 400 / cam.zoom);
-          if (nearCluster) {
-            const def = AGENT_DEFINITIONS[quickDeployRole];
-            const clusterThreadIds = nearCluster.memberThreadIds.slice(0, def.capacity);
-            useDeploymentStore.getState().showConfirmation({
-              agentRole: quickDeployRole,
-              clusterId: nearCluster.id,
-              threadIds: clusterThreadIds,
-              description: `${def.name}: ${def.description.toLowerCase()} (${clusterThreadIds.length} thread${clusterThreadIds.length !== 1 ? "s" : ""} in ${nearCluster.label || "cluster"})`,
-            });
-          }
+          const def = AGENT_DEFINITIONS[quickDeployRole];
+          const clusterThreadIds = targetCluster.memberThreadIds.slice(0, def.capacity);
+          useDeploymentStore.getState().showConfirmation({
+            agentRole: quickDeployRole,
+            clusterId: targetCluster.id,
+            threadIds: clusterThreadIds,
+            description: `${def.name}: ${def.description.toLowerCase()} (${clusterThreadIds.length} thread${clusterThreadIds.length !== 1 ? "s" : ""} in ${targetCluster.label || "cluster"})`,
+          });
         }
         return;
       }

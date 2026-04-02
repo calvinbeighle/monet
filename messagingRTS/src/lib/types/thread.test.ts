@@ -24,6 +24,8 @@ describe("Thread data model", () => {
     expect(thread.lastUserReplyTimestamp).toBeNull();
     expect(thread.neglectDuration).toBe(0);
     expect(thread.clusterMembership).toBeNull();
+    expect(thread.clusterMembershipState).toBe("unassigned");
+    expect(thread.overrideExcludedClusterIds).toEqual([]);
   });
 
   it("sets timestamps to current time", () => {

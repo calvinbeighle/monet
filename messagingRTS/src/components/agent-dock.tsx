@@ -94,6 +94,8 @@ export function AgentDock({ isCompact = false, onHistoryClick }: AgentDockProps)
   const agents = useAgentStore((s) => s.agents);
   const dragState = useDeploymentStore((s) => s.dragState);
   const startDrag = useDeploymentStore((s) => s.startDrag);
+  // Subscribe to deployments array so badge re-renders on deployment changes
+  const deployments = useDeploymentStore((s) => s.deployments);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragThresholdRef = useRef(false);
 
@@ -147,6 +149,13 @@ export function AgentDock({ isCompact = false, onHistoryClick }: AgentDockProps)
         const isDragging = dragState?.draggingRole === role;
         const canDrag = status === "idle";
 
+        // Deployment count badge per Spec 06 Section 1: badge shows active deployment count per role
+        const deploymentCount = deployments.filter(
+          (d) =>
+            d.agentRole === role &&
+            (d.status === "confirming" || d.status === "traveling" || d.status === "in-progress"),
+        ).length;
+
         // Dim the color dot when cooling down
         const dotOpacity = status === "cooldown" ? "opacity-40" : "";
 
@@ -172,9 +181,9 @@ export function AgentDock({ isCompact = false, onHistoryClick }: AgentDockProps)
                 className={`h-2.5 w-2.5 rounded-full ${dotOpacity}`}
                 style={{ backgroundColor: colorHex }}
               />
-              {agent && agent.threadIds.length > 0 && (
+              {deploymentCount > 0 && (
                 <span className="text-[9px] text-blue-300" data-testid={`agent-${role}-count`}>
-                  {agent.threadIds.length}
+                  {deploymentCount}
                 </span>
               )}
               {status === "cooldown" && <CooldownTimer role={role} />}
@@ -205,12 +214,12 @@ export function AgentDock({ isCompact = false, onHistoryClick }: AgentDockProps)
             />
             <span className="text-xs text-gray-300">{def.name}</span>
             <span className={`text-xs ${STATUS_STYLE[status]}`}>{STATUS_LABEL[status]}</span>
-            {agent && agent.threadIds.length > 0 && (
+            {deploymentCount > 0 && (
               <span
                 className="flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-900 px-1 text-[10px] text-blue-300"
                 data-testid={`agent-${role}-count`}
               >
-                {agent.threadIds.length}
+                {deploymentCount}
               </span>
             )}
             {status === "cooldown" && <CooldownTimer role={role} />}

@@ -48,6 +48,7 @@ export function createTrustRecord(contactEmail: string): TrustRecord {
     tier: "new",
     consecutiveStreak: 0,
     tierEntryDate: now,
+    establishedSinceDate: null,
     lastReplyTimestamp: null,
     lastDecayCheck: now,
     decayActive: false,
@@ -65,6 +66,17 @@ export function onTimeReply(
   const newStreak = record.consecutiveStreak + 1;
   const newTier = getTrustTier(newScore);
 
+  // Per Spec 07: establishedSinceDate tracks when contact first reached established tier.
+  // Set on first crossing into established/high-trust, never reset on upward transitions.
+  const isAtOrAboveEstablished = newTier === "established" || newTier === "high-trust";
+  const wasAtOrAboveEstablished = record.tier === "established" || record.tier === "high-trust";
+  let establishedSinceDate = record.establishedSinceDate;
+  if (isAtOrAboveEstablished && !wasAtOrAboveEstablished) {
+    // First time reaching established tier - set the date
+    establishedSinceDate = now;
+  }
+  // If upward transition (established -> high-trust), preserve existing date
+
   return {
     ...record,
     score: newScore,
@@ -72,6 +84,7 @@ export function onTimeReply(
     consecutiveStreak: newStreak,
     lastReplyTimestamp: now,
     tierEntryDate: newTier !== record.tier ? now : record.tierEntryDate,
+    establishedSinceDate,
     decayActive: false, // on-time reply clears decay
   };
 }
@@ -98,11 +111,13 @@ export function evaluateDecay(
   }
 
   // Check established tier floor protection per Spec 07:
-  // "established contacts with 30+ days at tier don't drop below established"
-  const timeAtTier = now - record.tierEntryDate;
+  // "Decay does not drop a contact below their established trust tier if they have held
+  // that tier for more than 30 days of continuous history." Uses establishedSinceDate
+  // which tracks continuous time at or above established, surviving upward transitions.
   const hasFloorProtection =
+    record.establishedSinceDate !== null &&
     (record.tier === "established" || record.tier === "high-trust") &&
-    timeAtTier >= ESTABLISHED_FLOOR_DURATION_MS;
+    now - record.establishedSinceDate >= ESTABLISHED_FLOOR_DURATION_MS;
 
   let newScore = Math.max(0, record.score - TRUST_DECAY_AMOUNT);
 
@@ -113,6 +128,10 @@ export function evaluateDecay(
 
   const newTier = getTrustTier(newScore);
 
+  // Clear establishedSinceDate if score drops below established tier
+  const newEstablishedSinceDate =
+    newTier === "established" || newTier === "high-trust" ? record.establishedSinceDate : null;
+
   return {
     ...record,
     score: newScore,
@@ -120,6 +139,7 @@ export function evaluateDecay(
     consecutiveStreak: 0, // decay resets streak
     lastDecayCheck: now,
     tierEntryDate: newTier !== record.tier ? now : record.tierEntryDate,
+    establishedSinceDate: newEstablishedSinceDate,
     decayActive: true, // per Spec 07: flag that decay is active on this contact
   };
 }

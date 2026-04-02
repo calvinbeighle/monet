@@ -248,6 +248,7 @@ describe("Gmail client (Nango proxy)", () => {
       const getStatusSpy = vi.spyOn(rateLimiter, "getStatus").mockReturnValue({
         dailyUsagePercent: 0,
         isExhausted: false,
+        isNearExhaustion: false,
         isPaused: false,
       });
 

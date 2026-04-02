@@ -7,6 +7,7 @@ export interface TrustRecord {
   tier: TrustTier;
   consecutiveStreak: number;
   tierEntryDate: number; // timestamp when entered current tier
+  establishedSinceDate: number | null; // timestamp when first reached established tier (or above); never reset on upward transitions, only cleared if score drops below established
   lastReplyTimestamp: number | null;
   lastDecayCheck: number;
   decayActive: boolean; // per Spec 07: true when trust decay is currently active

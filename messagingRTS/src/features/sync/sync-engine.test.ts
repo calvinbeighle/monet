@@ -19,6 +19,7 @@ import {
 import { useSyncStore } from "../../lib/stores/sync-store";
 import { useThreadStore } from "../../lib/stores";
 import { useAppStore } from "../../lib/stores";
+import { rateLimiter as rateLimiterModule } from "../../lib/utils/rate-limiter";
 import type { GmailHistoryResponse } from "../auth/gmail-client";
 import type { Thread } from "../../lib/types";
 
@@ -194,6 +195,8 @@ describe("SyncEngine", () => {
         previousZone: null,
         driftVelocity: { dx: 0, dy: 0 },
         clusterMembership: null,
+        clusterMembershipState: "unassigned",
+        overrideExcludedClusterIds: [],
         stateHistory: [],
         threadType: "existing-relationship",
         riskScore: 0,
@@ -814,6 +817,46 @@ describe("SyncEngine", () => {
       _setConsecutivePollFailures(0);
       expect(_getConsecutivePollFailures()).toBe(0);
       expect(getRetryInterval()).toBe(useSyncStore.getState().pollIntervalMs);
+    });
+  });
+
+  describe("proactive quota-aware poll reduction (Spec 01)", () => {
+    afterEach(() => {
+      rateLimiterModule._reset();
+    });
+
+    it("returns 6x base interval when quota near exhaustion", () => {
+      rateLimiterModule._reset();
+      _setConsecutivePollFailures(0);
+      useSyncStore.setState({ pollIntervalMs: 5000 });
+
+      // Push usage to 80%+ of daily limit (10000 units)
+      // Each history.list costs 2 units, so 4000 calls = 8000 units = 80%
+      for (let i = 0; i < 4000; i++) {
+        rateLimiterModule.recordUsage("history.list");
+      }
+      const status = rateLimiterModule.getStatus();
+      expect(status.isNearExhaustion).toBe(true);
+      expect(status.isExhausted).toBe(false);
+
+      // Should return 6x the base interval
+      expect(getRetryInterval()).toBe(30000);
+    });
+
+    it("returns max interval when quota fully exhausted", () => {
+      rateLimiterModule._reset();
+      _setConsecutivePollFailures(0);
+      useSyncStore.setState({ pollIntervalMs: 5000 });
+
+      // Push to 100%+ (10000 units, each history.list = 2)
+      for (let i = 0; i < 5000; i++) {
+        rateLimiterModule.recordUsage("history.list");
+      }
+      const status = rateLimiterModule.getStatus();
+      expect(status.isExhausted).toBe(true);
+
+      // Should return the 60s max interval
+      expect(getRetryInterval()).toBe(60000);
     });
   });
 

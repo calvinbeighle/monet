@@ -197,12 +197,15 @@ export class RateLimiter {
   getStatus(): {
     dailyUsagePercent: number;
     isExhausted: boolean;
+    isNearExhaustion: boolean;
     isPaused: boolean;
   } {
     this._maybeRollDay();
+    const dailyUsagePercent = (this._dailyUsage / DAILY_LIMIT) * 100;
     return {
-      dailyUsagePercent: (this._dailyUsage / DAILY_LIMIT) * 100,
+      dailyUsagePercent,
       isExhausted: this._degraded,
+      isNearExhaustion: dailyUsagePercent >= WARNING_THRESHOLD * 100,
       isPaused: this._now() < this._pausedUntil,
     };
   }

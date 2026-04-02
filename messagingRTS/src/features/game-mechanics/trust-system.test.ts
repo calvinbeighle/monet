@@ -83,6 +83,31 @@ describe("Trust system", () => {
       const updated = onTimeReply(record, "existing-relationship", now);
       expect(updated.lastReplyTimestamp).toBe(now);
     });
+
+    it("sets establishedSinceDate when first reaching established tier", () => {
+      const now = Date.now();
+      const record = createTrustRecord("test@example.com");
+      record.score = 48; // building, about to cross to established
+      record.tier = "building";
+
+      const updated = onTimeReply(record, "existing-relationship", now); // +8 = 56
+      expect(updated.tier).toBe("established");
+      expect(updated.establishedSinceDate).toBe(now);
+    });
+
+    it("preserves establishedSinceDate on upward transition to high-trust", () => {
+      const now = Date.now();
+      const oldDate = now - 40 * DAY;
+      const record = createTrustRecord("test@example.com");
+      record.score = 78; // established, about to cross to high-trust
+      record.tier = "established";
+      record.establishedSinceDate = oldDate;
+
+      const updated = onTimeReply(record, "existing-relationship", now); // +8 = 86
+      expect(updated.tier).toBe("high-trust");
+      // Should preserve the original date, not reset
+      expect(updated.establishedSinceDate).toBe(oldDate);
+    });
   });
 
   describe("createTrustRecord", () => {
@@ -100,7 +125,8 @@ describe("Trust system", () => {
       record.tier = "established";
       // existing-relationship critical = 48h, so 2x = 96h
       record.lastReplyTimestamp = now - 100 * HOUR;
-      record.tierEntryDate = now - 10 * 24 * 60 * 60 * 1000;
+      record.tierEntryDate = now - 10 * DAY;
+      record.establishedSinceDate = now - 10 * DAY;
 
       const decayed = evaluateDecay(record, "existing-relationship", now);
       expect(decayed.decayActive).toBe(true);
@@ -155,6 +181,7 @@ describe("Trust system", () => {
       // existing-relationship critical = 48h, so 2x = 96h
       record.lastReplyTimestamp = now - 100 * HOUR;
       record.tierEntryDate = now - 10 * DAY; // less than 30 days
+      record.establishedSinceDate = now - 10 * DAY; // less than 30 days - no floor
 
       const decayed = evaluateDecay(record, "existing-relationship", now);
       expect(decayed.score).toBeLessThan(50);
@@ -167,10 +194,26 @@ describe("Trust system", () => {
       record.score = 52; // just above established minimum (50)
       record.tier = "established";
       record.tierEntryDate = now - 35 * DAY; // 35 days at tier (>30)
+      record.establishedSinceDate = now - 35 * DAY; // 35 days at or above established
       record.lastReplyTimestamp = now - 200 * HOUR; // well past decay threshold
 
       const decayed = evaluateDecay(record, "existing-relationship", now);
       // Should not drop below 50 (established floor)
+      expect(decayed.score).toBeGreaterThanOrEqual(50);
+    });
+
+    it("floor protection survives upward tier transition (established -> high-trust)", () => {
+      const now = Date.now();
+      // Contact reached established 35 days ago, then was promoted to high-trust
+      const record = createTrustRecord("test@example.com");
+      record.score = 82; // high-trust
+      record.tier = "high-trust";
+      record.tierEntryDate = now - 5 * DAY; // only 5 days at high-trust
+      record.establishedSinceDate = now - 35 * DAY; // but 35 days at or above established
+      record.lastReplyTimestamp = now - 200 * HOUR; // well past decay threshold
+
+      const decayed = evaluateDecay(record, "existing-relationship", now);
+      // Floor protection should still apply because establishedSinceDate is 35+ days ago
       expect(decayed.score).toBeGreaterThanOrEqual(50);
     });
 

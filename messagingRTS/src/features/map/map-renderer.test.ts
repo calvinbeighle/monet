@@ -892,6 +892,7 @@ describe("Trust indicator on map nodes per Spec 07", () => {
         tier: "established" as const,
         consecutiveStreak: 5,
         tierEntryDate: Date.now(),
+        establishedSinceDate: Date.now(),
         lastReplyTimestamp: Date.now(),
         lastDecayCheck: Date.now(),
         decayActive: false,

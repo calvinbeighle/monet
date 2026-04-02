@@ -18,6 +18,7 @@ function makeTrustRecord(email: string, score: number): TrustRecord {
       score >= 80 ? "high-trust" : score >= 50 ? "established" : score >= 20 ? "building" : "new",
     consecutiveStreak: 0,
     tierEntryDate: Date.now() - 60 * 24 * 60 * 60 * 1000, // 60 days ago
+    establishedSinceDate: score >= 50 ? Date.now() - 60 * 24 * 60 * 60 * 1000 : null,
     lastReplyTimestamp: Date.now() - 10 * 60 * 1000, // 10 min ago
     lastDecayCheck: Date.now(),
     decayActive: false,

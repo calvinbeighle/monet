@@ -1,6 +1,8 @@
 // Thread data model per Spec 09
 // Core thread properties from Gmail + computed properties owned by the application
 
+import type { ThreadMembershipState } from "./cluster";
+
 export interface Position {
   x: number;
   y: number;
@@ -111,6 +113,8 @@ export interface Thread {
   previousZone: ZoneId | null;
   driftVelocity: Velocity;
   clusterMembership: string | null;
+  clusterMembershipState: ThreadMembershipState; // per Spec 11: full state machine value
+  overrideExcludedClusterIds: string[]; // per Spec 11: clusters this thread was manually dragged out of
 
   // Lifecycle
   lifecycleState: ThreadLifecycleState;
@@ -163,6 +167,8 @@ export function createThread(id: string, subject: string, snippet: string): Thre
     previousZone: null,
     driftVelocity: { dx: 0, dy: 0 },
     clusterMembership: null,
+    clusterMembershipState: "unassigned",
+    overrideExcludedClusterIds: [],
 
     lifecycleState: "new",
     stateHistory: [],

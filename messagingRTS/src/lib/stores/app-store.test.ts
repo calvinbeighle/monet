@@ -280,6 +280,7 @@ describe("AppStore - trust records, session stats, streaks", () => {
       tier: "established",
       consecutiveStreak: 3,
       tierEntryDate: 1000000,
+      establishedSinceDate: 1000000,
       lastReplyTimestamp: 2000000,
       lastDecayCheck: 3000000,
       decayActive: false,

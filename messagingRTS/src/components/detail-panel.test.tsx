@@ -176,6 +176,7 @@ describe("DetailPanel", () => {
           tier: "established",
           consecutiveStreak: 0,
           tierEntryDate: Date.now() - 30 * 24 * 60 * 60 * 1000,
+          establishedSinceDate: Date.now() - 30 * 24 * 60 * 60 * 1000,
           lastReplyTimestamp: Date.now() - 60 * 1000,
           lastDecayCheck: Date.now(),
           decayActive: false,
@@ -259,6 +260,7 @@ describe("DetailPanel", () => {
           tier: "high-trust",
           consecutiveStreak: 5,
           tierEntryDate: Date.now() - 60 * 24 * 60 * 60 * 1000,
+          establishedSinceDate: Date.now() - 60 * 24 * 60 * 60 * 1000,
           lastReplyTimestamp: Date.now() - 5 * 60 * 1000,
           lastDecayCheck: Date.now(),
           decayActive: false,
@@ -298,6 +300,7 @@ describe("DetailPanel", () => {
           tier: "established",
           consecutiveStreak: 1,
           tierEntryDate: Date.now() - 1000, // crossed tier 1 second ago
+          establishedSinceDate: Date.now() - 1000,
           lastReplyTimestamp: Date.now(),
           lastDecayCheck: Date.now(),
           decayActive: false,
