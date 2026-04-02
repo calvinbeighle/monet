@@ -1,128 +1,838 @@
 """
-main.py - FastAPI application entry point for Monet backend.
+main.py - Monet backend entry point.
 
-Exposes all API endpoints for the Monet AI decision copilot:
-- Intent classification and session management
-- Pre-staged suggestion retrieval
-- SSE streaming of agent events
-- Action approval/rejection
-- Agent and connection status
-- Composio OAuth initiation
-- Action history
+Manages headless Claude Code processes via stream-json pipes. Each agent is a real
+`claude` process running on the user's machine, communicating via structured JSON
+over stdin/stdout rather than a PTY.
 
-CORS is open for all origins in development.
+Features:
+- Rich event parsing: extracts currentStep, currentDetail, progress from Claude events
+- Decision queue: detects permission_request events and queues them for user action
+- Notification system: broadcasts agent lifecycle events (completion, error, decisions)
+- SQLite persistence: agents survive server restarts
+
+Endpoints:
+- GET  /agents                        - list all agents
+- POST /agents                        - create agent + spawn claude process
+- DELETE /agents/{id}                 - kill process + remove agent
+- POST /agents/{id}/start             - start or restart claude process
+- POST /agents/{id}/stop              - stop claude process
+- POST /agents/{id}/input             - send a user message to the claude process
+- GET  /agents/{id}/output            - get buffered events (last 1000)
+- WS   /agents/{id}/terminal          - live JSON event streaming WebSocket
+- GET  /decisions                     - list all pending decisions
+- POST /decisions/{id}/resolve        - resolve a decision (approve/reject/skip)
+- GET  /notifications                 - get recent notifications (toast events)
+- POST /config/workspace              - set default workspace directory
+- GET  /config/workspace              - get current default workspace
 """
-
 from __future__ import annotations
 
 import asyncio
 import json
+import os
+import signal
+import sqlite3
+import time
 import logging
-import re
 import uuid
-from contextlib import asynccontextmanager
-from datetime import datetime
-from typing import Any, AsyncGenerator
+from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from sse_starlette.sse import EventSourceResponse
-
-import config
-from agents.runner import AgentRunner
-from integrations.composio_client import ComposioClient
-from models import (
-    Agent,
-    AgentEvent,
-    ApproveResponse,
-    Connection,
-    EventType,
-    HistoryEntry,
-    IntentRequest,
-    IntentResponse,
-    Session,
-    SessionStatus,
-    Suggestion,
-    UiPattern,
-)
-from router import classify_intent
-from decision_queue import decision_queue, Decision
-from scheduler import AgentScheduler
-from activity import activity_log
+from fastapi.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# --- SQLite Persistence ---
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "monet.db")
+
+def _init_db():
+    """Initialize the SQLite database with required tables."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS agents (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL DEFAULT '#8b5cf6',
+            workspace TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS decisions (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL DEFAULT '',
+            data TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at REAL NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            agent_name TEXT NOT NULL DEFAULT '',
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            detail TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            read INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def _save_agent(agent_id: str, name: str, color: str, workspace: str):
+    """Persist an agent to SQLite."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR REPLACE INTO agents (id, name, color, workspace) VALUES (?, ?, ?, ?)",
+        (agent_id, name, color, workspace)
+    )
+    conn.commit()
+    conn.close()
+
+def _delete_agent_db(agent_id: str):
+    """Remove an agent from SQLite."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+    conn.execute("DELETE FROM decisions WHERE agent_id = ?", (agent_id,))
+    conn.commit()
+    conn.close()
+
+def _load_agents() -> list[dict]:
+    """Load all agents from SQLite."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM agents").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def _save_decision(decision: dict):
+    """Persist a decision to SQLite."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR REPLACE INTO decisions (id, agent_id, title, summary, data, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (decision["id"], decision["agent_id"], decision["title"], decision["summary"],
+         json.dumps(decision.get("data", {})), decision["status"], decision["created_at"])
+    )
+    conn.commit()
+    conn.close()
+
+def _load_pending_decisions() -> list[dict]:
+    """Load all pending decisions from SQLite."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM decisions WHERE status = 'pending' ORDER BY created_at DESC").fetchall()
+    conn.close()
+    results = []
+    for r in rows:
+        d = dict(r)
+        d["data"] = json.loads(d["data"]) if d["data"] else {}
+        results.append(d)
+    return results
+
+def _resolve_decision_db(decision_id: str, resolution: str):
+    """Update a decision status in SQLite."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE decisions SET status = ? WHERE id = ?", (resolution, decision_id))
+    conn.commit()
+    conn.close()
+
+def _save_notification(notif: dict):
+    """Persist a notification."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO notifications (id, agent_id, agent_name, type, title, detail, created_at, read) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+        (notif["id"], notif["agent_id"], notif["agent_name"], notif["type"], notif["title"], notif.get("detail", ""), notif["created_at"])
+    )
+    conn.commit()
+    conn.close()
+
+def _load_recent_notifications(limit: int = 50) -> list[dict]:
+    """Load recent notifications."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("SELECT * FROM notifications ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def _mark_notifications_read():
+    """Mark all notifications as read."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("UPDATE notifications SET read = 1 WHERE read = 0")
+    conn.commit()
+    conn.close()
+
+
+# --- Tool name to readable label mapping ---
+
+TOOL_LABELS = {
+    "Read": "Reading file",
+    "Write": "Writing file",
+    "Edit": "Editing file",
+    "MultiEdit": "Editing files",
+    "Bash": "Running command",
+    "TodoRead": "Checking tasks",
+    "TodoWrite": "Updating tasks",
+    "WebSearch": "Searching web",
+    "WebFetch": "Fetching URL",
+    "Glob": "Finding files",
+    "Grep": "Searching code",
+    "LS": "Listing directory",
+    "Task": "Running subtask",
+}
+
+
+def _extract_tool_detail(tool_name: str, tool_input: dict | None) -> str:
+    """Extract a human-readable detail string from a tool call."""
+    if not tool_input:
+        return ""
+    if tool_name in ("Read", "Write", "Edit"):
+        path = tool_input.get("file_path", tool_input.get("path", ""))
+        if path:
+            # Show just the filename
+            return path.split("/")[-1]
+    if tool_name == "Bash":
+        cmd = tool_input.get("command", "")
+        if cmd:
+            return cmd[:60] + ("..." if len(cmd) > 60 else "")
+    if tool_name in ("Grep", "Glob"):
+        pattern = tool_input.get("pattern", tool_input.get("glob", ""))
+        if pattern:
+            return pattern[:40]
+    return ""
+
+
+# --- Agent Process Manager ---
+
+class AgentProcess:
+    """
+    A headless Claude Code agent using one-shot `claude -p` invocations.
+
+    Each user message spawns a new `claude -p` process. Conversation continuity
+    is maintained via `--session-id` (first message creates a session on disk)
+    and `--resume <session-id>` (subsequent messages continue that session).
+
+    The agent transitions between three states:
+      idle    -> user sends a message -> running
+      running -> claude process exits  -> idle
+      running -> claude process errors -> error
+      error   -> user sends a message  -> running  (resets error)
+
+    Rich status tracking extracts tool names, file paths, and progress from
+    the claude stream-json output so the frontend can display what the agent
+    is doing in real time.
+
+    After each run, a lightweight LLM call (haiku) summarizes the activity into
+    structured insights: task classification, files changed, thinking process,
+    and a human-readable summary.
+    """
+
+    def __init__(self, agent_id: str, name: str, color: str, workspace: str):
+        self.agent_id = agent_id
+        self.name = name
+        self.color = color
+        self.workspace = workspace
+        self.process: asyncio.subprocess.Process | None = None
+        self.status = "idle"  # idle, running, error
+        self.events: list[dict] = []  # all JSON events from this session, capped at 1000
+        self.subscribers: list[asyncio.Queue] = []  # active WebSocket queues
+        self._reader_task: asyncio.Task | None = None
+        self._run_lock = asyncio.Lock()  # prevent concurrent sends
+
+        # Session tracking - maintained across messages for conversation continuity
+        self.session_id: str | None = None  # set from first claude response
+
+        # Rich status tracking
+        self.current_step: str | None = None
+        self.current_detail: str | None = None
+        self.tool_call_count: int = 0
+        self.total_tool_calls: int = 0  # cumulative across all messages
+        self.decision_count: int = 0
+        self.started_at: float | None = None
+        self.last_user_message: str | None = None
+        self.last_completed_at: float | None = None
+        self.last_error: str | None = None
+
+        # Activity tracking for insights - accumulates during a run
+        self._activity_log: list[dict] = []  # structured log of what happened
+        self._files_touched: dict[str, str] = {}  # filepath -> action (read/write/edit)
+        self._commands_run: list[str] = []  # bash commands executed
+        self._thinking_blocks: list[str] = []  # assistant text blocks (thinking/reasoning)
+
+        # Insights - produced by post-run summarization
+        self.insights: dict | None = None  # latest structured insight
+        self.insight_history: list[dict] = []  # all insights from this session
+
+    def _process_event(self, event: dict):
+        """
+        Extract rich status information from a claude stream-json event.
+
+        Updates currentStep, currentDetail, toolCallCount, and decisionCount
+        based on the event type and content.
+        Also builds the activity log for post-run summarization.
+        """
+        etype = event.get("type", "")
+
+        # Capture session_id from system init or result events
+        sid = event.get("session_id")
+        if sid and not self.session_id:
+            self.session_id = sid
+            logger.info("Agent '%s' session_id: %s", self.name, sid)
+
+        if etype == "assistant":
+            message = event.get("message", {})
+            content = message.get("content", [])
+            for block in content:
+                if block.get("type") == "tool_use":
+                    tool_name = block.get("name", "Tool")
+                    tool_input = block.get("input", {})
+                    self.tool_call_count += 1
+                    self.total_tool_calls += 1
+                    self.current_step = TOOL_LABELS.get(tool_name, f"Using {tool_name}")
+                    self.current_detail = _extract_tool_detail(tool_name, tool_input)
+
+                    # Track for insights
+                    activity_entry = {"tool": tool_name, "detail": self.current_detail or ""}
+                    if tool_name in ("Read", "Write", "Edit", "MultiEdit"):
+                        path = tool_input.get("file_path", tool_input.get("path", ""))
+                        if path:
+                            action = "read" if tool_name == "Read" else "write" if tool_name == "Write" else "edit"
+                            self._files_touched[path] = action
+                            activity_entry["file"] = path
+                            activity_entry["action"] = action
+                    elif tool_name == "Bash":
+                        cmd = tool_input.get("command", "")
+                        if cmd:
+                            self._commands_run.append(cmd[:200])
+                            activity_entry["command"] = cmd[:200]
+                    elif tool_name in ("Grep", "Glob"):
+                        pattern = tool_input.get("pattern", tool_input.get("glob", ""))
+                        activity_entry["pattern"] = pattern[:100] if pattern else ""
+
+                    self._activity_log.append(activity_entry)
+
+                elif block.get("type") == "text":
+                    text_content = block.get("text", "")
+                    # Claude is producing text - update step to show it's responding
+                    if self.current_step == "Thinking...":
+                        self.current_step = "Responding..."
+                        self.current_detail = None
+                    # Track thinking for insights (cap to avoid huge payloads)
+                    if text_content.strip():
+                        self._thinking_blocks.append(text_content[:500])
+
+        elif etype == "result":
+            # Run completed - clear step info (status will be set to idle by send_message)
+            self.current_step = None
+            self.current_detail = None
+
+    async def send_message(self, text: str):
+        """
+        Send a message by spawning a new claude -p process.
+
+        Uses --session-id on first message to create a named session, then
+        --resume on subsequent messages to continue the conversation.
+        """
+        # Serialize sends so we don't spawn overlapping processes
+        async with self._run_lock:
+            await self._run_message(text)
+
+    def _build_activity_digest(self) -> str:
+        """Build a compact text digest of recent activity for the summarizer."""
+        parts = []
+        parts.append(f"User message: {self.last_user_message or '(none)'}")
+        parts.append(f"Tool calls: {self.tool_call_count}")
+        parts.append(f"Duration: {int(time.time() - self.started_at) if self.started_at else 0}s")
+
+        if self._files_touched:
+            files_by_action: dict[str, list[str]] = {}
+            for fp, action in self._files_touched.items():
+                files_by_action.setdefault(action, []).append(fp.split("/")[-1])
+            for action, files in files_by_action.items():
+                parts.append(f"Files {action}: {', '.join(files[:10])}")
+
+        if self._commands_run:
+            parts.append(f"Commands: {'; '.join(self._commands_run[:5])}")
+
+        # Include first and last thinking blocks for context
+        if self._thinking_blocks:
+            first = self._thinking_blocks[0][:300]
+            parts.append(f"Initial thinking: {first}")
+            if len(self._thinking_blocks) > 1:
+                last = self._thinking_blocks[-1][:300]
+                parts.append(f"Final response: {last}")
+
+        # Include last few activity entries
+        recent = self._activity_log[-8:]
+        if recent:
+            steps = []
+            for a in recent:
+                tool = a.get("tool", "?")
+                detail = a.get("detail", "")
+                if a.get("file"):
+                    steps.append(f"{tool}({a['file'].split('/')[-1]})")
+                elif a.get("command"):
+                    steps.append(f"Bash({a['command'][:40]})")
+                elif detail:
+                    steps.append(f"{tool}({detail})")
+                else:
+                    steps.append(tool)
+            parts.append(f"Steps: {' -> '.join(steps)}")
+
+        return "\n".join(parts)
+
+    async def _generate_insights(self):
+        """
+        Call a lightweight model (haiku) to generate structured insights
+        about the agent's recent activity. Runs in the background after
+        each message completes.
+        """
+        if not self._activity_log and not self._thinking_blocks:
+            return
+
+        digest = self._build_activity_digest()
+        prompt = f"""Analyze this AI agent's activity and produce a JSON object with these fields:
+- "taskLabel": A 2-4 word label classifying what the agent is doing (e.g. "Refactoring Auth Logic", "Writing Unit Tests", "Debugging API Error", "Setting Up Config")
+- "summary": One sentence summarizing what the agent accomplished in this run
+- "thinkingProcess": 2-3 bullet points describing the agent's reasoning/approach (each bullet max 15 words)
+- "filesChanged": Array of objects with "file" (just filename), "action" (read/write/edit), "why" (5-8 word reason)
+- "status": One of "completed", "in_progress", "investigating", "refactoring", "debugging", "testing"
+- "complexity": One of "trivial", "simple", "moderate", "complex"
+
+Activity log:
+{digest}
+
+Respond with ONLY valid JSON, no markdown fences."""
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "claude", "-p",
+                "--model", "haiku",
+                "--output-format", "text",
+                "--dangerously-skip-permissions",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.workspace,
+            )
+            proc.stdin.write(prompt.encode())
+            proc.stdin.close()
+
+            stdout_bytes = await asyncio.wait_for(proc.stdout.read(), timeout=15.0)
+            await proc.wait()
+
+            raw = stdout_bytes.decode("utf-8", errors="replace").strip()
+            # Strip markdown fences if present
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1]
+            if raw.endswith("```"):
+                raw = raw.rsplit("```", 1)[0]
+            raw = raw.strip()
+
+            insight = json.loads(raw)
+            insight["generatedAt"] = time.time()
+            insight["toolCallCount"] = self.tool_call_count
+            insight["elapsedSeconds"] = int(time.time() - self.started_at) if self.started_at else 0
+            insight["userMessage"] = (self.last_user_message or "")[:100]
+
+            self.insights = insight
+            self.insight_history.append(insight)
+            if len(self.insight_history) > 20:
+                self.insight_history = self.insight_history[-20:]
+
+            logger.info("Generated insight for '%s': taskLabel=%s, status=%s",
+                       self.name, insight.get("taskLabel"), insight.get("status"))
+
+            # Broadcast insight to subscribers
+            insight_event = {"type": "monet_insight", "insight": insight}
+            for queue in self.subscribers:
+                try:
+                    queue.put_nowait(insight_event)
+                except asyncio.QueueFull:
+                    pass
+
+        except asyncio.TimeoutError:
+            logger.warning("Insight generation timed out for '%s'", self.name)
+        except json.JSONDecodeError as e:
+            logger.warning("Failed to parse insight JSON for '%s': %s (raw: %s)",
+                          self.name, e, raw[:200] if raw else "empty")
+        except Exception as e:
+            logger.warning("Insight generation failed for '%s': %s", self.name, e)
+
+    async def _run_message(self, text: str):
+        """Internal: actually spawn and manage the claude process."""
+        self.status = "running"
+        self.started_at = time.time()
+        self.tool_call_count = 0
+        self.current_step = "Thinking..."
+        self.current_detail = None
+        self.last_error = None
+
+        # Clear activity tracking for this run
+        self._activity_log = []
+        self._files_touched = {}
+        self._commands_run = []
+        self._thinking_blocks = []
+
+        # Store the user message for task naming
+        if not self.last_user_message:
+            self.last_user_message = text
+
+        try:
+            cmd = [
+                "claude", "-p",
+                "--output-format", "stream-json",
+                "--verbose",
+                "--dangerously-skip-permissions",
+            ]
+
+            # Use --resume with session_id for subsequent messages (conversation continuity)
+            if self.session_id:
+                cmd.extend(["--resume", self.session_id])
+
+            self.process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.workspace,
+            )
+
+            logger.info("Spawned claude for '%s' (pid=%s, session=%s)",
+                       self.name, self.process.pid,
+                       self.session_id or "new")
+
+            # Write the message to stdin and close it (signals end of input for -p mode)
+            self.process.stdin.write(text.encode())
+            self.process.stdin.close()
+
+            # Read all JSON events from stdout
+            while True:
+                line = await self.process.stdout.readline()
+                if not line:
+                    break
+
+                line_text = line.decode("utf-8", errors="replace").strip()
+                if not line_text:
+                    continue
+
+                try:
+                    event = json.loads(line_text)
+                except json.JSONDecodeError:
+                    continue
+
+                # Extract rich status from the event
+                self._process_event(event)
+
+                self.events.append(event)
+                if len(self.events) > 1000:
+                    self.events = self.events[-1000:]
+
+                num_subs = len(self.subscribers)
+                etype = event.get("type", "?")
+                logger.debug("Agent '%s' event type=%s, subscribers=%d",
+                            self.name, etype, num_subs)
+                for queue in self.subscribers:
+                    try:
+                        queue.put_nowait(event)
+                    except asyncio.QueueFull:
+                        logger.warning("Queue full for agent '%s' — dropping event type=%s",
+                                      self.name, etype)
+
+            await self.process.wait()
+
+            # Check for non-zero exit code
+            if self.process.returncode and self.process.returncode != 0:
+                stderr_bytes = await self.process.stderr.read()
+                stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+                if stderr_text:
+                    logger.warning("claude stderr for '%s': %s", self.name, stderr_text[:200])
+
+            self.last_completed_at = time.time()
+
+        except Exception as e:
+            logger.error("Error running claude for '%s': %s", self.name, e)
+            self.status = "error"
+            self.last_error = str(e)
+
+            # Emit error notification
+            notif = {
+                "id": str(uuid.uuid4()),
+                "agent_id": self.agent_id,
+                "agent_name": self.name,
+                "type": "error",
+                "title": f"{self.name} encountered an error",
+                "detail": str(e)[:200],
+                "created_at": time.time(),
+            }
+            _save_notification(notif)
+            _notifications_buffer.append(notif)
+
+            # Broadcast error event
+            error_event = {"type": "monet_notification", "notification": notif}
+            for queue in self.subscribers:
+                try:
+                    queue.put_nowait(error_event)
+                except asyncio.QueueFull:
+                    pass
+            self.process = None
+            return
+
+        # Transition back to idle
+        self.status = "idle"
+        self.current_step = None
+        self.current_detail = None
+        self.process = None
+
+        # Generate instant heuristic insights (immediate, no LLM call)
+        self._generate_instant_insights()
+
+        # Then upgrade with richer LLM insights in background (non-blocking)
+        asyncio.create_task(self._generate_insights())
+
+    def _generate_instant_insights(self):
+        """
+        Produce instant structured insights from activity log heuristics.
+        No LLM call - runs synchronously in <1ms.
+        The LLM call will upgrade these later with richer data.
+        """
+        elapsed = int(time.time() - self.started_at) if self.started_at else 0
+
+        # Classify the task based on tool usage patterns
+        task_label = self._classify_task()
+
+        # Build thinking process from activity log
+        thinking = []
+        for a in self._activity_log[:6]:
+            tool = a.get("tool", "?")
+            detail = a.get("detail", "")
+            if a.get("file"):
+                fname = a["file"].split("/")[-1]
+                action = a.get("action", "used")
+                thinking.append(f"{action.capitalize()} {fname}")
+            elif a.get("command"):
+                cmd = a["command"][:50]
+                thinking.append(f"Ran: {cmd}")
+            elif a.get("pattern"):
+                thinking.append(f"Searched for: {a['pattern'][:30]}")
+            elif detail:
+                thinking.append(f"{TOOL_LABELS.get(tool, tool)}: {detail}")
+            else:
+                thinking.append(TOOL_LABELS.get(tool, f"Used {tool}"))
+
+        # Build files changed list
+        files_changed = []
+        for fp, action in list(self._files_touched.items())[:10]:
+            fname = fp.split("/")[-1]
+            files_changed.append({"file": fname, "action": action, "path": fp})
+
+        # Build summary from first response text
+        summary = ""
+        if self._thinking_blocks:
+            first_text = self._thinking_blocks[0][:150]
+            summary = first_text.split("\n")[0].strip()
+            if len(summary) > 100:
+                summary = summary[:97] + "..."
+
+        # Determine complexity
+        tc = self.tool_call_count
+        complexity = "trivial" if tc == 0 else "simple" if tc <= 3 else "moderate" if tc <= 10 else "complex"
+
+        # Determine status
+        status = "completed"
+        if self.last_error:
+            status = "error"
+        elif any(a.get("tool") in ("Grep", "Glob") for a in self._activity_log):
+            if not any(a.get("action") in ("write", "edit") for a in self._activity_log):
+                status = "investigating"
+
+        self.insights = {
+            "taskLabel": task_label,
+            "summary": summary or f"Processed request with {tc} tool calls",
+            "thinkingProcess": thinking[:4] if thinking else ["Processed user request"],
+            "filesChanged": files_changed,
+            "status": status,
+            "complexity": complexity,
+            "generatedAt": time.time(),
+            "toolCallCount": tc,
+            "elapsedSeconds": elapsed,
+            "userMessage": (self.last_user_message or "")[:100],
+            "_source": "heuristic",  # will be upgraded to "llm" by _generate_insights
+        }
+
+        logger.info("Instant insight for '%s': taskLabel=%s (%d tools, %ds)",
+                    self.name, task_label, tc, elapsed)
+
+    def _classify_task(self) -> str:
+        """Classify the task into a short 2-4 word label based on activity patterns."""
+        has_write = any(a.get("action") in ("write", "edit") for a in self._activity_log)
+        has_read = any(a.get("action") == "read" for a in self._activity_log)
+        has_bash = any(a.get("tool") == "Bash" for a in self._activity_log)
+        has_search = any(a.get("tool") in ("Grep", "Glob") for a in self._activity_log)
+        tc = self.tool_call_count
+
+        # Check for specific file extensions in changed files
+        extensions = set()
+        for fp in self._files_touched:
+            if "." in fp:
+                extensions.add(fp.rsplit(".", 1)[-1].lower())
+
+        test_related = any("test" in fp.split("/")[-1].lower() for fp in self._files_touched)
+        config_related = any(ext in ("json", "yaml", "yml", "toml", "env", "cfg")
+                           for ext in extensions)
+
+        # Classify based on patterns
+        if test_related and has_write:
+            return "Writing Tests"
+        if has_write and has_search:
+            return "Refactoring Code"
+        if has_write and len(self._files_touched) > 3:
+            return "Editing Multiple Files"
+        if has_write and config_related:
+            return "Updating Config"
+        if has_write:
+            # Use the most recently written file for context
+            written = [fp for fp, act in self._files_touched.items() if act in ("write", "edit")]
+            if written:
+                fname = written[-1].split("/")[-1]
+                if len(fname) <= 20:
+                    return f"Editing {fname}"
+            return "Writing Code"
+        if has_bash and not has_read:
+            if self._commands_run:
+                first_cmd = self._commands_run[0].split()[0] if self._commands_run[0].split() else ""
+                if first_cmd in ("ls", "find", "du", "df", "tree"):
+                    return "Exploring Files"
+                if first_cmd in ("npm", "yarn", "pip", "cargo", "make"):
+                    return "Running Build"
+                if first_cmd in ("git",):
+                    return "Git Operations"
+                if first_cmd in ("pytest", "jest", "vitest", "cargo"):
+                    return "Running Tests"
+            return "Running Commands"
+        if has_search:
+            return "Searching Codebase"
+        if has_read and not has_write:
+            return "Reading Code"
+        if has_bash:
+            return "Terminal Session"
+        if tc == 0:
+            return "Quick Response"
+
+        # Fallback: derive from user message
+        msg = (self.last_user_message or "").lower()
+        if any(w in msg for w in ("fix", "bug", "error", "issue")):
+            return "Debugging"
+        if any(w in msg for w in ("test", "spec")):
+            return "Testing"
+        if any(w in msg for w in ("refactor", "clean", "organize")):
+            return "Refactoring"
+        if any(w in msg for w in ("add", "create", "implement", "build")):
+            return "Building Feature"
+        if any(w in msg for w in ("explain", "what", "how", "why")):
+            return "Code Review"
+
+        return "Working"
+
+    def kill(self):
+        """
+        Terminate the claude process.
+
+        Sends SIGTERM. Safe to call if the process has already exited -
+        silently ignores ProcessLookupError.
+        """
+        if self.process:
+            try:
+                self.process.terminate()
+            except ProcessLookupError:
+                pass
+        self.status = "idle"
+        self.current_step = None
+        self.current_detail = None
+        self.process = None
+
+    def _derive_task_name(self) -> str | None:
+        """Derive a short task name from the user's first message."""
+        msg = self.last_user_message
+        if not msg:
+            return None
+        # Take first meaningful words, cap at ~30 chars
+        words = msg.strip().split()
+        result = ""
+        for w in words:
+            if len(result) + len(w) + 1 > 30:
+                break
+            result = (result + " " + w) if result else w
+        return result or None
+
+    def to_dict(self) -> dict:
+        """
+        Serialize the agent to a plain dict for API JSON responses.
+
+        Returns:
+            Dict with id, name, status, color, workspace, pid, and rich display fields.
+        """
+        is_running = self.status == "running"
+
+        # Derive a meaningful task name for the cabin
+        task_name = None
+        if is_running:
+            task_name = self._derive_task_name() or self.current_step or "Working"
+
+        # Calculate elapsed time
+        elapsed_seconds = None
+        if self.started_at and is_running:
+            elapsed_seconds = int(time.time() - self.started_at)
+
+        # Build mood string - reflects what the agent is actually doing right now
+        if self.status == "error":
+            mood = self.last_error[:50] if self.last_error else "Error"
+        elif is_running:
+            if self.current_detail:
+                mood = f"{self.current_step or 'Working'}: {self.current_detail}"
+            else:
+                mood = self.current_step or "Thinking..."
+        else:
+            mood = "Ready"
+
+        return {
+            "id": self.agent_id,
+            "name": self.name,
+            "status": self.status,
+            "color": self.color,
+            "workspace": self.workspace,
+            "pid": self.process.pid if self.process else None,
+            "decisionCount": self.decision_count,
+            "mood": mood,
+            "currentStep": task_name,
+            "currentDetail": self.current_detail,
+            "toolCallCount": self.tool_call_count,
+            "elapsedSeconds": elapsed_seconds,
+            "emoji": "",
+            # Insight fields
+            "insights": self.insights,
+            "activityLog": self._activity_log[-10:] if self._activity_log else [],
+            "filesTouched": self._files_touched,
+        }
+
+
 # --- App State ---
 
-# Active sessions keyed by session_id
-_sessions: dict[str, Session] = {}
-
-# Composio client (shared across all agents)
-_composio = ComposioClient()
-
-# Agent runner (manages background tasks + suggestion store)
-_runner = AgentRunner(_composio)
+_agents: dict[str, AgentProcess] = {}  # agent_id -> AgentProcess
+_default_workspace: str = os.path.expanduser("~")
+_notifications_buffer: list[dict] = []  # in-memory ring buffer for quick access
 
 
-# --- Lifespan ---
+# --- App ---
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """
-    Application lifespan handler.
-
-    On startup: validates config, seeds stub suggestions, starts the background
-    scheduler, and schedules legacy agent loops. On shutdown: cancels all tasks.
-    """
-    try:
-        config.validate_config()
-    except ValueError as exc:
-        logger.warning("Config warning: %s", exc)
-
-    # Seed initial suggestions from agents on first boot (legacy suggestion store)
-    asyncio.create_task(_seed_suggestions())
-
-    # Start background scheduler - runs email/code agents on a schedule and
-    # pushes decisions into the decision_queue for the user to review
-    scheduler = AgentScheduler()
-    app.state.scheduler = scheduler
-    asyncio.create_task(scheduler.start())
-
-    # Also keep legacy scheduled runs for the AgentRunner suggestion store
-    _runner.schedule_agent("email", interval_minutes=15.0)
-    _runner.schedule_agent("code", interval_minutes=30.0)
-
-    logger.info("Monet backend started.")
-    yield
-
-    await scheduler.stop()
-    _runner.stop_all()
-    logger.info("Monet backend shut down.")
-
-
-async def _seed_suggestions() -> None:
-    """
-    Runs both agents once on startup to pre-populate the suggestion store.
-    Errors are caught and logged without crashing the app.
-    """
-    for agent_type in ("email", "code"):
-        try:
-            await _runner.run_agent(agent_type)
-        except Exception as exc:
-            logger.warning("Seed run for '%s' failed: %s", agent_type, exc)
-
-
-# --- App Init ---
-
-app = FastAPI(
-    title="Monet Backend",
-    description="AI decision copilot backend - agent orchestration and streaming API.",
-    version="0.1.0",
-    lifespan=lifespan,
-)
+app = FastAPI(title="Monet", lifespan=None)
 
 app.add_middleware(
     CORSMiddleware,
@@ -133,1062 +843,387 @@ app.add_middleware(
 )
 
 
-# --- Health ---
-
-@app.get("/")
-async def health_check() -> dict[str, Any]:
-    """
-    Health check endpoint.
-
-    Returns:
-        Status dict with service name, version, and stub mode flag.
-    """
-    return {
-        "status": "ok",
-        "service": "monet-backend",
-        "version": "0.1.0",
-        "stub_mode": _composio.is_stub,
-    }
-
-
-# --- Activity ---
-
-@app.get("/activity")
-async def get_activity(agent_id: str | None = None) -> list[dict[str, Any]]:
-    """
-    Returns recent activity steps from background agents.
-
-    Args:
-        agent_id: Optional filter - if provided, only steps for this agent are returned.
-
-    Returns:
-        List of activity step dicts, ordered oldest to most recent (limit 10).
-    """
-    return activity_log.get_recent(agent_id=agent_id)
-
-
-@app.get("/activity/current")
-async def get_current_activity() -> dict[str, Any]:
-    """
-    Returns the most recent step for each known agent.
-
-    Used by the frontend to show live 'what is this agent doing right now' data
-    on agent cards and in the orchestrator chat system prompt.
-
-    Returns:
-        Dict keyed by agent_id with the current step payload, or null if idle.
-    """
-    return {
-        "email": activity_log.get_current("email"),
-        "code": activity_log.get_current("code"),
-        "planning": activity_log.get_current("planning"),
-    }
-
-
-# --- Chat ---
-
-def _build_chat_system_prompt() -> str:
-    """
-    Builds a live-context system prompt for the orchestrator chat.
-
-    Pulls current agent status, decision counts, and active step details
-    from the live data stores so the LLM can answer questions about what
-    is happening right now with real data rather than generic answers.
-
-    Returns:
-        Formatted system prompt string with current agent and decision context.
-    """
-    scheduler: AgentScheduler | None = None
-    try:
-        scheduler = app.state.scheduler
-    except AttributeError:
-        pass
-
-    # Agent personality config - mirrors the /agents endpoint
-    _agent_meta: dict[str, str] = {
-        "email": "Email Agent",
-        "code": "Code Agent",
-        "planning": "Planning Agent",
-    }
-
-    agents_status: list[str] = []
-    for agent_id, agent_name in _agent_meta.items():
-        pending_count = decision_queue.get_pending_count(agent_id)
-        is_running = scheduler.is_running(agent_id) if scheduler else False
-        status = "running" if is_running else "idle"
-
-        line = f"- {agent_name}: {status}"
-        if pending_count > 0:
-            line += f" ({pending_count} decision{'s' if pending_count != 1 else ''} pending)"
-
-        current = activity_log.get_current(agent_id)
-        if current and is_running:
-            line += f" - currently: {current['detail']}"
-
-        agents_status.append(line)
-
-    pending = decision_queue.get_pending()
-    decision_summaries: list[str] = []
-    for d in pending[:5]:
-        decision_summaries.append(f"- [{d.agent_id}] {d.title}: {d.summary}")
-
-    agents_block = "\n".join(agents_status) if agents_status else "- No agents available"
-    decisions_block = "\n".join(decision_summaries) if decision_summaries else "- None"
-
-    return (
-        "You are Monet, an AI orchestrator that manages sub-agents for a startup founder.\n\n"
-        f"Current agent status:\n{agents_block}\n\n"
-        f"Pending decisions ({len(pending)} total):\n{decisions_block}\n\n"
-        "You can:\n"
-        "1. Answer questions about what agents are doing or what decisions are pending\n"
-        "2. Delegate tasks - say you will have an agent handle it\n"
-        "3. Provide insights from agent data\n"
-        "4. Help the user work through pending decisions\n\n"
-        "Be concise. Speak in first person as Monet. Reference specific agent data when relevant. "
-        "Do not make up data - only reference what is in the context above. "
-        "Never use em dashes - use hyphens instead."
-    )
-
-
-@app.post("/chat")
-async def chat(data: dict) -> StreamingResponse:
-    """
-    Streams a Claude response for an orchestrator chat message.
-
-    Builds a live system prompt from current agent status and pending decisions
-    so the LLM can answer questions about agent activity with real data.
-    Uses Claude Haiku for speed. Returns a StreamingResponse with SSE-formatted
-    data so fetch + ReadableStream on the frontend can parse it reliably.
-    Supports multi-turn context via the optional 'history' field.
-
-    Args:
-        data: Dict with 'text' (the user message) and optional 'history'
-              (list of prior messages for multi-turn context).
-
-    Returns:
-        StreamingResponse with text/event-stream content and named SSE events:
-        text, done, error.
-    """
-    import anthropic
-
-    user_text = data.get("text", "").strip()
-    if not user_text:
-        async def _empty() -> AsyncGenerator[str, None]:
-            yield f"event: done\ndata: {json.dumps({'status': 'complete'})}\n\n"
-        return StreamingResponse(
-            _empty(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
-        )
-
-    # Build message history for multi-turn context
-    history: list[dict] = data.get("history", [])
-    messages = [*history, {"role": "user", "content": user_text}]
-
-    system_prompt = _build_chat_system_prompt()
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-
-    async def generate() -> AsyncGenerator[str, None]:
-        """Streams token chunks from Claude Haiku as raw SSE-formatted text."""
-        try:
-            with client.messages.stream(
-                model=config.HAIKU_MODEL,
-                max_tokens=1024,
-                messages=messages,
-                system=system_prompt,
-            ) as stream:
-                for text_chunk in stream.text_stream:
-                    yield f"event: text\ndata: {json.dumps({'text': text_chunk})}\n\n"
-            yield f"event: done\ndata: {json.dumps({'status': 'complete'})}\n\n"
-        except Exception as exc:
-            logger.exception("Chat stream error: %s", exc)
-            yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-# --- Intent ---
-
-@app.post("/intent", response_model=IntentResponse)
-async def submit_intent(body: IntentRequest) -> IntentResponse:
-    """
-    Routes the user's command bar input through the orchestrator, then creates
-    a new agent session for the resolved agent type.
-
-    The orchestrator uses Claude Sonnet to decide whether to delegate to a single
-    agent, fan out to multiple agents, or answer directly. The resulting session
-    can be streamed via GET /stream/{session_id}.
-
-    Args:
-        body: IntentRequest with raw user text and optional context.
-
-    Returns:
-        IntentResponse with session_id and the classified UI pattern.
-    """
-    # Try the orchestrator first (smart LLM routing via Claude Sonnet)
-    # Fall back to keyword-based classify_intent if orchestrator raises
-    try:
-        from orchestrator import route_intent
-        routing = route_intent(body.text)
-        action = routing.get("action", "answer")
-
-        if action == "delegate":
-            agent_type = routing.get("agent", "general")
-        elif action == "multi":
-            # For multi-agent, use the first agent for the session type
-            agents_list = routing.get("agents", [])
-            agent_type = agents_list[0]["agent"] if agents_list else "general"
-        else:
-            agent_type = "general"
-
-    except Exception as exc:
-        logger.warning("Orchestrator unavailable, falling back to keyword router: %s", exc)
-        classification = classify_intent(body.text)
-        agent_type = classification["agent_type"]
-
-    # Map agent type to UI pattern
-    _ui_map = {
-        "email": UiPattern.list,
-        "code": UiPattern.code,
-        "planning": UiPattern.detail,
-        "general": UiPattern.chat,
-    }
-    ui_pattern = _ui_map.get(agent_type, UiPattern.chat)
-
-    session_id = str(uuid.uuid4())
-    session = Session(
-        id=session_id,
-        agentType=agent_type,
-        uiPattern=ui_pattern,
-        status=SessionStatus.pending,
-    )
-    _sessions[session_id] = session
-
-    # Kick off the agent run as a background task
-    asyncio.create_task(_run_session(session_id, agent_type, body.text))
-
-    return IntentResponse(
-        sessionId=session_id,
-        uiPattern=ui_pattern,
-        agentType=agent_type,
-    )
-
-
-async def _run_session(session_id: str, agent_type: str, user_text: str) -> None:
-    """
-    Runs the classified agent for a user-initiated session.
-
-    Emits events into the session's event list so they can be
-    streamed to the client via GET /stream/{session_id}.
-
-    Args:
-        session_id: The active session ID.
-        agent_type: The classified agent type to run.
-        user_text: The original user command text.
-    """
-    session = _sessions.get(session_id)
-    if not session:
-        return
-
-    session.status = SessionStatus.running
-
-    try:
-        from agents.email_agent import EmailAgent
-        from agents.code_agent import CodeAgent
-        from agents.base import BaseAgent
-
-        agent: BaseAgent
-        if agent_type == "email":
-            agent = EmailAgent(_composio)
-        elif agent_type == "code":
-            agent = CodeAgent(_composio)
-        else:
-            # General: stream a conversational reply
-            await _run_general_session(session_id, user_text)
-            return
-
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are Monet, an AI decision copilot for founders. "
-                    "Be concise. Think step by step before using tools."
-                ),
-            },
-            {"role": "user", "content": user_text},
-        ]
-
-        async for event in agent._chat_with_tools(messages, session_id):
-            session.events.append(event)
-
-        done_event = AgentEvent(
-            eventType=EventType.done,
-            sessionId=session_id,
-        )
-        session.events.append(done_event)
-        session.status = SessionStatus.completed
-
-    except Exception as exc:
-        logger.exception("Session '%s' error: %s", session_id, exc)
-        error_event = AgentEvent(
-            eventType=EventType.error,
-            sessionId=session_id,
-            error=str(exc),
-        )
-        session.events.append(error_event)
-        session.status = SessionStatus.error
-
-
-async def _run_general_session(session_id: str, user_text: str) -> None:
-    """
-    Runs a streaming conversational response for unclassified (general) intent.
-
-    Emits text events directly into the session's event list.
-
-    Args:
-        session_id: The active session ID.
-        user_text: The original user input.
-    """
-    from agents.email_agent import EmailAgent
-    from agents.base import BaseAgent
-
-    session = _sessions.get(session_id)
-    if not session:
-        return
-
-    # Use email agent's model (Gemini Flash) for general chat - it's fast
-    agent = EmailAgent(_composio)
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are Monet, an AI decision copilot for startup founders. "
-                "Be direct, concise, and helpful. No fluff."
-            ),
-        },
-        {"role": "user", "content": user_text},
-    ]
-
-    async for event in agent._chat_stream(messages, session_id):
-        session.events.append(event)
-
-    done_event = AgentEvent(
-        eventType=EventType.done,
-        sessionId=session_id,
-    )
-    session.events.append(done_event)
-    session.status = SessionStatus.completed
-
-
-# --- Suggestions ---
-
-@app.get("/suggestions")
-async def get_suggestions() -> dict[str, Any]:
-    """
-    Returns all pre-staged action items from background agents.
-
-    Suggestions are produced proactively by scheduled agent runs and
-    presented to the user without requiring an explicit command.
-
-    Returns:
-        Dict with 'suggestions' list and total count.
-    """
-    suggestions = _runner.get_suggestions()
-    return {
-        "suggestions": [s.model_dump(by_alias=True) for s in suggestions],
-        "total": len(suggestions),
-    }
-
-
-# --- SSE Stream ---
-
-@app.get("/stream/{session_id}")
-async def stream_session(session_id: str) -> EventSourceResponse:
-    """
-    Streams agent events for a session as SSE (Server-Sent Events).
-
-    Polls the session's event list and emits new events as they arrive.
-    Uses named event types (text, tool_call, tool_result, done, error).
-    Closes the stream when a 'done' or 'error' event is received.
-
-    Args:
-        session_id: The session to stream events for.
-
-    Returns:
-        EventSourceResponse with named SSE events.
-
-    Raises:
-        HTTPException 404: If the session does not exist.
-    """
-    if session_id not in _sessions:
-        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
-
-    return EventSourceResponse(_event_generator(session_id))
-
-
-async def _event_generator(session_id: str) -> AsyncGenerator[dict[str, str], None]:
-    """
-    Async generator that yields SSE events for a session.
-
-    Tracks emitted event index to avoid re-sending events.
-    Polls every 100ms for new events. Times out after 5 minutes.
-
-    Args:
-        session_id: The session to stream events for.
-
-    Yields:
-        Dicts with 'event' (name) and 'data' (JSON string) keys.
-    """
-    session = _sessions.get(session_id)
-    if not session:
-        yield {"event": "error", "data": json.dumps({"error": "Session not found."})}
-        return
-
-    emitted_index = 0
-    timeout_seconds = 300
-    elapsed = 0.0
-    poll_interval = 0.1
-
-    while elapsed < timeout_seconds:
-        events = session.events
-        while emitted_index < len(events):
-            event = events[emitted_index]
-            emitted_index += 1
-
-            yield {
-                "event": event.event_type.value,
-                "data": _serialize_event(event),
-            }
-
-            if event.event_type in (EventType.done, EventType.error):
-                return
-
-        if session.status in (SessionStatus.completed, SessionStatus.error):
-            # Drain any remaining events not yet emitted
-            continue
-
-        await asyncio.sleep(poll_interval)
-        elapsed += poll_interval
-
-
-def _serialize_event(event: AgentEvent) -> str:
-    """
-    Serializes an AgentEvent to a JSON string for SSE data payload.
-
-    Args:
-        event: The AgentEvent to serialize.
-
-    Returns:
-        JSON string representation.
-    """
-    return event.model_dump_json(by_alias=True)
-
-
-# --- Approve / Reject ---
-
-@app.post("/approve/{session_id}/{action_id}", response_model=ApproveResponse)
-async def approve_action(session_id: str, action_id: str) -> ApproveResponse:
-    """
-    Approves a staged action and records it in history.
-
-    Removes the suggestion from the store and logs the approval.
-
-    Args:
-        session_id: The session context for this action.
-        action_id: The suggestion ID to approve.
-
-    Returns:
-        ApproveResponse indicating success.
-    """
-    removed = _runner.remove_suggestion(action_id)
-
-    _runner.add_history(HistoryEntry(
-        action=f"Approved action {action_id}",
-        agentId=removed.agent_id if removed else "unknown",
-        status="approved",
-    ))
-
-    return ApproveResponse(
-        success=True,
-        actionId=action_id,
-        sessionId=session_id,
-        message="Action approved and queued for execution.",
-    )
-
-
-@app.post("/reject/{session_id}/{action_id}", response_model=ApproveResponse)
-async def reject_action(session_id: str, action_id: str) -> ApproveResponse:
-    """
-    Rejects a staged action and records it in history.
-
-    Removes the suggestion from the store and logs the rejection.
-
-    Args:
-        session_id: The session context for this action.
-        action_id: The suggestion ID to reject.
-
-    Returns:
-        ApproveResponse indicating success.
-    """
-    removed = _runner.remove_suggestion(action_id)
-
-    _runner.add_history(HistoryEntry(
-        action=f"Rejected action {action_id}",
-        agentId=removed.agent_id if removed else "unknown",
-        status="rejected",
-    ))
-
-    return ApproveResponse(
-        success=True,
-        actionId=action_id,
-        sessionId=session_id,
-        message="Action rejected and removed.",
-    )
-
-
-# --- Agents ---
+# --- Startup: init DB and restore agents ---
+
+@app.on_event("startup")
+async def startup():
+    _init_db()
+    # Restore agents from SQLite
+    for row in _load_agents():
+        agent = AgentProcess(row["id"], row["name"], row["color"], row["workspace"])
+        _agents[row["id"]] = agent
+    logger.info("Restored %d agents from database", len(_agents))
+    # Load recent notifications into buffer
+    _notifications_buffer.extend(_load_recent_notifications(50))
+
+
+# --- Agent Endpoints ---
 
 @app.get("/agents")
-async def list_agents() -> dict[str, Any]:
+async def list_agents():
     """
-    Returns the current status and metadata of all registered agents.
-
-    Enriches each agent with the real pending decision count from the
-    decision_queue and the scheduler's current run state. Also includes
-    emoji and mood fields for the AgentOrbit UI.
+    List all agents and their current process status.
 
     Returns:
-        Dict with 'agents' list, each containing id, name, status,
-        decisionCount, emoji, mood, lastRun, and summary.
+        Dict with 'agents' list of serialized AgentProcess objects.
     """
-    runner_agents = {a.id: a for a in _runner.get_agents()}
-
-    # Agent personality config - emoji and mood reflect current state
-    _agent_meta: dict[str, dict[str, Any]] = {
-        "email": {
-            "name": "Email Agent",
-            "emoji_idle": "😌",
-            "emoji_running": "🤓",
-            "emoji_decisions": "📬",
-            "mood_idle": "Nothing new in inbox",
-            "mood_running": "Reading your inbox...",
-            "decision_view": "tinder",
-        },
-        "code": {
-            "name": "Code Agent",
-            "emoji_idle": "😎",
-            "emoji_running": "🔍",
-            "emoji_decisions": "👀",
-            "mood_idle": "All PRs look good",
-            "mood_running": "Reviewing pull requests...",
-            "decision_view": "diff",
-        },
-        "planning": {
-            "name": "Planning Agent",
-            "emoji_idle": "🧘",
-            "emoji_running": "📋",
-            "emoji_decisions": "✅",
-            "mood_idle": "Ready when you are",
-            "mood_running": "Building your sprint plan...",
-            "decision_view": "whiteboard",
-        },
-    }
-
-    scheduler: AgentScheduler | None = None
-    try:
-        scheduler = app.state.scheduler
-    except AttributeError:
-        pass
-
-    agents_out = []
-    for agent_id, meta in _agent_meta.items():
-        runner_agent = runner_agents.get(agent_id)
-        pending_count = decision_queue.get_pending_count(agent_id)
-
-        # Determine live status
-        is_scheduler_running = scheduler.is_running(agent_id) if scheduler else False
-        runner_status = runner_agent.status.value if runner_agent else "idle"
-        status = "running" if is_scheduler_running or runner_status == "running" else runner_status
-
-        # Choose emoji and mood based on state
-        if pending_count > 0:
-            emoji = meta["emoji_decisions"]
-            mood = f"{pending_count} {'decision' if pending_count == 1 else 'decisions'} waiting"
-        elif status == "running":
-            emoji = meta["emoji_running"]
-            mood = meta["mood_running"]
-        else:
-            emoji = meta["emoji_idle"]
-            mood = meta["mood_idle"]
-
-        # Format lastRun as a human-readable relative time
-        last_run_str = None
-        last_run_dt = None
-        if scheduler:
-            last_run_dt = scheduler.get_last_run(agent_id)
-        if not last_run_dt and runner_agent and runner_agent.last_run:
-            last_run_dt = runner_agent.last_run
-        if last_run_dt:
-            delta = datetime.utcnow() - last_run_dt
-            minutes = int(delta.total_seconds() / 60)
-            if minutes < 2:
-                last_run_str = "just now"
-            elif minutes < 60:
-                last_run_str = f"{minutes}m ago"
-            else:
-                hours = minutes // 60
-                last_run_str = f"{hours}hr ago"
-
-        # Enrich with live activity data so the agent card can show "what is happening right now"
-        current_activity = activity_log.get_current(agent_id)
-        current_step_label = current_activity["label"] if current_activity and status == "running" else None
-        current_detail = current_activity["detail"] if current_activity and status == "running" else None
-        progress = current_activity["progress"] if current_activity and status == "running" else None
-
-        agents_out.append({
-            "id": agent_id,
-            "name": meta["name"],
-            "status": status,
-            "decisionCount": pending_count,
-            "decisionView": meta["decision_view"],
-            "emoji": emoji,
-            "mood": mood,
-            "lastRun": last_run_str,
-            "summary": runner_agent.summary if runner_agent else None,
-            "currentStep": current_step_label,
-            "currentDetail": current_detail,
-            "progress": progress,
-        })
-
-    return {"agents": agents_out}
+    return {"agents": [a.to_dict() for a in _agents.values()]}
 
 
-# --- Decisions ---
-
-@app.get("/decisions")
-async def get_decisions(agent_id: str | None = None) -> dict[str, Any]:
+@app.post("/agents")
+async def create_agent(request: Request):
     """
-    Returns all pending (unresolved) decisions from the decision queue.
+    Create a new agent and spawn a headless claude process with stream-json.
 
-    Optionally filters by agent. The frontend polls this endpoint to populate
-    agent card decision counts and the tinder swipe stack.
+    Body fields:
+        id (str, optional): Agent ID - defaults to 'agent-{timestamp}'.
+        name (str): Display name for the agent.
+        color (str): Hex color string for UI rendering.
+        workspace (str): Absolute path to working directory.
+        autoStart (bool): Whether to spawn the process immediately (default: True).
+
+    Returns:
+        Dict with 'agent' key containing the serialized agent.
+    """
+    body = await request.json()
+    agent_id = body.get("id", f"agent-{int(time.time() * 1000)}")
+    name = body.get("name", "Agent")
+    color = body.get("color", "#8b5cf6")
+    workspace = body.get("workspace", _default_workspace)
+    auto_start = body.get("autoStart", True)
+
+    agent = AgentProcess(agent_id, name, color, workspace)
+    _agents[agent_id] = agent
+
+    # Persist to SQLite
+    _save_agent(agent_id, name, color, workspace)
+
+    return {"agent": agent.to_dict()}
+
+
+@app.delete("/agents/{agent_id}")
+async def delete_agent(agent_id: str):
+    """
+    Kill the agent's claude process and remove it from state.
 
     Args:
-        agent_id: Optional agent filter (e.g. 'email', 'code').
+        agent_id: The unique agent identifier.
 
     Returns:
-        Dict with 'decisions' list and 'total' count.
+        Dict with 'deleted' key containing the removed agent ID.
     """
-    pending = decision_queue.get_pending(agent_id)
-    serialized = [
-        {
-            "id": d.id,
-            "agentId": d.agent_id,
-            "type": d.type,
-            "priority": d.priority,
-            "title": d.title,
-            "summary": d.summary,
-            "data": d.data,
-            "uiPattern": d.ui_pattern,
-            "createdAt": d.created_at.isoformat(),
-        }
-        for d in pending
-    ]
-    return {"decisions": serialized, "total": len(serialized)}
+    agent = _agents.pop(agent_id, None)
+    if agent:
+        agent.kill()
+    _delete_agent_db(agent_id)
+    return {"deleted": agent_id}
+
+
+@app.post("/agents/{agent_id}/start")
+async def start_agent(agent_id: str):
+    """
+    Start (or restart) the claude process for an existing agent.
+
+    If already running, kills the current process first and waits briefly
+    before spawning a new one.
+
+    Args:
+        agent_id: The unique agent identifier.
+
+    Returns:
+        Dict with 'agent' key, or 404 JSON if agent not found.
+    """
+    agent = _agents.get(agent_id)
+    if not agent:
+        return JSONResponse({"error": "Agent not found"}, status_code=404)
+
+    # Reset the agent for a fresh session
+    agent.kill()  # Kill any running process
+    agent.session_id = None  # Clear session so next message starts fresh
+    agent.events = []
+    agent.current_step = None
+    agent.current_detail = None
+    agent.tool_call_count = 0
+    agent.total_tool_calls = 0
+    agent.last_user_message = None
+    agent.last_error = None
+
+    return {"agent": agent.to_dict()}
+
+
+@app.post("/agents/{agent_id}/stop")
+async def stop_agent(agent_id: str):
+    """
+    Stop the claude process for an agent (SIGTERM).
+
+    Args:
+        agent_id: The unique agent identifier.
+
+    Returns:
+        Dict with 'agent' key, or 404 JSON if agent not found.
+    """
+    agent = _agents.get(agent_id)
+    if not agent:
+        return JSONResponse({"error": "Agent not found"}, status_code=404)
+
+    agent.kill()
+    return {"agent": agent.to_dict()}
+
+
+@app.post("/agents/{agent_id}/input")
+async def send_input(agent_id: str, request: Request):
+    """
+    Send a user message to an agent's claude process.
+
+    Wraps the text as a stream-json user message and writes it to stdin.
+
+    Body fields:
+        text (str): The message text to send.
+
+    Args:
+        agent_id: The unique agent identifier.
+
+    Returns:
+        Dict with 'status': 'sent', or error JSON.
+    """
+    agent = _agents.get(agent_id)
+    if not agent:
+        return JSONResponse({"error": "Agent not found"}, status_code=404)
+
+    body = await request.json()
+    text = body.get("text", "")
+
+    if agent.status == "running":
+        return JSONResponse(
+            {"error": "Agent is busy", "status": "busy"},
+            status_code=409,
+        )
+
+    # send_message spawns a new process, runs it, and collects events
+    # Run in background so the HTTP response returns immediately
+    asyncio.create_task(agent.send_message(text))
+
+    return {"status": "sent"}
+
+
+@app.get("/agents/{agent_id}/output")
+async def get_output(agent_id: str):
+    """
+    Get the buffered JSON events for an agent (last 1000).
+
+    Args:
+        agent_id: The unique agent identifier.
+
+    Returns:
+        Dict with 'events' list of raw event dicts, or 404 JSON.
+    """
+    agent = _agents.get(agent_id)
+    if not agent:
+        return JSONResponse({"error": "Agent not found"}, status_code=404)
+    return {"events": agent.events}
+
+
+@app.get("/agents/{agent_id}/insights")
+async def get_insights(agent_id: str):
+    """
+    Get structured insights for an agent's activity.
+
+    Returns the latest insight plus the insight history and raw activity log.
+    """
+    agent = _agents.get(agent_id)
+    if not agent:
+        return JSONResponse({"error": "Agent not found"}, status_code=404)
+    return {
+        "latest": agent.insights,
+        "history": agent.insight_history,
+        "activityLog": agent._activity_log[-20:],
+        "filesTouched": agent._files_touched,
+        "commandsRun": agent._commands_run[-10:],
+    }
+
+
+# --- Decision Endpoints ---
+
+@app.get("/decisions")
+async def list_decisions(agent_id: str | None = None):
+    """
+    List all pending decisions, optionally filtered by agent_id.
+
+    Returns:
+        Dict with 'decisions' list of decision objects.
+    """
+    decisions = _load_pending_decisions()
+    if agent_id:
+        decisions = [d for d in decisions if d["agent_id"] == agent_id]
+    return {"decisions": decisions}
 
 
 @app.post("/decisions/{decision_id}/resolve")
-async def resolve_decision(decision_id: str, data: dict) -> dict[str, Any]:
+async def resolve_decision(decision_id: str, request: Request):
     """
-    Resolves a pending decision as approved or skipped.
+    Resolve a pending decision.
 
-    If resolution is 'approved' and a reply_text is provided, sends the email
-    via Composio Gmail before marking the decision resolved.
-
-    Args:
-        decision_id: The ID of the decision to resolve.
-        data: Dict with 'resolution' ('approved' or 'skipped') and optional
-              'reply_text' for email approvals.
+    Body fields:
+        resolution (str): 'approved', 'rejected', or 'skipped'
 
     Returns:
-        Dict with 'status' and the resolved decision_id.
-
-    Raises:
-        HTTPException 404: If the decision_id is not found.
+        Dict with 'status': 'resolved'.
     """
-    resolution = data.get("resolution", "skipped")
-    reply_text = data.get("reply_text")
+    body = await request.json()
+    resolution = body.get("resolution", "skipped")
+    _resolve_decision_db(decision_id, resolution)
+    return {"status": "resolved", "decision_id": decision_id, "resolution": resolution}
 
-    # Find the decision before resolving so we can read its data
-    pending = decision_queue.get_pending()
-    target = next((d for d in pending if d.id == decision_id), None)
-    if not target:
-        raise HTTPException(status_code=404, detail=f"Decision '{decision_id}' not found.")
 
-    # Send the email if this is an approved email_reply
-    if resolution == "approved" and target.type == "email_reply" and reply_text:
-        email = target.data.get("email", {})
+# --- Notification Endpoints ---
+
+@app.get("/notifications")
+async def list_notifications(limit: int = 50):
+    """
+    Get recent notifications (toast events).
+
+    Returns:
+        Dict with 'notifications' list.
+    """
+    return {"notifications": _load_recent_notifications(limit)}
+
+
+@app.post("/notifications/read")
+async def mark_read():
+    """Mark all notifications as read."""
+    _mark_notifications_read()
+    return {"status": "ok"}
+
+
+# --- WebSocket for live JSON event streaming ---
+
+@app.websocket("/agents/{agent_id}/terminal")
+async def agent_terminal_ws(ws: WebSocket, agent_id: str):
+    """
+    WebSocket endpoint for live JSON event streaming to the browser.
+
+    On connect: replays all buffered events so the browser catches up, then
+    streams new events in real time.
+
+    Client -> Server messages (JSON):
+        {"type": "user_message", "text": "..."}  - sends a message to claude
+
+    Server -> Client messages (JSON):
+        Raw claude stream-json event objects, one per message.
+        Examples: system/init, assistant text, tool_use, result, etc.
+        Also monet_notification events for completion/error/decision alerts.
+
+    Args:
+        agent_id: The unique agent identifier.
+    """
+    agent = _agents.get(agent_id)
+    if not agent:
+        await ws.close(code=4004, reason="Agent not found")
+        return
+
+    await ws.accept()
+    logger.info("WS connected for agent '%s' (%s)", agent.name, agent_id)
+
+    # Subscribe this WebSocket to the agent's event stream
+    queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=1000)
+    agent.subscribers.append(queue)
+    logger.info("Agent '%s' now has %d subscriber(s)", agent.name, len(agent.subscribers))
+
+    # Replay buffered events so the browser catches up immediately
+    replay_count = len(agent.events)
+    for event in list(agent.events):  # snapshot to avoid mutation during iteration
+        await ws.send_text(json.dumps(event))
+    logger.info("Replayed %d buffered events for agent '%s'", replay_count, agent.name)
+
+    try:
+        async def send_events():
+            """Forward queued JSON events to the WebSocket client."""
+            while True:
+                event = await queue.get()
+                logger.debug("WS sending event type=%s to agent '%s'",
+                            event.get("type", "?"), agent.name)
+                await ws.send_text(json.dumps(event))
+
+        async def receive_input():
+            """Read user_message messages from the WebSocket client and forward to claude."""
+            while True:
+                raw = await ws.receive_text()
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    logger.warning("WS received non-JSON message for '%s': %s",
+                                  agent.name, raw[:100])
+                    continue
+                if msg.get("type") == "user_message":
+                    text = msg.get("text", "").strip()
+                    if not text:
+                        continue
+                    # Refuse if agent is already busy (same guard as HTTP endpoint)
+                    if agent.status == "running":
+                        logger.info("WS ignoring user_message for busy agent '%s'", agent.name)
+                        try:
+                            await ws.send_text(json.dumps({
+                                "type": "monet_error",
+                                "error": "Agent is busy",
+                            }))
+                        except Exception:
+                            pass
+                        continue
+                    logger.info("WS received user_message for agent '%s': %s",
+                               agent.name, text[:80])
+                    asyncio.create_task(agent.send_message(text))
+
+        # Run both coroutines; if either raises, cancel the other
+        send_task = asyncio.create_task(send_events())
+        receive_task = asyncio.create_task(receive_input())
         try:
-            composio = ComposioClient()
-            await composio.execute_tool(
-                "GMAIL_SEND_EMAIL",
-                {
-                    "to": email.get("sender", ""),
-                    "subject": f"Re: {email.get('subject', '')}",
-                    "body": reply_text,
-                    "reply_to_id": email.get("id", ""),
-                },
+            done, pending = await asyncio.wait(
+                [send_task, receive_task],
+                return_when=asyncio.FIRST_EXCEPTION,
             )
-            logger.info("Sent approved reply for decision '%s'", decision_id)
-        except Exception as exc:
-            logger.warning("Failed to send reply for decision '%s': %s", decision_id, exc)
+            for task in pending:
+                task.cancel()
+            # Re-raise any exceptions from completed tasks
+            for task in done:
+                if task.exception():
+                    raise task.exception()
+        except (WebSocketDisconnect, asyncio.CancelledError):
+            pass
 
-    decision_queue.resolve(decision_id, resolution)
-    logger.info("Decision '%s' resolved as '%s'", decision_id, resolution)
-    return {"status": "resolved", "decisionId": decision_id, "resolution": resolution}
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.error("WebSocket error for '%s': %s", agent_id, e)
+    finally:
+        if queue in agent.subscribers:
+            agent.subscribers.remove(queue)
 
 
-# --- Connections ---
+# --- Workspace config ---
 
-@app.get("/connections")
-async def list_connections() -> dict[str, Any]:
+@app.post("/config/workspace")
+async def set_workspace(request: Request):
     """
-    Returns connected external services via Composio.
+    Set the default workspace directory for newly created agents.
 
-    In stub mode, returns all services as disconnected.
+    Body fields:
+        workspace (str): Absolute path to the workspace directory.
 
     Returns:
-        Dict with 'connections' list and 'stub_mode' flag.
+        Dict with the updated 'workspace' path.
     """
-    connections = await _composio.list_connections()
-    return {
-        "connections": connections,
-        "stub_mode": _composio.is_stub,
-    }
+    global _default_workspace
+    body = await request.json()
+    _default_workspace = body.get("workspace", os.getcwd())
+    return {"workspace": _default_workspace}
 
 
-@app.post("/connect/{service}")
-async def connect_service(service: str) -> dict[str, str]:
+@app.get("/config/workspace")
+async def get_workspace():
     """
-    Initiates a Composio OAuth flow for a named service.
-
-    Args:
-        service: Lowercase service name (e.g. 'gmail', 'github').
+    Get the current default workspace directory.
 
     Returns:
-        Dict with 'oauth_url' for the frontend to redirect to.
+        Dict with the current 'workspace' path.
     """
-    oauth_url = await _composio.connect_service(service)
-    return {
-        "service": service,
-        "oauth_url": oauth_url,
-    }
-
-
-# --- Email Triage ---
-
-def strip_html(html: str) -> str:
-    """
-    Strip HTML tags and decode entities to get plain text suitable for display.
-
-    Removes style/script blocks first (so CSS/JS text is not included),
-    then strips all HTML markup, collapses whitespace, decodes common HTML
-    entities, and strips URLs. Caps output at 500 characters.
-
-    Args:
-        html: Raw HTML string from Composio/Gmail email body.
-
-    Returns:
-        Clean plain-text string, truncated to 500 characters.
-    """
-    if not html:
-        return ""
-    # Remove <style>...</style> and <script>...</script> blocks (including content)
-    text = re.sub(r'<style[^>]*>.*?</style>', ' ', html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<script[^>]*>.*?</script>', ' ', text, flags=re.DOTALL | re.IGNORECASE)
-    # Remove HTML tags
-    text = re.sub(r'<[^>]+>', ' ', text)
-    # Remove extra whitespace
-    text = re.sub(r'\s+', ' ', text)
-    # Decode common HTML entities
-    text = (
-        text.replace('&amp;', '&')
-            .replace('&lt;', '<')
-            .replace('&gt;', '>')
-            .replace('&quot;', '"')
-            .replace('&#39;', "'")
-            .replace('&nbsp;', ' ')
-    )
-    # Remove URLs
-    text = re.sub(r'https?://\S+', '', text)
-    return text.strip()[:500]
-
-
-def _strip_quoted_threads(text: str) -> str:
-    """Remove quoted reply chains from email body. Keep only the latest message."""
-    # Cut at "On ... wrote:" pattern (common in Gmail replies)
-    cut = re.split(r'\bOn\s+\w{3},\s+\w{3}\s+\d+', text, maxsplit=1)
-    text = cut[0].strip() if cut else text
-    # Cut at "---------- Forwarded message"
-    cut = text.split("---------- Forwarded message", 1)
-    text = cut[0].strip()
-    # Cut at "> " quoted lines (3+ consecutive quoted lines)
-    lines = text.split("\n")
-    clean_lines = []
-    quote_count = 0
-    for line in lines:
-        if line.strip().startswith(">"):
-            quote_count += 1
-            if quote_count >= 2:
-                break
-        else:
-            quote_count = 0
-            clean_lines.append(line)
-    text = "\n".join(clean_lines).strip()
-    # Remove [No reply needed] markers from previous agent runs
-    text = re.sub(r'\[No reply needed[^\]]*\]', '', text).strip()
-    # Remove invisible unicode spacers
-    text = re.sub(r'[͏\u200b\u200c\u200d\ufeff]', '', text)
-    return text[:500] if text else ""
-
-
-# Senders/subjects to always skip (newsletters, notifications, no-reply)
-_SKIP_SENDERS = {"noreply", "no-reply", "notifications", "mailer-daemon",
-                  "donotreply", "accounts.google", "notify", "news@", "team@mail",
-                  "marketing", "updates@", "digest@"}
-_SKIP_SUBJECTS = {"security alert", "password reset", "verify your", "confirm your",
-                   "sign-in", "unsubscribe", "newsletter", "weekly digest", "notification"}
-
-
-def _should_skip_email(sender: str, subject: str, user_email: str = "") -> bool:
-    """Return True if this email should be filtered out (not actionable)."""
-    sender_lower = sender.lower()
-    subject_lower = subject.lower()
-    # Skip known no-reply senders
-    if any(s in sender_lower for s in _SKIP_SENDERS):
-        return True
-    # Skip known notification subjects
-    if any(s in subject_lower for s in _SKIP_SUBJECTS):
-        return True
-    # Skip self-sent emails
-    if user_email and user_email.lower() in sender_lower:
-        return True
-    return False
-
-
-def _extract_emails(raw: Any) -> list[dict[str, Any]]:
-    """
-    Extracts slim, normalised email records from a raw Composio GMAIL_FETCH_EMAILS response.
-
-    Handles both the nested {'data': {'messages': [...]}} shape that Composio returns
-    and bare list responses. Caps at 5 emails.
-
-    Args:
-        raw: Raw response from composio.execute_tool("GMAIL_FETCH_EMAILS", ...).
-
-    Returns:
-        List of dicts with id, sender, subject, body, timestamp, to keys.
-    """
-    if isinstance(raw, dict) and "data" in raw:
-        raw = raw["data"]
-
-    messages: list[Any] = []
-    if isinstance(raw, dict) and "messages" in raw:
-        messages = raw["messages"]
-    elif isinstance(raw, list):
-        messages = raw
-
-    result = []
-    for m in messages[:10]:  # Fetch more, filter down
-        sender = m.get("sender") or m.get("from") or ""
-        subject = m.get("subject") or "(no subject)"
-        to_addr = m.get("to") or ""
-
-        # Skip non-actionable emails
-        if _should_skip_email(sender, subject, to_addr):
-            continue
-
-        raw_body = (
-            m.get("messageText")
-            or m.get("body")
-            or m.get("preview")
-            or m.get("snippet")
-            or ""
-        )
-        # Strip HTML then strip quoted threads
-        clean_body = _strip_quoted_threads(strip_html(raw_body))
-
-        if not clean_body or len(clean_body) < 10:
-            continue  # Skip if body is effectively empty after cleaning
-
-        result.append({
-            "id": m.get("messageId") or m.get("id") or "",
-            "sender": sender,
-            "subject": subject,
-            "body": clean_body,
-            "timestamp": m.get("messageTimestamp") or m.get("date") or "",
-            "to": to_addr,
-        })
-
-        if len(result) >= 5:
-            break
-
-    return result
-
-
-@app.post("/triage-inbox")
-async def triage_inbox() -> dict[str, Any]:
-    """
-    Fetches the 5 most recent emails via Composio Gmail and drafts a reply for each.
-
-    Calls tools directly (no agent loop) for speed. Uses Claude Haiku to generate
-    brief, professional draft replies. Falls back to stub data when Composio is
-    not connected.
-
-    Returns:
-        Dict with 'cards' list and 'count' integer. Each card has: id, sender,
-        subject, body, draft, timestamp.
-    """
-    import anthropic
-
-    composio = ComposioClient()
-    raw = await composio.execute_tool("GMAIL_FETCH_EMAILS", {"max_results": 5})
-    emails = _extract_emails(raw)
-
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-
-    # Step 1: Filter to only emails that need a human reply
-    email_list = "\n".join(
-        f"{i+1}. From: {e['sender']} | Subject: {e['subject']} | Preview: {e['body'][:100]}"
-        for i, e in enumerate(emails)
-    )
-    filter_resp = client.messages.create(
-        model=config.HAIKU_MODEL,
-        max_tokens=100,
-        messages=[{
-            "role": "user",
-            "content": (
-                "Which of these emails need a human reply? Ignore newsletters, "
-                "notifications, automated alerts, no-reply senders, and marketing.\n"
-                "Reply with ONLY the numbers (comma-separated) of emails that need a reply. "
-                "If none need a reply, say NONE.\n\n" + email_list
-            ),
-        }],
-    )
-    filter_text = filter_resp.content[0].text.strip()
-
-    if filter_text.upper() == "NONE":
-        return {"cards": [], "count": 0}
-
-    # Parse which indices need replies
-    import re as _re
-    reply_indices = set()
-    for num in _re.findall(r"\d+", filter_text):
-        idx = int(num) - 1
-        if 0 <= idx < len(emails):
-            reply_indices.add(idx)
-
-    actionable = [emails[i] for i in sorted(reply_indices)]
-    if not actionable:
-        return {"cards": [], "count": 0}
-
-    # Step 2: Draft replies only for actionable emails
-    cards = []
-    for email in actionable:
-        prompt = (
-            f"Draft a brief, professional reply to this email.\n"
-            f"Format the reply with:\n"
-            f"- A greeting addressing the sender by first name (e.g. 'Hi Sarah,')\n"
-            f"- The reply body (2-3 sentences max)\n"
-            f"- A professional signoff on its own line (e.g. 'Best,\\nJared')\n\n"
-            f"Write ONLY the formatted reply - no extra commentary or explanation.\n\n"
-            f"From: {email['sender']}\n"
-            f"Subject: {email['subject']}\n"
-            f"Body: {email['body'][:500]}"
-        )
-        resp = client.messages.create(
-            model=config.HAIKU_MODEL,
-            max_tokens=300,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        draft = resp.content[0].text.strip()
-
-        cards.append({
-            "id": email["id"],
-            "sender": email["sender"],
-            "subject": email["subject"],
-            "body": email["body"],
-            "draft": draft,
-            "timestamp": email["timestamp"],
-            "to": email["to"],
-        })
-
-    logger.info("Triage inbox: produced %d cards.", len(cards))
-    return {"cards": cards, "count": len(cards)}
-
-
-@app.post("/send-reply")
-async def send_reply(data: dict) -> dict[str, Any]:
-    """
-    Sends or skips an email reply via Composio Gmail.
-
-    When action is 'send', calls GMAIL_SEND_EMAIL with the provided reply text.
-    When action is 'skip', returns immediately without sending.
-
-    Args:
-        data: Dict with keys: action ('send' | 'skip'), email_id, reply_text,
-              to (recipient address), subject.
-
-    Returns:
-        Dict with 'status' ('sent' | 'skipped') and optional 'result'.
-    """
-    action = data.get("action")
-    email_id = data.get("email_id", "")
-    reply_text = data.get("reply_text", "")
-    recipient = data.get("to", "")
-    subject = data.get("subject", "")
-
-    if action == "send" and reply_text:
-        composio = ComposioClient()
-        result = await composio.execute_tool(
-            "GMAIL_SEND_EMAIL",
-            {
-                "to": recipient,
-                "subject": subject,
-                "body": reply_text,
-                "reply_to_id": email_id,
-            },
-        )
-        logger.info("Sent reply for email '%s' to '%s'.", email_id, recipient)
-        return {"status": "sent", "result": result}
-
-    logger.info("Skipped email '%s'.", email_id)
-    return {"status": "skipped"}
-
-
-# --- History ---
-
-@app.get("/history")
-async def get_history(limit: int = 50) -> dict[str, Any]:
-    """
-    Returns recent action history (approvals and rejections).
-
-    Args:
-        limit: Maximum number of entries to return (default 50).
-
-    Returns:
-        Dict with 'history' list and total count.
-    """
-    history = _runner.get_history(limit=limit)
-    return {
-        "history": [h.model_dump(by_alias=True) for h in history],
-        "total": len(history),
-    }
+    return {"workspace": _default_workspace}
