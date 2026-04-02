@@ -14,19 +14,19 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* App-specific custom vars - DIA-style pure black palette */
-  --bg: #000000;
-  --surface: #111111;
-  --surface-elevated: #1a1a1a;
-  --border: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.12);
-  --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.5);
-  --text-muted: rgba(255, 255, 255, 0.25);
-  --accent: #8b5cf6;
-  --accent-hover: #a78bfa;
-  --success: #22c55e;
-  --error: #ef4444;
+  /* App-specific custom vars — warm neutral dark */
+  --bg: #0c0c0e;
+  --surface: #151518;
+  --surface-elevated: #1c1c20;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text-primary: #e8e8ec;
+  --text-secondary: rgba(255, 255, 255, 0.55);
+  --text-muted: rgba(255, 255, 255, 0.28);
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --success: #34d399;
+  --error: #f87171;
 
   /* shadcn/ui dark theme variables - always dark */
   --background: oklch(0.145 0 0);
@@ -132,27 +132,125 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 4px;
+/* Hide scrollbars globally but keep scroll functionality */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Opera */
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+/* Chat panel scroll area - thin elegant scrollbar */
+.chat-scroll {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(255,255,255,0.12) transparent !important;
+}
+.chat-scroll::-webkit-scrollbar {
+  display: block !important;
+  width: 4px !important;
+}
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12) !important;
+  border-radius: 4px !important;
+}
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.24) !important;
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--surface-elevated);
-  border-radius: 2px;
+/* Markdown code blocks in chat */
+.chat-markdown pre {
+  margin: 8px 0 !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
 }
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--border-strong);
+.chat-markdown code {
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace !important;
+  font-size: 12.5px !important;
+  line-height: 1.5 !important;
+}
+.chat-markdown p code {
+  background: rgba(255,255,255,0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #93c5fd;
+}
+.chat-markdown p {
+  margin: 0 0 8px 0;
+  line-height: 1.6;
+}
+.chat-markdown p:last-child {
+  margin-bottom: 0;
+}
+.chat-markdown ul, .chat-markdown ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.chat-markdown li {
+  margin: 3px 0;
+  line-height: 1.5;
+}
+.chat-markdown h1, .chat-markdown h2, .chat-markdown h3 {
+  margin: 12px 0 6px 0;
+  font-weight: 600;
+  color: #f4f4f5;
+}
+.chat-markdown h1 { font-size: 16px; }
+.chat-markdown h2 { font-size: 14.5px; }
+.chat-markdown h3 { font-size: 13.5px; }
+.chat-markdown blockquote {
+  border-left: 3px solid rgba(59, 130, 246, 0.35);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: rgba(255,255,255,0.6);
+}
+.chat-markdown table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+  width: 100%;
+}
+.chat-markdown th, .chat-markdown td {
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 4px 8px;
+}
+.chat-markdown th {
+  background: rgba(255,255,255,0.05);
+  font-weight: 500;
+}
+.chat-markdown a {
+  color: #60a5fa;
+  text-decoration: none;
+}
+.chat-markdown a:hover {
+  text-decoration: underline;
 }
 
 /* Progress bar foreground color override */
 [data-slot="progress-indicator"] {
   background: var(--progress-foreground, var(--accent)) !important;
+}
+
+/* Sprite activity bubble animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+@keyframes thinking-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pulse-ring {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.08); opacity: 0.2; }
 }
 
 /*---break---
