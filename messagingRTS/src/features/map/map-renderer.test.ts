@@ -4,7 +4,7 @@
 // and the performance optimization mechanics (culling, pooling, dirty flagging).
 
 import { describe, it, expect } from "vitest";
-import { MapRenderer } from "./map-renderer";
+import { MapRenderer, getRiskAwareColor } from "./map-renderer";
 import { createThread } from "../../lib/types/thread";
 
 describe("MapRenderer", () => {
@@ -841,5 +841,43 @@ describe("Detail zoom context dimming per Spec 08", () => {
     const t2 = createThread("t2", "Subject 2", "snippet");
     t2.position = { x: 2020, y: 1510 };
     expect(() => renderer.renderThreads([t1, t2])).not.toThrow();
+  });
+});
+
+describe("getRiskAwareColor per Spec 07", () => {
+  it("returns amber (0xddaa22) for elevated risk tier", () => {
+    // Elevated tier forces amber regardless of urgency score
+    expect(getRiskAwareColor(0.1, "elevated")).toBe(0xddaa22);
+    expect(getRiskAwareColor(0.9, "elevated")).toBe(0xddaa22);
+  });
+
+  it("returns red (0xdd3333) for critical risk tier", () => {
+    // Critical tier forces red regardless of urgency score
+    expect(getRiskAwareColor(0.1, "critical")).toBe(0xdd3333);
+    expect(getRiskAwareColor(0.9, "critical")).toBe(0xdd3333);
+  });
+
+  it("returns desaturated gray (0x666666) for lost risk tier", () => {
+    // Lost tier forces gray (desaturated) per Spec 07
+    expect(getRiskAwareColor(0.1, "lost")).toBe(0x666666);
+    expect(getRiskAwareColor(0.9, "lost")).toBe(0x666666);
+  });
+
+  it("falls back to urgency-based color for safe risk tier", () => {
+    // Safe tier defers to urgency gradient
+    // Low urgency (<0.25) -> blue
+    expect(getRiskAwareColor(0.1, "safe")).toBe(0x4488cc);
+    // Mid-low urgency (0.25-0.5) -> green
+    expect(getRiskAwareColor(0.3, "safe")).toBe(0x66aa44);
+    // Mid-high urgency (0.5-0.75) -> amber
+    expect(getRiskAwareColor(0.6, "safe")).toBe(0xddaa22);
+    // High urgency (>=0.75) -> red
+    expect(getRiskAwareColor(0.9, "safe")).toBe(0xdd3333);
+  });
+
+  it("falls back to urgency-based color when risk tier is unknown string", () => {
+    // Default case also defers to urgency gradient
+    expect(getRiskAwareColor(0.1, "unknown")).toBe(0x4488cc);
+    expect(getRiskAwareColor(0.9, "unknown")).toBe(0xdd3333);
   });
 });

@@ -4,6 +4,7 @@ import {
   evaluateClusters,
   excludeFromCluster,
   resetExclusions,
+  _resetPendingRemovals,
 } from "./clustering";
 import { createThread } from "../../lib/types";
 import type { ContactEnrichment } from "../../lib/types";
@@ -21,6 +22,7 @@ function makeContact(email: string, name?: string): ContactEnrichment {
 
 beforeEach(() => {
   resetExclusions();
+  _resetPendingRemovals();
 });
 
 describe("computeAffinity", () => {
@@ -392,6 +394,148 @@ describe("evaluateClusters", () => {
     // Bob is in all members so label should contain "Bob"
     expect(clusters[0].label).not.toContain("Alice");
     expect(clusters[0].label).toContain("Bob");
+  });
+});
+
+describe("two-tick cluster membership removal per Spec 11", () => {
+  // These tests use 3 threads so that when one drops affinity, the other two
+  // still maintain the cluster. This lets the pending-removal code find the
+  // existing cluster in newClusters and retain the departing member for one tick.
+
+  it("thread stays in cluster on first tick when affinity drops (pending removal)", () => {
+    const now = Date.now();
+    const alice = makeContact("alice@co.com");
+    const bob = makeContact("bob@co.com");
+
+    // t1, t2, t3 all share alice - form a single cluster
+    const t1 = createThread("t1", "Subject", "s");
+    t1.participants = [alice, bob];
+    t1.latestMessageTimestamp = now;
+    t1.position = { x: 100, y: 100 };
+
+    const t2 = createThread("t2", "Subject", "s");
+    t2.participants = [alice, bob];
+    t2.latestMessageTimestamp = now;
+    t2.position = { x: 110, y: 100 };
+
+    const t3 = createThread("t3", "Subject", "s");
+    t3.participants = [alice, bob];
+    t3.latestMessageTimestamp = now;
+    t3.position = { x: 120, y: 100 };
+
+    // First pass: all three cluster together
+    const { clusters: pass1 } = evaluateClusters([t1, t2, t3], [], now);
+    expect(pass1.length).toBe(1);
+    const clusterId = pass1[0].id;
+    expect(pass1[0].memberThreadIds).toContain("t2");
+
+    // t2 loses affinity (drops shared participants), but t1 and t3 still cluster
+    const t2_dropped = createThread("t2", "Subject", "s");
+    t2_dropped.participants = [makeContact("charlie@other.com")]; // no overlap with alice/bob
+    t2_dropped.latestMessageTimestamp = now;
+    t2_dropped.position = { x: 110, y: 100 };
+
+    // Second pass (first tick after drop): pending removal - t2 should still be in cluster
+    const { clusters: pass2 } = evaluateClusters([t1, t2_dropped, t3], pass1, now);
+    const clusterAfterFirstTick = pass2.find((c) => c.id === clusterId);
+    // On first tick, the thread should still be present (grace period)
+    expect(clusterAfterFirstTick).toBeDefined();
+    expect(clusterAfterFirstTick!.memberThreadIds).toContain("t2");
+  });
+
+  it("thread is removed from cluster on second tick when affinity remains low", () => {
+    const now = Date.now();
+    const alice = makeContact("alice@co.com");
+    const bob = makeContact("bob@co.com");
+
+    const t1 = createThread("t1", "Subject", "s");
+    t1.participants = [alice, bob];
+    t1.latestMessageTimestamp = now;
+    t1.position = { x: 100, y: 100 };
+
+    const t2 = createThread("t2", "Subject", "s");
+    t2.participants = [alice, bob];
+    t2.latestMessageTimestamp = now;
+    t2.position = { x: 110, y: 100 };
+
+    const t3 = createThread("t3", "Subject", "s");
+    t3.participants = [alice, bob];
+    t3.latestMessageTimestamp = now;
+    t3.position = { x: 120, y: 100 };
+
+    // First pass: all three cluster together
+    const { clusters: pass1 } = evaluateClusters([t1, t2, t3], [], now);
+    expect(pass1.length).toBe(1);
+    const clusterId = pass1[0].id;
+
+    // t2 loses affinity
+    const t2_dropped = createThread("t2", "Subject", "s");
+    t2_dropped.participants = [makeContact("charlie@other.com")];
+    t2_dropped.latestMessageTimestamp = now;
+    t2_dropped.position = { x: 110, y: 100 };
+
+    // Second pass (first tick): pending removal - t2 still in cluster
+    const { clusters: pass2 } = evaluateClusters([t1, t2_dropped, t3], pass1, now);
+    const clusterPass2 = pass2.find((c) => c.id === clusterId);
+    expect(clusterPass2).toBeDefined();
+    expect(clusterPass2!.memberThreadIds).toContain("t2");
+
+    // Third pass (second tick): confirmed removal - t2 should be gone
+    const { clusters: pass3 } = evaluateClusters([t1, t2_dropped, t3], pass2, now);
+    const clusterPass3 = pass3.find((c) => c.id === clusterId);
+    // After two ticks with sustained low affinity, t2 is confirmed removed
+    const t2InCluster = clusterPass3?.memberThreadIds.includes("t2") ?? false;
+    expect(t2InCluster).toBe(false);
+  });
+
+  it("thread stays in cluster if affinity recovers before second tick confirmation", () => {
+    const now = Date.now();
+    const alice = makeContact("alice@co.com");
+    const bob = makeContact("bob@co.com");
+
+    const t1 = createThread("t1", "Subject", "s");
+    t1.participants = [alice, bob];
+    t1.latestMessageTimestamp = now;
+    t1.position = { x: 100, y: 100 };
+
+    const t2 = createThread("t2", "Subject", "s");
+    t2.participants = [alice, bob];
+    t2.latestMessageTimestamp = now;
+    t2.position = { x: 110, y: 100 };
+
+    const t3 = createThread("t3", "Subject", "s");
+    t3.participants = [alice, bob];
+    t3.latestMessageTimestamp = now;
+    t3.position = { x: 120, y: 100 };
+
+    // First pass: all three cluster together
+    const { clusters: pass1 } = evaluateClusters([t1, t2, t3], [], now);
+    expect(pass1.length).toBe(1);
+    const clusterId = pass1[0].id;
+
+    // t2 drops affinity temporarily
+    const t2_dropped = createThread("t2", "Subject", "s");
+    t2_dropped.participants = [makeContact("charlie@other.com")];
+    t2_dropped.latestMessageTimestamp = now;
+    t2_dropped.position = { x: 110, y: 100 };
+
+    // Second pass: pending removal, t2 still present
+    const { clusters: pass2 } = evaluateClusters([t1, t2_dropped, t3], pass1, now);
+    const clusterPass2 = pass2.find((c) => c.id === clusterId);
+    expect(clusterPass2).toBeDefined();
+    expect(clusterPass2!.memberThreadIds).toContain("t2");
+
+    // t2 recovers affinity (back to sharing alice+bob)
+    const t2_recovered = createThread("t2", "Subject", "s");
+    t2_recovered.participants = [alice, bob];
+    t2_recovered.latestMessageTimestamp = now;
+    t2_recovered.position = { x: 110, y: 100 };
+
+    // Third pass: affinity recovered - pending removal cleared, t2 stays in cluster
+    const { clusters: pass3 } = evaluateClusters([t1, t2_recovered, t3], pass2, now);
+    const clusterPass3 = pass3.find((c) => c.id === clusterId);
+    expect(clusterPass3).toBeDefined();
+    expect(clusterPass3!.memberThreadIds).toContain("t2");
   });
 });
 

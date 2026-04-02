@@ -207,6 +207,16 @@ function deriveLabel(threads: Thread[]): string {
 // Set of thread IDs excluded from rejoining specific clusters (manual override)
 const overrideExclusions = new Map<string, Set<string>>(); // threadId -> Set<clusterId>
 
+// Per Spec 11: two-tick confirmation for membership removal
+// Tracks threads pending removal: key = "threadId:clusterId"
+// First tick: affinity drops below threshold -> added to pending set, thread stays in cluster
+// Second tick: affinity still below threshold -> confirmed removal
+const pendingRemovals = new Set<string>();
+
+export function _resetPendingRemovals(): void {
+  pendingRemovals.clear();
+}
+
 // Main clustering evaluation function
 // Called on: new thread arrival, thread data change, tick cycle completion
 export function evaluateClusters(
@@ -316,6 +326,45 @@ export function evaluateClusters(
       clusterB.lastMembershipChange = now;
     }
     // Both assigned to different clusters - don't merge (one cluster per thread)
+  }
+
+  // Per Spec 11: two-tick confirmation for membership removal
+  // Threads that were in existing clusters but not in new evaluation get a grace period
+  for (const existingCluster of existingClusters) {
+    for (const threadId of existingCluster.memberThreadIds) {
+      const newCluster = findCluster(newClusters, threadId);
+      const pendingKey = `${threadId}:${existingCluster.id}`;
+
+      if (newCluster && newCluster.id === existingCluster.id) {
+        // Thread is still in its cluster - clear any pending removal
+        pendingRemovals.delete(pendingKey);
+      } else if (!newCluster || newCluster.id !== existingCluster.id) {
+        // Thread would be removed from its existing cluster
+        if (!pendingRemovals.has(pendingKey) && !isExcluded(threadId, existingCluster.id)) {
+          // First tick: mark as pending, keep thread in cluster for one more tick
+          // Skip if the thread was manually excluded (override takes priority over pending)
+          pendingRemovals.add(pendingKey);
+          // Re-add to existing cluster if it still has 2+ members
+          // Note: must search by cluster ID (not member ID) to find the surviving cluster
+          const existingNewCluster = newClusters.find((c) => c.id === existingCluster.id);
+          if (existingNewCluster) {
+            if (!existingNewCluster.memberThreadIds.includes(threadId)) {
+              existingNewCluster.memberThreadIds.push(threadId);
+              const membersData = existingNewCluster.memberThreadIds
+                .map((id) => threadMap.get(id)!)
+                .filter(Boolean);
+              existingNewCluster.centroid = computeCentroid(membersData);
+              existingNewCluster.label = deriveLabel(membersData);
+              existingNewCluster.visualExtent = existingNewCluster.memberThreadIds.length;
+              assigned.add(threadId);
+            }
+          }
+        } else {
+          // Second tick: confirmed removal - clear pending entry
+          pendingRemovals.delete(pendingKey);
+        }
+      }
+    }
   }
 
   // Remove clusters with fewer than 2 members per Spec 11

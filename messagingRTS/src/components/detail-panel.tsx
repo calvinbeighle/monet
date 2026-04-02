@@ -240,6 +240,15 @@ function ParticipantTrust({ thread }: { thread: Thread }) {
                 data-testid={tierRecentlyCrossed ? "tier-crossing" : undefined}
               >
                 {record.tier} ({record.score})
+                {record.decayActive && (
+                  <span
+                    className="ml-1 text-red-400"
+                    title="Trust is decaying due to inactivity"
+                    data-testid="trust-decay-indicator"
+                  >
+                    &#x25BC;
+                  </span>
+                )}
                 {record.consecutiveStreak >= 3 && (
                   <span
                     className="ml-1 inline-block h-2 w-2 rounded-full bg-yellow-400"

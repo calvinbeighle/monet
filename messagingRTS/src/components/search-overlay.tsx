@@ -81,7 +81,7 @@ export function SearchOverlay({
         }
       }
     },
-    [onClose, onCycleNext, onCyclePrevious],
+    [onClose, onCycleNext, onCyclePrevious, searchResults.length],
   );
 
   const handleChange = useCallback(

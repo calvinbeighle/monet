@@ -17,6 +17,25 @@ const CLUSTER_BOUNDARY_ALPHA = 0.25;
 const CLUSTER_AGGREGATE_COLOR = 0x6666aa;
 const CLUSTER_PADDING = 30; // padding around member positions for boundary
 
+// Per Spec 07: standalone exported helper so tests can verify color logic without WebGL init
+// Elevated = amber, Critical = red, Lost = desaturated gray, safe = falls back to urgency scale
+export function getRiskAwareColor(urgency: number, riskTier: string): number {
+  switch (riskTier) {
+    case "elevated":
+      return 0xddaa22; // amber color shift per Spec 07
+    case "critical":
+      return 0xdd3333; // red per Spec 07
+    case "lost":
+      return 0x666666; // desaturated per Spec 07
+    default:
+      // Urgency gradient: blue -> green -> amber -> red
+      if (urgency < 0.25) return 0x4488cc;
+      if (urgency < 0.5) return 0x66aa44;
+      if (urgency < 0.75) return 0xddaa22;
+      return 0xdd3333;
+  }
+}
+
 export interface MapRendererOptions {
   container: HTMLElement;
   width: number;
@@ -328,10 +347,13 @@ export class MapRenderer {
 
     for (const thread of threads) {
       // Per Spec 08: at strategic zoom, only cluster aggregate dots are visible;
-      // individual unclustered thread entities are hidden
+      // individual unclustered thread entities fade out smoothly per Spec 02
       if (zoomLevel === "strategic" && !thread.clusterMembership) {
         const existingG = this.threadGraphics.get(thread.id);
-        if (existingG) existingG.visible = false;
+        if (existingG) {
+          existingG.visible = true;
+          existingG.alpha = this.zoomBlend * 0.3; // fade to near-invisible at strategic
+        }
         const existingL = this.threadLabels.get(thread.id);
         if (existingL) existingL.visible = false;
         continue;
@@ -354,7 +376,7 @@ export class MapRenderer {
       }
 
       // Dirty flagging - skip full redraw if render-relevant properties unchanged
-      // Only skip for low-urgency threads (high-urgency ones need pulse animation updates)
+      // Only skip for low-urgency, safe-risk threads (pulsing ones need animation updates)
       const cacheKey = {
         x: thread.position.x,
         y: thread.position.y,
@@ -367,6 +389,7 @@ export class MapRenderer {
       const cached = this.threadRenderCache.get(thread.id);
       if (
         thread.urgencyScore <= 0.5 &&
+        thread.riskTier !== "critical" &&
         cached &&
         cached.x === cacheKey.x &&
         cached.y === cacheKey.y &&
@@ -387,11 +410,12 @@ export class MapRenderer {
       const radius =
         THREAD_BASE_RADIUS + thread.valueScore * THREAD_BASE_RADIUS * THREAD_VALUE_SCALE;
 
-      // Color intensity driven by urgency per Spec 02
-      const color = this.getUrgencyColor(thread.urgencyScore);
+      // Color driven by risk tier per Spec 07 (elevated = color shift, critical = distinct)
+      // Falls back to urgency-based color when risk tier is safe
+      const color = this.getRiskAwareColor(thread.urgencyScore, thread.riskTier);
 
-      // Age-driven opacity per Spec 02
-      const ageMs = now - thread.firstMessageTimestamp;
+      // Age-driven opacity per Spec 02: time since last activity, not creation time
+      const ageMs = now - thread.latestMessageTimestamp;
       const ageDays = ageMs / (1000 * 60 * 60 * 24);
       const ageAlpha = Math.max(0.2, 1.0 - ageDays / AGE_OPACITY_DECAY_DAYS);
 
@@ -405,14 +429,17 @@ export class MapRenderer {
       const smoothed = prevSmoothed + Math.sign(diff) * Math.min(maxStep, Math.abs(diff));
       this.smoothedUrgency.set(thread.id, smoothed);
 
-      // Urgency pulse per Spec 02 (uses smoothed value for gradual fade-out)
+      // Urgency pulse per Spec 02 and Spec 07
       // Archived threads do not pulse per Spec 02 state transitions
+      // Per Spec 07: critical risk tier forces pulsing indicator regardless of urgency score
       const isArchived = thread.visualState === "archived";
+      const riskPulseBoost = thread.riskTier === "critical" ? Math.max(smoothed, 0.7) : smoothed;
       const pulseRate =
-        URGENCY_PULSE_BASE_RATE + smoothed * (URGENCY_PULSE_MAX_RATE - URGENCY_PULSE_BASE_RATE);
+        URGENCY_PULSE_BASE_RATE +
+        riskPulseBoost * (URGENCY_PULSE_MAX_RATE - URGENCY_PULSE_BASE_RATE);
       const pulse = isArchived
         ? 1.0
-        : 1.0 + Math.sin(this.pulseTime * pulseRate * Math.PI * 2) * 0.15 * smoothed;
+        : 1.0 + Math.sin(this.pulseTime * pulseRate * Math.PI * 2) * 0.15 * riskPulseBoost;
 
       // Draw the thread entity
       const r = radius * pulse;
@@ -471,9 +498,9 @@ export class MapRenderer {
         g.alpha = 1.0;
       }
 
-      // Label rendering per Spec 02
-      // Operational/detail: full labels; tactical: truncated labels; strategic: hidden
-      if (zoomLevel === "operational" || zoomLevel === "detail" || zoomLevel === "tactical") {
+      // Label rendering per Spec 02 and Spec 08
+      // Operational/detail: full labels; tactical: no labels per Spec 08; strategic: hidden
+      if (zoomLevel === "operational" || zoomLevel === "detail") {
         let label = this.threadLabels.get(thread.id);
         if (!label) {
           label = this.acquireText(this.layers.foreground);
@@ -481,17 +508,9 @@ export class MapRenderer {
         }
 
         const sender = thread.participants[0]?.displayName ?? thread.participants[0]?.email ?? "";
-        if (zoomLevel === "tactical") {
-          // Truncated label at medium zoom per Spec 02
-          const truncName = sender.length > 12 ? sender.slice(0, 12) + "..." : sender;
-          label.text = truncName || thread.subject.slice(0, 12);
-        } else {
-          label.text = sender ? `${sender}\n${thread.subject}` : thread.subject;
-        }
+        label.text = sender ? `${sender}\n${thread.subject}` : thread.subject;
         label.position.set(thread.position.x + r + 4, thread.position.y - 8);
-        // Fade labels in during tactical->operational transition
-        const labelBlend = zoomLevel === "tactical" ? Math.max(0.3, this.zoomBlend) : 1.0;
-        label.alpha = alpha * 0.8 * labelBlend;
+        label.alpha = alpha * 0.8;
         // Detail zoom: de-emphasize non-selected labels per Spec 08
         if (
           zoomLevel === "detail" &&
@@ -883,6 +902,12 @@ export class MapRenderer {
     if (urgency < 0.5) return 0x66aa44; // green
     if (urgency < 0.75) return 0xddaa22; // amber
     return 0xdd3333; // red
+  }
+
+  // Per Spec 07: risk tier overrides urgency-based color
+  // Elevated = amber color shift, Critical = red, Lost = desaturated gray
+  private getRiskAwareColor(urgency: number, riskTier: string): number {
+    return getRiskAwareColor(urgency, riskTier);
   }
 
   private onTick(deltaMS: number): void {

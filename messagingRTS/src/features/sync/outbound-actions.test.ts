@@ -597,6 +597,53 @@ describe("OutboundActions", () => {
     });
   });
 
+  // --- Drift Wiring Tests (Spec 03) ---
+
+  describe("drift wiring on user actions", () => {
+    it("applyReplyOptimisticUpdate sets zone to active-front and updates targetPosition", async () => {
+      const thread = makeThread("t1", { zone: "at-risk", lifecycleState: "active" });
+      useThreadStore.getState().setThread(thread);
+
+      await sendReplyAction("t1", {
+        threadId: "t1",
+        to: ["alice@example.com"],
+        subject: "Re: Subject t1",
+        body: "Reply text",
+        inReplyTo: "msg-t1-1",
+        references: ["msg-t1-1"],
+      });
+
+      const updated = useThreadStore.getState().getThread("t1")!;
+      // Per Spec 03: zone snaps to active-front on reply
+      expect(updated.zone).toBe("active-front");
+      // targetPosition must be updated (not null and different from a non-active zone value)
+      expect(updated.targetPosition).not.toBeNull();
+      expect(typeof updated.targetPosition.x).toBe("number");
+      expect(typeof updated.targetPosition.y).toBe("number");
+    });
+
+    it("applyArchiveOptimisticUpdate sets zone to base-handled and lifecycleState to approaching-archive", async () => {
+      const thread = makeThread("t1", {
+        zone: "active-front",
+        lifecycleState: "active",
+        gmailLabels: ["INBOX"],
+      });
+      useThreadStore.getState().setThread(thread);
+
+      await archiveThreadAction("t1");
+
+      const updated = useThreadStore.getState().getThread("t1")!;
+      // Per Spec 03: zone drifts to base-handled on archive
+      expect(updated.zone).toBe("base-handled");
+      // Per Spec 03: lifecycleState transitions to approaching-archive
+      expect(updated.lifecycleState).toBe("approaching-archive");
+      // targetPosition must be set within the base-handled zone
+      expect(updated.targetPosition).not.toBeNull();
+      expect(typeof updated.targetPosition.x).toBe("number");
+      expect(typeof updated.targetPosition.y).toBe("number");
+    });
+  });
+
   // --- Snapshot/Rollback Tests ---
 
   describe("snapshot rollback fidelity", () => {

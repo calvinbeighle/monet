@@ -130,7 +130,9 @@ describe("Game loop", () => {
 
     it("does not update streaks when already evaluated today", () => {
       const now = Date.now();
-      const today = new Date(now).toISOString().split("T")[0];
+      // Use local date format (same as runGameTick) to avoid UTC/local mismatch
+      const d = new Date(now);
+      const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       const threads = [createThread("t1", "Test", "snippet")];
       const stats = createSessionStats();
       const streaks = { ...createStreakState(), lastEvaluationDate: today };

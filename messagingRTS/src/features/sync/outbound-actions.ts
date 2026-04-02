@@ -26,6 +26,16 @@ import type { Thread, ThreadMessage } from "../../lib/types";
 import { updateTrustOnReply } from "../game-mechanics/game-loop";
 import { captureOpportunity } from "../game-mechanics/opportunity-system";
 import { resolveTransition } from "../../lib/utils/thread-lifecycle";
+import { createZoneLayout } from "../map/zone-layout";
+import { onUserReply as driftOnUserReply, onArchive as driftOnArchive } from "../map/drift-engine";
+
+// Lazy-initialized zone layout for drift-engine functions
+// Zone anchors are static, so we only create once
+let _cachedZones: ReturnType<typeof createZoneLayout> | null = null;
+function getZones() {
+  if (!_cachedZones) _cachedZones = createZoneLayout();
+  return _cachedZones;
+}
 
 // --- Draft State Machine per Spec 01 ---
 // None -> Unsaved: user begins typing
@@ -294,6 +304,9 @@ function applyReplyOptimisticUpdate(
     ];
   }
 
+  // Per Spec 03: immediate target position snap to active zone on reply
+  const driftUpdated = driftOnUserReply(thread, getZones());
+
   useThreadStore.getState().updateThread(threadId, {
     messages: [...thread.messages, optimisticMessage],
     messageCount: thread.messageCount + 1,
@@ -304,6 +317,10 @@ function applyReplyOptimisticUpdate(
     riskTimerStart: now,
     lastUserReplyTimestamp: now,
     neglectDuration: 0,
+    // Per Spec 03: immediate zone and target position snap
+    zone: driftUpdated.zone,
+    targetPosition: driftUpdated.targetPosition,
+    userOverrideZone: false,
     ...lifecycleUpdate,
   });
 }
@@ -458,9 +475,16 @@ export async function archiveThreadAction(threadId: string): Promise<boolean> {
 }
 
 function applyArchiveOptimisticUpdate(threadId: string, thread: Thread): void {
+  // Per Spec 03: immediate target position drift to base-handled zone on archive
+  const driftUpdated = driftOnArchive(thread, getZones());
+
   useThreadStore.getState().updateThread(threadId, {
     gmailLabels: thread.gmailLabels.filter((l) => l !== "INBOX"),
     visualState: "archived",
+    // Per Spec 03: immediate zone, target position, and lifecycle update
+    zone: driftUpdated.zone,
+    targetPosition: driftUpdated.targetPosition,
+    lifecycleState: driftUpdated.lifecycleState,
   });
 }
 
