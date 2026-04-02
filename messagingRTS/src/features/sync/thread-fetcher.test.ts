@@ -11,6 +11,7 @@ import {
   performInitialLoad,
   _setFetchFns,
   _resetFetchFns,
+  clearEnrichmentCache,
 } from "./thread-fetcher";
 import type {
   GmailMessage,
@@ -141,6 +142,10 @@ describe("convertGmailMessage", () => {
 // --- Gmail thread conversion ---
 
 describe("convertGmailThread", () => {
+  beforeEach(() => {
+    clearEnrichmentCache();
+  });
+
   it("creates thread with correct id", () => {
     const thread = convertGmailThread(makeGmailThreadDetail());
     expect(thread.id).toBe("thread-1");
@@ -542,6 +547,33 @@ describe("performInitialLoad", () => {
 });
 
 describe("Contact enrichment per Spec 09", () => {
+  beforeEach(() => {
+    clearEnrichmentCache();
+  });
+
+  it("caches contact enrichment per session per participant address (Spec 09)", () => {
+    clearEnrichmentCache();
+
+    // First thread with alice@example.com
+    const detail1 = makeGmailThreadDetail();
+    const thread1 = convertGmailThread(detail1);
+    const alice1 = thread1.participants.find((p) => p.email === "alice@example.com");
+    expect(alice1).toBeDefined();
+
+    // Second thread also with alice@example.com
+    const detail2 = makeGmailThreadDetail();
+    detail2.id = "thread-2";
+    const thread2 = convertGmailThread(detail2);
+    const alice2 = thread2.participants.find((p) => p.email === "alice@example.com");
+    expect(alice2).toBeDefined();
+
+    // Same enrichment data should be reused (cached from first call)
+    expect(alice2!.relationshipScore).toBe(alice1!.relationshipScore);
+    expect(alice2!.responseHistory.avgResponseTimeMs).toBe(
+      alice1!.responseHistory.avgResponseTimeMs,
+    );
+  });
+
   it("computes relationship score and response history from messages", () => {
     const now = Date.now();
     const detail: GmailThreadDetail = {

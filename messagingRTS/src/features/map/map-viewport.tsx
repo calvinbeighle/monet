@@ -1150,6 +1150,18 @@ export function MapViewport() {
             threadIds: clusterThreadIds,
             description: `${def.name}: ${def.description.toLowerCase()} (${clusterThreadIds.length} thread${clusterThreadIds.length !== 1 ? "s" : ""} in ${targetCluster.label || "cluster"})`,
           });
+        } else {
+          // Invalid-target affordance per Spec 06 Section 13:
+          // "a brief invalid-target affordance appears on the cluster"
+          const cam = rendererRef.current?.getCameraState();
+          if (cam && containerRef.current) {
+            const vw = containerRef.current.clientWidth;
+            const vh = containerRef.current.clientHeight;
+            const screenX = (targetCluster.centroid.x - cam.x) * cam.zoom + vw / 2;
+            const screenY = (targetCluster.centroid.y - cam.y) * cam.zoom + vh / 2;
+            setInvalidFlashCluster({ id: targetCluster.id, x: screenX, y: screenY });
+            setTimeout(() => setInvalidFlashCluster(null), 400);
+          }
         }
         return;
       }
@@ -1198,6 +1210,13 @@ export function MapViewport() {
     threadIds: string[];
     clusterId: string;
     zoneId: ZoneId;
+  } | null>(null);
+
+  // -- Invalid-target flash state for quick-deploy per Spec 06 Section 13 --
+  const [invalidFlashCluster, setInvalidFlashCluster] = useState<{
+    id: string;
+    x: number;
+    y: number;
   } | null>(null);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -1344,10 +1363,53 @@ export function MapViewport() {
               AgentRole,
               (typeof AGENT_DEFINITIONS)[AgentRole],
             ][]
-          ).map(([role, def]) => {
-            const agentState = useAgentStore.getState().agents.get(role);
+          )
+            .filter(([role]) => {
+              const canDeploy = useAgentStore.getState().canDeployRole(role);
+              const clusterAlreadyDeployed = useDeploymentStore
+                .getState()
+                .deployments.some(
+                  (d) =>
+                    d.agentRole === role &&
+                    d.clusterId === contextMenu.clusterId &&
+                    (d.status === "confirming" ||
+                      d.status === "traveling" ||
+                      d.status === "in-progress"),
+                );
+              return canDeploy && !clusterAlreadyDeployed;
+            })
+            .map(([role, def]) => {
+              const colorHex = `#${def.color.toString(16).padStart(6, "0")}`;
+
+              return (
+                <button
+                  key={role}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-gray-300 transition-colors hover:bg-gray-700"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleContextMenuSelect(role);
+                  }}
+                  role="menuitem"
+                  data-testid={`context-menu-${role}`}
+                >
+                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colorHex }} />
+                  <span className="flex-1">{def.name}</span>
+                  <span
+                    className="text-[10px] text-green-500"
+                    data-testid={`context-menu-${role}-status`}
+                  >
+                    Available
+                  </span>
+                </button>
+              );
+            })}
+          {(
+            Object.entries(AGENT_DEFINITIONS) as [
+              AgentRole,
+              (typeof AGENT_DEFINITIONS)[AgentRole],
+            ][]
+          ).filter(([role]) => {
             const canDeploy = useAgentStore.getState().canDeployRole(role);
-            // Cluster compatibility filter per Spec 06 Section 13
             const clusterAlreadyDeployed = useDeploymentStore
               .getState()
               .deployments.some(
@@ -1358,45 +1420,10 @@ export function MapViewport() {
                     d.status === "traveling" ||
                     d.status === "in-progress"),
               );
-            const statusLabel = clusterAlreadyDeployed
-              ? "Already deployed"
-              : agentState?.status === "cooldown"
-                ? "Cooldown"
-                : agentState?.status === "working" || agentState?.status === "deployed"
-                  ? "Busy"
-                  : canDeploy
-                    ? "Available"
-                    : "Unavailable";
-            const isAvailable = canDeploy && !clusterAlreadyDeployed;
-            const colorHex = `#${def.color.toString(16).padStart(6, "0")}`;
-
-            return (
-              <button
-                key={role}
-                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs transition-colors ${
-                  isAvailable
-                    ? "text-gray-300 hover:bg-gray-700"
-                    : "text-gray-600 cursor-not-allowed"
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isAvailable) handleContextMenuSelect(role);
-                }}
-                disabled={!isAvailable}
-                role="menuitem"
-                data-testid={`context-menu-${role}`}
-              >
-                <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colorHex }} />
-                <span className="flex-1">{def.name}</span>
-                <span
-                  className={`text-[10px] ${isAvailable ? "text-green-500" : "text-gray-600"}`}
-                  data-testid={`context-menu-${role}-status`}
-                >
-                  {statusLabel}
-                </span>
-              </button>
-            );
-          })}
+            return canDeploy && !clusterAlreadyDeployed;
+          }).length === 0 && (
+            <div className="px-3 py-2 text-xs text-gray-600">No agents available</div>
+          )}
         </div>
       )}
       {/* Agent deployment tooltip per Spec 06 Section 8 */}
@@ -1440,6 +1467,39 @@ export function MapViewport() {
         viewportHeight={viewportHeight || 600}
         onNavigate={handleMinimapNavigate}
       />
+      {/* Scale indicator in overlay layer per Spec 02 */}
+      <div
+        className="pointer-events-none fixed bottom-4 left-4 flex items-end gap-2 text-[10px] text-gray-500"
+        data-testid="scale-indicator"
+      >
+        <div className="flex flex-col items-start gap-0.5">
+          <span className="uppercase tracking-wider">
+            {camera.zoom >= 1.2
+              ? "Detail"
+              : camera.zoom >= 0.6
+                ? "Operational"
+                : camera.zoom >= 0.25
+                  ? "Tactical"
+                  : "Strategic"}
+          </span>
+          <div className="flex items-center gap-1">
+            <div className="h-px bg-gray-500" style={{ width: Math.max(20, 100 * camera.zoom) }} />
+            <span>{Math.round(100 / camera.zoom)}u</span>
+          </div>
+        </div>
+      </div>
+      {invalidFlashCluster && (
+        <div
+          className="pointer-events-none fixed z-40 rounded-full border-2 border-red-500 animate-ping"
+          style={{
+            left: invalidFlashCluster.x - 30,
+            top: invalidFlashCluster.y - 30,
+            width: 60,
+            height: 60,
+          }}
+          data-testid="invalid-target-flash"
+        />
+      )}
     </div>
   );
 }

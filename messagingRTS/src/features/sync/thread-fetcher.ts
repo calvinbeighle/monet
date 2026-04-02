@@ -38,6 +38,14 @@ async function fetchWithConcurrencyLimit<T, R>(
   return results;
 }
 
+// Per Spec 09: Contact enrichment is fetched once per session per unique participant address.
+// This cache persists for the lifetime of the module (= the browser session).
+const sessionEnrichmentCache = new Map<string, ContactEnrichment>();
+
+export function clearEnrichmentCache(): void {
+  sessionEnrichmentCache.clear();
+}
+
 // --- Pure conversion functions ---
 
 // Convert a Gmail message to our internal ThreadMessage format.
@@ -131,19 +139,29 @@ export function convertGmailThread(detail: GmailThreadDetail): Thread {
 
   // Derive unique participants with basic enrichment
   const participantMap = new Map<string, ContactEnrichment>();
+  // Track which participants need fresh enrichment (not cached this session)
+  const needsEnrichment = new Map<string, ContactEnrichment>();
   for (const msg of messages) {
     const allAddresses = [msg.sender, ...msg.recipients, ...msg.cc, ...msg.bcc];
     for (const addr of allAddresses) {
       const email = extractEmailAddress(addr);
       if (email && !participantMap.has(email)) {
-        participantMap.set(email, {
-          displayName: extractDisplayName(addr),
-          email,
-          organization: null,
-          vipFlag: false,
-          relationshipScore: 0,
-          responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
-        });
+        const cached = sessionEnrichmentCache.get(email);
+        if (cached) {
+          // Reuse session-cached enrichment per Spec 09
+          participantMap.set(email, { ...cached, displayName: extractDisplayName(addr) });
+        } else {
+          const fresh: ContactEnrichment = {
+            displayName: extractDisplayName(addr),
+            email,
+            organization: null,
+            vipFlag: false,
+            relationshipScore: 0,
+            responseHistory: { avgResponseTimeMs: 0, threadFrequency: 0 },
+          };
+          participantMap.set(email, fresh);
+          needsEnrichment.set(email, fresh);
+        }
       }
     }
   }
@@ -163,7 +181,14 @@ export function convertGmailThread(detail: GmailThreadDetail): Thread {
   const thread = createThread(detail.id, subject, snippet);
 
   // Contact enrichment per Spec 09: compute response history from message data
-  enrichParticipants(participantMap, sortedMessages);
+  // Only enrich participants not already cached this session
+  if (needsEnrichment.size > 0) {
+    enrichParticipants(needsEnrichment, sortedMessages);
+    // Cache newly enriched participants for the session
+    for (const [email, enrichment] of needsEnrichment) {
+      sessionEnrichmentCache.set(email, enrichment);
+    }
+  }
 
   // Override defaults with actual Gmail data
   thread.participants = [...participantMap.values()];

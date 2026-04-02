@@ -115,6 +115,50 @@ describe("Right-click context menu for Deploy Agent (Spec 06)", () => {
     expect(limited).toHaveLength(4);
   });
 
+  it("context menu lists only valid agent types per Spec 06 Section 13", () => {
+    // Deploy closer so it becomes unavailable
+    const agentStore = useAgentStore.getState();
+    agentStore.deploy("closer", "c1", ["t1"]);
+
+    // Check which roles pass the validity filter
+    const validRoles = ALL_ROLES.filter((role) => {
+      const canDeploy = useAgentStore.getState().canDeployRole(role);
+      const clusterAlreadyDeployed = useDeploymentStore
+        .getState()
+        .deployments.some(
+          (d) =>
+            d.agentRole === role &&
+            d.clusterId === "c1" &&
+            (d.status === "confirming" || d.status === "traveling" || d.status === "in-progress"),
+        );
+      return canDeploy && !clusterAlreadyDeployed;
+    });
+
+    // closer is deployed (not idle), so should not appear
+    expect(validRoles).not.toContain("closer");
+    // Other 5 roles should still be valid
+    expect(validRoles).toHaveLength(5);
+    expect(validRoles).toContain("researcher");
+    expect(validRoles).toContain("scheduler");
+    expect(validRoles).toContain("cleaner");
+    expect(validRoles).toContain("drafter");
+    expect(validRoles).toContain("escalation-bot");
+  });
+
+  it("no valid agents when all are deployed shows empty state", () => {
+    // Deploy all agents
+    const agentStore = useAgentStore.getState();
+    for (const role of ALL_ROLES) {
+      agentStore.deploy(role, "c1", ["t1"]);
+    }
+
+    const validRoles = ALL_ROLES.filter((role) => {
+      return useAgentStore.getState().canDeployRole(role);
+    });
+
+    expect(validRoles).toHaveLength(0);
+  });
+
   it("cluster filter blocks agents already deployed to same cluster", () => {
     // Deploy closer to cluster-1
     const deployStore = useDeploymentStore.getState();
