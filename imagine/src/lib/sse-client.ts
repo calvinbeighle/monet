@@ -12,7 +12,7 @@ export function connectSSE(
   onInit: (cards: CardData[]) => void,
   onUpdate: (card: CardData) => void,
   onRemove: (id: string) => void,
-  onSurface: (id: string) => void,
+  onReorder: (cards: CardData[]) => void,
 ): EventSource {
   const es = new EventSource("/api/events");
 
@@ -29,9 +29,8 @@ export function connectSSE(
     onRemove(id);
   });
 
-  es.addEventListener("surface", (e) => {
-    const { id } = JSON.parse((e as MessageEvent).data);
-    onSurface(id);
+  es.addEventListener("reorder", (e) => {
+    onReorder(JSON.parse((e as MessageEvent).data));
   });
 
   return es;

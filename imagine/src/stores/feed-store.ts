@@ -30,25 +30,8 @@ export const useFeedStore = create<FeedState>((set) => ({
         set((s) => ({
           cards: s.cards.filter((c) => c.id !== id),
         })),
-      // Surface: move completed card to right after the active card
-      (id) =>
-        set((s) => {
-          const currentIdx = s.cards.findIndex((c) => c.id === id);
-          if (currentIdx === -1) return s;
-          // Already next? Do nothing
-          if (currentIdx === s.activeIndex + 1) return s;
-          // Remove from current position
-          const card = s.cards[currentIdx];
-          const without = s.cards.filter((c) => c.id !== id);
-          // Insert after active index
-          const insertAt = Math.min(s.activeIndex + 1, without.length);
-          const reordered = [
-            ...without.slice(0, insertAt),
-            card,
-            ...without.slice(insertAt),
-          ];
-          return { cards: reordered };
-        }),
+      // Reorder: backend sends full sorted card list when an agent finishes
+      (cards) => set({ cards }),
     );
   },
 

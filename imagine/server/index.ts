@@ -1,8 +1,6 @@
 import express from "express";
 import cors from "cors";
 import { AgentManager } from "./agent-manager";
-import { getPredictions } from "./prediction-engine";
-import type { AgentSuggestion, SessionHistory } from "./prediction-engine";
 
 const app = express();
 app.use(cors());
@@ -10,50 +8,10 @@ app.use(express.json());
 
 const manager = new AgentManager();
 
-// Prediction buffer - pre-fetched in background
-let predictionBuffer: AgentSuggestion[] = [];
-let fetchingPredictions = false;
-
-function getInAppHistory(): SessionHistory[] {
-  return manager
-    .getAll()
-    .filter(
-      (c) => c.instruction && (c.status === "done" || c.status === "working"),
-    )
-    .map((c) => ({
-      instruction: c.instruction!,
-      status: c.status,
-      rawOutput: c.rawOutput,
-    }));
-}
-
-async function refillPredictions() {
-  if (fetchingPredictions) return;
-  fetchingPredictions = true;
-  try {
-    const history = getInAppHistory();
-    const predictions = await getPredictions(history);
-    predictionBuffer = predictions;
-    console.log(`Prediction buffer: ${predictions.length} suggestions ready`);
-  } catch (err) {
-    console.error("Prediction refill failed:", err);
-  } finally {
-    fetchingPredictions = false;
-  }
-}
-
 // Create 5 blank cards to start
 for (let i = 0; i < 5; i++) {
   manager.createAgent();
 }
-
-// Pre-fetch predictions in background (non-blocking)
-refillPredictions();
-
-// Refill when any agent finishes - context has changed
-manager.on("agent-done", () => {
-  refillPredictions();
-});
 
 // SSE endpoint
 app.get("/api/events", (req, res) => {
@@ -71,7 +29,7 @@ app.get("/api/events", (req, res) => {
 
   const onUpdate = (card: unknown) => sendEvent("update", card);
   const onRemove = (id: string) => sendEvent("remove", { id });
-  const onDone = (card: any) => sendEvent("surface", { id: card.id });
+  const onDone = () => sendEvent("reorder", manager.getAll());
 
   manager.on("update", onUpdate);
   manager.on("remove", onRemove);
@@ -102,16 +60,9 @@ app.post("/api/cards/:id/instruct", (req, res) => {
   }
 });
 
-// Add a new card - use prediction if available
+// Add a new card
 app.post("/api/cards", (_req, res) => {
-  if (predictionBuffer.length > 0) {
-    const prediction = predictionBuffer.shift()!;
-    const card = manager.createAgentWithSuggestion(prediction);
-    if (predictionBuffer.length < 2) refillPredictions();
-    return res.json(card);
-  }
   const card = manager.createAgent();
-  if (!fetchingPredictions) refillPredictions();
   res.json(card);
 });
 
