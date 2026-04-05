@@ -1,0 +1,41 @@
+name: Unified
+options:
+  bundleIdPrefix: com.unified
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    PRODUCT_BUNDLE_IDENTIFIER: com.unified.app
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: NO
+
+targets:
+  Unified:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Unified
+        createIntermediateGroups: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.unified.app
+        INFOPLIST_FILE: Unified/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Unified/Unified.entitlements
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        PRODUCT_NAME: Unified
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: NO
+        CODE_SIGN_IDENTITY: "-"
+    dependencies:
+      - sdk: WebKit.framework
+      - sdk: AppKit.framework
+      - sdk: ScreenCaptureKit.framework
+    scheme:
+      testTargets: []
