@@ -29,21 +29,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureWindow(_ window: NSWindow) {
         guard let screen = window.screen ?? NSScreen.main else { return }
 
-        // Borderless, no title bar, transparent background for app embedding.
+        // Borderless, no title bar.
         window.styleMask = [.borderless, .fullSizeContentView, .resizable]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isOpaque = false
-        window.backgroundColor = .clear
+        window.isOpaque = true
+        window.backgroundColor = .black
         window.isMovableByWindowBackground = false
         window.hasShadow = false
 
-        // Fill the full screen frame (including under menu bar area).
+        // Fill the full screen frame (including under menu bar and dock).
         window.setFrame(screen.frame, display: true, animate: false)
 
-        // Window level: normal so other windows can be managed around it.
+        // Normal level so embedded apps can layer on top.
         window.level = .normal
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        // Auto-hide menu bar and dock.
+        NSApplication.shared.presentationOptions = [.autoHideMenuBar, .autoHideDock]
 
         // Make key.
         window.makeKeyAndOrderFront(nil)

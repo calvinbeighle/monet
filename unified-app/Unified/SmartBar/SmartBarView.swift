@@ -128,11 +128,15 @@ struct SmartBarView: View {
         switch prediction.type {
         case .url:
             if let url = URL(string: prediction.value) {
-                appState.currentURL = url
+                // Dismiss any embedded app and switch to browser view.
+                if appState.isShowingEmbeddedApp {
+                    windowEmbedder.release(appState: appState)
+                }
+                appState.navigateTo(url: url)
             }
 
         case .app:
-            // Dismiss any current browser page, then capture-embed the app via ScreenCaptureKit.
+            // Dismiss any current browser page, then embed the app on the left side.
             appState.currentURL = nil
             appState.pageTitle = ""
 

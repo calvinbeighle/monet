@@ -1,8 +1,10 @@
 // WindowCaptureView.swift
 // Captures an external app's window via ScreenCaptureKit and renders it
 // as a live interactive SwiftUI view with mouse/keyboard forwarding.
+// Falls back to CGWindowListCreateImage if SCStream fails.
 
 import AppKit
+import CoreGraphics
 import CoreMedia
 import os.log
 import ScreenCaptureKit
@@ -18,125 +20,249 @@ final class WindowCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
     var capturedImage: CGImage?
     var isCapturing: Bool = false
     var captureError: String?
+    var statusText: String = "Initializing..."
     var imageSize: CGSize = .zero
 
     private var stream: SCStream?
-    private var targetPID: pid_t?
+    private(set) var targetPID: pid_t?
+    private var targetWindowID: CGWindowID = 0
     private var windowFrame: CGRect = .zero
     private var hasReceivedFirstFrame = false
+    private var fallbackTimer: Timer?
+    private var retryCount = 0
+    private let maxRetries = 20
 
-    // MARK: - Permission check
+    // MARK: - Start with retry
 
-    static var hasScreenRecordingPermission: Bool {
-        CGPreflightScreenCaptureAccess()
-    }
-
-    static func requestPermission() {
-        CGRequestScreenCaptureAccess()
-    }
-
-    // MARK: - Start
-
-    func startCapturing(pid: pid_t) async throws {
+    func startCapturing(pid: pid_t, bundleID: String?) async {
         targetPID = pid
         captureError = nil
         hasReceivedFirstFrame = false
+        retryCount = 0
 
-        // Check permission - but don't block on it. CGPreflightScreenCaptureAccess
-        // can return false even when permission is granted if the app hasn't been
-        // restarted since the grant. We try anyway and handle errors.
-        let hasPermission = CGPreflightScreenCaptureAccess()
-        logger.info("Screen recording preflight: \(hasPermission)")
+        // Write debug info to file for troubleshooting.
+        debugLog("Starting capture for pid=\(pid) bundleID=\(bundleID ?? "nil")")
 
-        if !hasPermission {
-            logger.info("Preflight returned false, requesting and trying anyway")
-            CGRequestScreenCaptureAccess()
-            // Don't return - try the capture anyway. It might work if permission
-            // was granted but the process cache is stale.
+        await attemptCapture(pid: pid, bundleID: bundleID)
+    }
+
+    private func attemptCapture(pid: pid_t, bundleID: String?) async {
+        retryCount += 1
+        debugLog("Attempt \(retryCount)/\(maxRetries)")
+
+        if retryCount > maxRetries {
+            await MainActor.run {
+                captureError = "Could not capture window after \(maxRetries) attempts. Check Screen Recording permission in System Settings > Privacy & Security."
+                statusText = "Capture failed"
+            }
+            return
         }
 
-        // Fetch shareable content.
-        logger.info("Fetching shareable content for pid \(pid)")
+        await MainActor.run {
+            statusText = "Finding window (attempt \(retryCount))..."
+        }
+
+        // Method 1: Try CGWindowList (simpler, more reliable).
+        let windowID = findWindowID(pid: pid, bundleID: bundleID)
+
+        if windowID != 0 {
+            debugLog("Found window ID \(windowID) via CGWindowList")
+            self.targetWindowID = windowID
+            await MainActor.run {
+                statusText = "Starting stream..."
+            }
+
+            // Try ScreenCaptureKit first.
+            let scSuccess = await tryScreenCaptureKit(pid: pid, windowID: windowID)
+            if scSuccess {
+                debugLog("SCStream started successfully")
+                return
+            }
+
+            // Fallback: use CGWindowListCreateImage polling.
+            debugLog("SCStream failed, falling back to CGWindowListCreateImage")
+            await MainActor.run {
+                statusText = "Using fallback capture..."
+                startFallbackCapture(windowID: windowID)
+            }
+            return
+        }
+
+        debugLog("No window found yet, retrying in 0.5s...")
+        // No window yet - wait and retry.
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        await attemptCapture(pid: pid, bundleID: bundleID)
+    }
+
+    // MARK: - Find window via CGWindowList
+
+    private func findWindowID(pid: pid_t, bundleID: String?) -> CGWindowID {
+        guard let windowList = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[CFString: Any]] else {
+            debugLog("CGWindowListCopyWindowInfo returned nil")
+            return 0
+        }
+
+        debugLog("Total windows in system: \(windowList.count)")
+
+        // Filter windows for this PID.
+        var candidates: [(CGWindowID, String, CGRect)] = []
+
+        for info in windowList {
+            let ownerPID = info[kCGWindowOwnerPID] as? pid_t ?? 0
+            let windowID = info[kCGWindowNumber] as? CGWindowID ?? 0
+            let name = info[kCGWindowName] as? String ?? ""
+            let ownerName = info[kCGWindowOwnerName] as? String ?? ""
+            let layer = info[kCGWindowLayer] as? Int ?? 0
+
+            // Only normal layer windows (layer 0).
+            guard layer == 0 else { continue }
+
+            // Match by PID or bundle ID.
+            var matches = (ownerPID == pid)
+            if !matches, let bid = bundleID {
+                // Some apps spawn sub-processes. Try matching by name.
+                if let app = NSRunningApplication(processIdentifier: ownerPID),
+                   app.bundleIdentifier == bid {
+                    matches = true
+                }
+            }
+            guard matches else { continue }
+
+            // Get bounds.
+            if let boundsDict = info[kCGWindowBounds] as? [String: CGFloat] {
+                let rect = CGRect(
+                    x: boundsDict["X"] ?? 0,
+                    y: boundsDict["Y"] ?? 0,
+                    width: boundsDict["Width"] ?? 0,
+                    height: boundsDict["Height"] ?? 0
+                )
+                if rect.width > 50 && rect.height > 50 {
+                    candidates.append((windowID, "\(ownerName): \(name)", rect))
+                    debugLog("  Candidate: wid=\(windowID) '\(ownerName): \(name)' \(rect)")
+                }
+            }
+        }
+
+        // Pick the largest window.
+        let sorted = candidates.sorted { $0.2.width * $0.2.height > $1.2.width * $1.2.height }
+        if let best = sorted.first {
+            windowFrame = best.2
+            imageSize = CGSize(width: best.2.width, height: best.2.height)
+            debugLog("Selected window: wid=\(best.0) '\(best.1)'")
+            return best.0
+        }
+
+        debugLog("No suitable window candidates found for pid=\(pid)")
+        return 0
+    }
+
+    // MARK: - ScreenCaptureKit approach
+
+    private func tryScreenCaptureKit(pid: pid_t, windowID: CGWindowID) async -> Bool {
         let content: SCShareableContent
         do {
             content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         } catch {
-            logger.error("SCShareableContent failed: \(error.localizedDescription)")
-            captureError = "Failed to access screen content: \(error.localizedDescription)"
-            return
+            debugLog("SCShareableContent failed: \(error)")
+            return false
         }
 
-        logger.info("Found \(content.windows.count) total windows")
-
-        // Find windows for this PID.
-        let allAppWindows = content.windows.filter { $0.owningApplication?.processID == pid }
-        logger.info("Found \(allAppWindows.count) windows for pid \(pid)")
-        for w in allAppWindows {
-            logger.info("  Window: \(w.title ?? "(no title)") frame=\(w.frame.debugDescription) onScreen=\(w.isOnScreen)")
+        // Find the matching SC window.
+        guard let scWindow = content.windows.first(where: { $0.windowID == windowID }) else {
+            debugLog("SCWindow not found for windowID \(windowID)")
+            // Try by PID as fallback.
+            let byPID = content.windows.filter { $0.owningApplication?.processID == pid && $0.frame.width > 50 && $0.frame.height > 50 }
+            debugLog("Windows by PID: \(byPID.count)")
+            if let fallback = byPID.first {
+                return await startSCStream(window: fallback)
+            }
+            return false
         }
 
-        // Pick the largest visible window.
-        let appWindows = allAppWindows
-            .filter { $0.frame.width > 50 && $0.frame.height > 50 }
-            .sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
+        return await startSCStream(window: scWindow)
+    }
 
-        guard let scWindow = appWindows.first else {
-            captureError = "No capturable window found for this app. Found \(allAppWindows.count) windows but none were large enough."
-            logger.error("No suitable window found")
-            return
-        }
-
-        logger.info("Capturing window: \(scWindow.title ?? "(no title)") frame=\(scWindow.frame.debugDescription)")
-        windowFrame = scWindow.frame
-        imageSize = CGSize(width: scWindow.frame.width, height: scWindow.frame.height)
-
-        // Configure capture.
+    private func startSCStream(window: SCWindow) async -> Bool {
         let config = SCStreamConfiguration()
-        config.width = max(Int(scWindow.frame.width * 2), 100)
-        config.height = max(Int(scWindow.frame.height * 2), 100)
+        config.width = max(Int(window.frame.width * 2), 100)
+        config.height = max(Int(window.frame.height * 2), 100)
         config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
         config.showsCursor = true
         config.queueDepth = 3
 
-        let filter = SCContentFilter(desktopIndependentWindow: scWindow)
+        let filter = SCContentFilter(desktopIndependentWindow: window)
         let newStream = SCStream(filter: filter, configuration: config, delegate: self)
 
         do {
             try newStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: .global(qos: .userInteractive))
             try await newStream.startCapture()
-            logger.info("Stream started successfully")
         } catch {
-            logger.error("Stream start failed: \(error.localizedDescription)")
-            captureError = "Failed to start capture: \(error.localizedDescription)"
-            return
+            debugLog("SCStream start failed: \(error)")
+            return false
         }
 
-        self.stream = newStream
-        self.isCapturing = true
-
-        // Move window off-screen AFTER capture starts.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            logger.info("Moving window off-screen")
-            self?.moveWindowOffScreen(pid: pid)
+        await MainActor.run {
+            self.stream = newStream
+            self.isCapturing = true
+            self.statusText = "Streaming..."
         }
 
-        // Timeout: if no frame after 8 seconds, show error.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { [weak self] in
-            guard let self, !self.hasReceivedFirstFrame, self.isCapturing else { return }
-            logger.error("Timeout: no frames received after 8s")
-            self.captureError = "Capture started but no frames received after 8 seconds. Try granting Screen Recording permission and restarting Unified."
-            self.isCapturing = false
+        // Timeout: if no frame after 5 seconds, report failure so fallback kicks in.
+        try? await Task.sleep(nanoseconds: 5_000_000_000)
+        if !hasReceivedFirstFrame {
+            debugLog("SCStream timeout - no frames after 5s")
+            try? await newStream.stopCapture()
+            await MainActor.run {
+                self.stream = nil
+                self.isCapturing = false
+            }
+            return false
+        }
+
+        return true
+    }
+
+    // MARK: - Fallback: CGWindowListCreateImage polling
+
+    private func startFallbackCapture(windowID: CGWindowID) {
+        isCapturing = true
+        fallbackTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            self?.captureFrame(windowID: windowID)
+        }
+        // Capture first frame immediately.
+        captureFrame(windowID: windowID)
+    }
+
+    private func captureFrame(windowID: CGWindowID) {
+        let image = CGWindowListCreateImage(
+            .null,
+            .optionIncludingWindow,
+            windowID,
+            [.boundsIgnoreFraming, .bestResolution]
+        )
+
+        if let image {
+            if !hasReceivedFirstFrame {
+                debugLog("Fallback: first frame received \(image.width)x\(image.height)")
+                hasReceivedFirstFrame = true
+                statusText = "Captured"
+                captureError = nil
+            }
+            capturedImage = image
         }
     }
 
     // MARK: - Stop
 
     func stopCapturing() {
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
         let s = stream
         stream = nil
         isCapturing = false
         capturedImage = nil
         targetPID = nil
+        targetWindowID = 0
         hasReceivedFirstFrame = false
         Task {
             try? await s?.stopCapture()
@@ -155,15 +281,13 @@ final class WindowCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
 
         let ciImage = CIImage(cvPixelBuffer: imageBuffer)
         let context = CIContext()
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
-            logger.error("Failed to create CGImage from frame")
-            return
-        }
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if !self.hasReceivedFirstFrame {
-                logger.info("First frame received! Size: \(cgImage.width)x\(cgImage.height)")
+                self.debugLog("SCStream: first frame \(cgImage.width)x\(cgImage.height)")
+                self.statusText = "Streaming"
             }
             self.capturedImage = cgImage
             self.hasReceivedFirstFrame = true
@@ -175,6 +299,7 @@ final class WindowCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
 
     nonisolated func stream(_ stream: SCStream, didStopWithError error: any Error) {
         DispatchQueue.main.async { [weak self] in
+            self?.debugLog("SCStream stopped: \(error)")
             self?.isCapturing = false
             self?.captureError = "Capture stopped: \(error.localizedDescription)"
         }
@@ -193,7 +318,6 @@ final class WindowCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         let fracX = localPoint.x / viewSize.width
         let fracY = localPoint.y / viewSize.height
 
-        // Map to screen coordinates. windowFrame is in CG screen coords (top-left origin).
         let screenX = windowFrame.origin.x + fracX * windowFrame.width
         let screenY = windowFrame.origin.y + fracY * windowFrame.height
         let screenPoint = CGPoint(x: screenX, y: screenY)
@@ -226,20 +350,25 @@ final class WindowCaptureManager: NSObject, SCStreamOutput, SCStreamDelegate {
         event.postToPid(pid)
     }
 
-    // MARK: - Move off-screen
+    // MARK: - Debug logging
 
-    private func moveWindowOffScreen(pid: pid_t) {
-        let appRef = AXUIElementCreateApplication(pid)
-        var windowsRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef) == .success,
-              let windows = windowsRef as? [AXUIElement],
-              let window = windows.first
-        else { return }
-
-        var position = CGPoint(x: -10000, y: 0)
-        if let posValue = AXValueCreate(.cgPoint, &position) {
-            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posValue)
+    private func debugLog(_ message: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "[\(timestamp)] \(message)\n"
+        let logPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Unified-capture.log")
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logPath.path) {
+                if let handle = try? FileHandle(forWritingTo: logPath) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    handle.closeFile()
+                }
+            } else {
+                try? data.write(to: logPath)
+            }
         }
+        logger.info("\(message)")
     }
 }
 
@@ -260,7 +389,6 @@ struct WindowCaptureView: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .overlay {
-                            // Mouse/keyboard interaction layer.
                             CapturedFrameOverlay(captureManager: captureManager)
                         }
                 } else if let error = captureManager.captureError {
@@ -278,7 +406,7 @@ struct WindowCaptureView: View {
             ProgressView()
                 .controlSize(.large)
                 .tint(.white)
-            Text("Connecting to app...")
+            Text(captureManager.statusText)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.6))
         }
@@ -314,8 +442,6 @@ struct WindowCaptureView: View {
 
 // MARK: - CapturedFrameOverlay
 
-/// Transparent NSView overlay that intercepts mouse/keyboard events
-/// and forwards them to the captured app process.
 private struct CapturedFrameOverlay: NSViewRepresentable {
 
     let captureManager: WindowCaptureManager
@@ -360,7 +486,6 @@ final class InteractionNSView: NSView {
         trackingArea = area
     }
 
-    // Mouse events
     override func mouseDown(with e: NSEvent) { window?.makeFirstResponder(self); forward(e, .leftMouseDown) }
     override func mouseUp(with e: NSEvent) { forward(e, .leftMouseUp) }
     override func mouseDragged(with e: NSEvent) { forward(e, .leftMouseDragged) }
@@ -377,7 +502,6 @@ final class InteractionNSView: NSView {
         )
     }
 
-    // Keyboard events
     override func keyDown(with e: NSEvent) {
         captureManager?.forwardKeyEvent(keyCode: CGKeyCode(e.keyCode), isDown: true, flags: e.cgEvent?.flags ?? [])
     }

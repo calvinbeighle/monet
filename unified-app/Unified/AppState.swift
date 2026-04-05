@@ -26,6 +26,8 @@ final class AppState {
     // Embedded app
     var embeddedApp: NSRunningApplication?
     var isShowingEmbeddedApp: Bool = false
+    /// Called when dismissing an embedded app so the embedder can restore the window.
+    var onDismissEmbeddedApp: (() -> Void)?
 
     // API key
     var showAPIKeyPrompt: Bool = false
@@ -57,12 +59,8 @@ final class AppState {
     }
 
     func dismissEmbeddedApp() {
+        onDismissEmbeddedApp?()
         embeddedApp = nil
         isShowingEmbeddedApp = false
-        // Restore window level.
-        if let window = NSApplication.shared.windows.first(where: { $0.isVisible }) {
-            window.level = .normal
-            window.backgroundColor = .black
-        }
     }
 }
